@@ -328,3 +328,18 @@ export function Contact() {
     </>
   );
 }
+
+/* ───────── 404 ───────── */
+export function NotFound() {
+  const { t } = useI18n();
+  return (
+    <section className="container hero-wrap">
+      <div className="hero hero-sm on-dark">
+        <span className="eyebrow latin">404</span>
+        <h1>{t('الصفحة دي مش موجودة', 'Page not found')}</h1>
+        <p>{t('اللينك غلط أو الصفحة اتنقلت.', 'The link is wrong or the page has moved.')}</p>
+        <Link to="/" className="btn btn-accent">{t('رجوع للرئيسية', 'Back home')}</Link>
+      </div>
+    </section>
+  );
+}

@@ -27,6 +27,16 @@ export default function Layout() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => { setOpen(false); window.scrollTo(0, 0); }, [pathname]);
+  const names: Record<string, string> = {
+    '/domains': t('دومينات', 'Domains'), '/email': t('إيميلات الأعمال', 'Business email'), '/websites': t('تصميم المواقع', 'Web design'),
+    '/hosting': t('استضافة', 'Hosting'), '/cloud': t('كلاود وVPS', 'Cloud & VPS'), '/pricing': t('الأسعار', 'Pricing'),
+    '/status': t('حالة الخدمات', 'Status'), '/contact': t('تواصل معنا', 'Contact'),
+  };
+  useEffect(() => {
+    const page = names[pathname];
+    document.title = page ? `${page} | Notch Cloud Services` : 'Notch Cloud Services | نوتش كلاود';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, t('ar', 'en')]);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8);
     on();

@@ -4,7 +4,8 @@ import { CURRENCY } from '../data/content';
 import { Ltr, useI18n } from '../i18n';
 import { LangToggle, Logo } from '../site/Layout';
 import { Ph } from '../site/parts';
-import { dnsRecords, domains, hosting, invoices, mailboxes, servers, tickets, type Status } from './data';
+import { domains, hosting, tickets, type Status } from './data';
+import { useDns, useInvoices, useMailboxes, useServers, type DnsRec } from './store';
 
 const KEY = 'ncloud-auth';
 const authed = () => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } };
@@ -106,6 +107,9 @@ function Meter({ value, tone }: { value: number; tone?: 'warn' }) {
 /* ───────── Pages ───────── */
 export function Overview() {
   const { t, L } = useI18n();
+  const [invoices] = useInvoices();
+  const [servers] = useServers();
+  const [mailboxes] = useMailboxes();
   const due = invoices.filter((i) => i.status === 'due');
   const kpis = [
     { to: '/portal/domains', label: t('دومينات', 'Domains'), v: domains.length },
@@ -138,11 +142,21 @@ export function Overview() {
 export function PortalDomains() {
   const { t } = useI18n();
   const [sel, setSel] = useState(domains[0].name);
+  const [all, setAll] = useDns();
+  const records = all[sel] ?? [];
+  const [form, setForm] = useState<DnsRec>({ type: 'A', host: '', value: '', ttl: 3600 });
+  const add = (e: FormEvent) => {
+    e.preventDefault();
+    if (!form.value.trim()) return;
+    setAll((p) => ({ ...p, [sel]: [...(p[sel] ?? []), { ...form, host: form.host.trim() || '@', value: form.value.trim() }] }));
+    setForm({ ...form, host: '', value: '' });
+  };
+  const remove = (i: number) => setAll((p) => ({ ...p, [sel]: (p[sel] ?? []).filter((_, j) => j !== i) }));
   return (
     <Page title={t('الدومينات', 'Domains')} action={<Link to="/domains" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
       <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
         {domains.map((d) => (
-          <tr key={d.name}>
+          <tr key={d.name} className={d.name === sel ? 'is-sel' : ''}>
             <td><Ltr>{d.name}</Ltr></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires}</Ltr></td>
             <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
             <td><button className="btn btn-ghost btn-sm" onClick={() => setSel(d.name)}>{t('إدارة DNS', 'Manage DNS')}</button></td>
@@ -151,23 +165,62 @@ export function PortalDomains() {
       </Table>
       <h2 className="sub">{t('سجلات DNS', 'DNS records')} · <Ltr>{sel}</Ltr></h2>
       <div className="dns">
-        <div className="dns-row dns-head"><span>TYPE</span><span>HOST</span><span>VALUE</span><span>TTL</span></div>
-        {dnsRecords.map((r, i) => <div className="dns-row" key={i}><span>{r.type}</span><span>{r.host}</span><span>{r.value}</span><span>{r.ttl}</span></div>)}
+        <div className="dns-row dns-head"><span>TYPE</span><span>HOST</span><span>VALUE</span><span>TTL</span><span /></div>
+        {records.length === 0 && <div className="dns-empty nt-hatch-dark">{t('مفيش سجلات لسه', 'No records yet')}</div>}
+        {records.map((r, i) => (
+          <div className="dns-row" key={i}>
+            <span>{r.type}</span><span>{r.host}</span><span>{r.value}</span><span>{r.ttl}</span>
+            <button className="dns-del" onClick={() => remove(i)} aria-label={t('حذف السجل', 'Delete record')}>×</button>
+          </div>
+        ))}
       </div>
+      <form className="dns-form" onSubmit={add}>
+        <select className="select" aria-label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+          {['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS'].map((x) => <option key={x}>{x}</option>)}
+        </select>
+        <input className="input latin" aria-label="Host" placeholder="@ / www" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+        <input className="input latin" aria-label="Value" placeholder={t('القيمة', 'Value')} required value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+        <select className="select" aria-label="TTL" value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })}>
+          {[300, 3600, 14400, 86400].map((x) => <option key={x}>{x}</option>)}
+        </select>
+        <button className="btn btn-primary" type="submit">{t('إضافة', 'Add')}</button>
+      </form>
     </Page>
   );
 }
 
 export function PortalEmail() {
   const { t } = useI18n();
+  const [boxes, setBoxes] = useMailboxes();
+  const [adding, setAdding] = useState(false);
+  const [local, setLocal] = useState('');
+  const [dom, setDom] = useState(domains[0].name);
+  const [quota, setQuota] = useState(5);
+  const address = `${local.trim().toLowerCase()}@${dom}`;
+  const exists = boxes.some((b) => b.address === address);
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    if (!local.trim() || exists) return;
+    setBoxes((p) => [...p, { address, usedGb: 0, quotaGb: quota, status: 'active' }]);
+    setLocal(''); setAdding(false);
+  };
   return (
-    <Page title={t('الإيميلات', 'Email')} action={<button className="btn btn-primary btn-sm">{t('+ صندوق جديد', '+ New mailbox')}</button>}>
-      <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status')]}>
-        {mailboxes.map((m) => (
+    <Page title={t('الإيميلات', 'Email')} action={<button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>{adding ? t('إلغاء', 'Cancel') : t('+ صندوق جديد', '+ New mailbox')}</button>}>
+      {adding && (
+        <form className="card inline-form" onSubmit={create}>
+          <div className="field"><label htmlFor="ml">{t('الاسم', 'Name')}</label><input id="ml" className="input latin" value={local} onChange={(e) => setLocal(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))} placeholder="support" required /></div>
+          <div className="field"><label htmlFor="md">{t('الدومين', 'Domain')}</label><select id="md" className="select latin" value={dom} onChange={(e) => setDom(e.target.value)}>{domains.map((d) => <option key={d.name}>{d.name}</option>)}</select></div>
+          <div className="field"><label htmlFor="mq">{t('المساحة', 'Quota')}</label><select id="mq" className="select" value={quota} onChange={(e) => setQuota(Number(e.target.value))}>{[5, 30, 100].map((q) => <option key={q} value={q}>{q} GB</option>)}</select></div>
+          <button className="btn btn-accent" type="submit" disabled={!local || exists}>{exists ? t('موجود بالفعل', 'Already exists') : t('إنشاء', 'Create')}</button>
+        </form>
+      )}
+      <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']}>
+        {boxes.map((m) => (
           <tr key={m.address}>
             <td><Ltr>{m.address}</Ltr></td>
             <td className="usage"><Meter value={(m.usedGb / m.quotaGb) * 100} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
             <td><StatusTag s={m.status} /></td>
+            <td><button className="btn btn-ghost btn-sm" onClick={() => setBoxes((p) => p.filter((b) => b.address !== m.address))}>{t('حذف', 'Delete')}</button></td>
           </tr>
         ))}
       </Table>
@@ -195,16 +248,23 @@ export function PortalHosting() {
 
 export function PortalServers() {
   const { t } = useI18n();
+  const [list, setList] = useServers();
+  const patch = (name: string, fn: (s: (typeof list)[number]) => (typeof list)[number]) => setList((p) => p.map((s) => (s.name === name ? fn(s) : s)));
+  const toggle = (name: string) => patch(name, (s) => (s.status === 'stopped' ? { ...s, status: 'active', cpu: 8, ram: 22 } : { ...s, status: 'stopped', cpu: 0, ram: 0 }));
+  const create = () => setList((p) => [...p, { name: `vps-${String(p.length + 1).padStart(2, '0')}`, ip: `203.0.113.${30 + p.length}`, spec: '1 vCPU · 2 GB · 40 GB', cpu: 3, ram: 14, status: 'active', snapshots: 0 }]);
   return (
-    <Page title={t('السيرفرات', 'Servers')} action={<button className="btn btn-primary btn-sm">{t('+ سيرفر جديد', '+ New server')}</button>}>
+    <Page title={t('السيرفرات', 'Servers')} action={<button className="btn btn-primary btn-sm" onClick={create}>{t('+ سيرفر جديد', '+ New server')}</button>}>
       <div className="grid g3">
-        {servers.map((s) => (
+        {list.map((s) => (
           <div className="card" key={s.name}>
             <div className="srv-head"><h3 className="latin">{s.name}</h3><StatusTag s={s.status} /></div>
             <p className="latin muted">{s.ip}</p><p className="latin spec">{s.spec}</p>
             <div className="srv-m"><span className="nt-mono">CPU</span><Meter value={s.cpu} /><span className="latin">{s.cpu}%</span></div>
             <div className="srv-m"><span className="nt-mono">RAM</span><Meter value={s.ram} tone={s.ram > 80 ? 'warn' : undefined} /><span className="latin">{s.ram}%</span></div>
-            <div className="srv-btns"><button className="btn btn-ghost btn-sm">{s.status === 'stopped' ? t('تشغيل', 'Start') : t('إعادة تشغيل', 'Reboot')}</button><button className="btn btn-ghost btn-sm">Snapshot</button></div>
+            <div className="srv-btns">
+              <button className="btn btn-ghost btn-sm" onClick={() => toggle(s.name)}>{s.status === 'stopped' ? t('تشغيل', 'Start') : t('إيقاف', 'Stop')}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => patch(s.name, (x) => ({ ...x, snapshots: x.snapshots + 1 }))}>Snapshot{s.snapshots > 0 && <span className="latin"> ({s.snapshots})</span>}</button>
+            </div>
           </div>
         ))}
       </div>
@@ -214,6 +274,8 @@ export function PortalServers() {
 
 export function PortalBilling() {
   const { t, L } = useI18n();
+  const [invoices, setInvoices] = useInvoices();
+  const pay = (id: string) => setInvoices((p) => p.map((i) => (i.id === id ? { ...i, status: 'paid' as const } : i)));
   return (
     <Page title={t('الفواتير', 'Billing')}>
       <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('الحالة', 'Status'), '']}>
@@ -222,7 +284,7 @@ export function PortalBilling() {
             <td><Ltr>{i.id}</Ltr></td><td><Ltr>{i.date}</Ltr></td><td>{L(i.item)}</td>
             <td><b className="latin">{i.amount}</b> {L(CURRENCY)} <Ph /></td>
             <td><span className={`tag ${i.status === 'paid' ? 'ok' : 'bad'}`}>{i.status === 'paid' ? t('مدفوعة', 'Paid') : t('مستحقة', 'Due')}</span></td>
-            <td>{i.status === 'due' && <button className="btn btn-accent btn-sm">{t('ادفع', 'Pay')}</button>}</td>
+            <td>{i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => pay(i.id)}>{t('ادفع', 'Pay')}</button>}</td>
           </tr>
         ))}
       </Table>

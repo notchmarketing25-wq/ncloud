@@ -72,3 +72,13 @@
 /* Sidebar logo: word mark on top, sub-line below (the sidebar is too narrow for one row). */
 .side .logo { flex-wrap: wrap; row-gap: 6px; }
 .side .logo-sub { white-space: nowrap; flex-basis: 100%; margin: 0; padding: 0; border: 0; }
+
+/* Interactive bits */
+.tbl tr.is-sel td { background: #f4f4f2; }
+.dns-row { grid-template-columns: 90px 110px minmax(280px, 1fr) 70px 36px; align-items: center; }
+.dns-empty { padding: 28px; text-align: center; color: rgba(255, 255, 255, .6); border-radius: 10px; }
+.dns-del { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .25); background: transparent; color: #fff; font-size: 18px; line-height: 1; opacity: .6; }
+.dns-del:hover { opacity: 1; border-color: #ff6b81; color: #ff6b81; }
+.dns-form { display: grid; grid-template-columns: 110px 140px 1fr 110px auto; gap: 8px; margin-top: 12px; }
+.inline-form { display: grid; grid-template-columns: 1fr 1.2fr 120px auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+@media (max-width: 900px) { .dns-form, .inline-form { grid-template-columns: 1fr 1fr; } .dns-form .input:nth-of-type(2) { grid-column: 1 / -1; } }

@@ -8,7 +8,7 @@ import './site/site.css';
 import './portal/portal.css';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
-import { Cloud, Contact, Domains, EmailPage, Home, Hosting, Pricing, Status, Websites } from './site/pages';
+import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
 import { Login, Overview, PortalBilling, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport } from './portal/Portal';
 
 createRoot(document.getElementById('root')!).render(
@@ -26,7 +26,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="pricing" element={<Pricing />} />
             <Route path="status" element={<Status />} />
             <Route path="contact" element={<Contact />} />
-            <Route path="*" element={<Home />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="portal/login" element={<Login />} />
           <Route path="portal" element={<PortalLayout />}>
