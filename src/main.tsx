@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import './brand/fonts';
 import './brand/tokens.css';
 import './brand/base.css';
@@ -11,10 +11,12 @@ import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
 import { Login, Overview, PortalBilling, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport } from './portal/Portal';
 
+const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashRouter;
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
-      <BrowserRouter>
+      <Router>
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<Home />} />
@@ -39,7 +41,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="support" element={<PortalSupport />} />
           </Route>
         </Routes>
-      </BrowserRouter>
+      </Router>
     </I18nProvider>
   </StrictMode>,
 );
