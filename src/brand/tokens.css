@@ -1,0 +1,67 @@
+/* ═════════════ Notch Brand Guidelines v1.0: design tokens ═════════════
+   One source of truth for the palette, font stacks, shapes and the pattern utilities (TypeScript twin: tokens.ts).
+
+   Usage rules
+   - Black and white do the work. ONE Volt element per layout (a button, a highlight, a status light).
+   - Text on Volt is always Notch Black. Never put Volt text or hairlines on white (it does not read): use black, or Olive for link hover.
+   - Neutrals: Graphite (surfaces on dark), Slate (secondary text), Fog (borders), Paper (light panels).
+   - Display = Unbounded 500, text = Manrope, spec / label = JetBrains Mono 12px uppercase +0.08em.
+   - Arabic: IBM Plex Sans Arabic for headings and text; no negative or positive letter-spacing (it breaks the joins).
+   - The storefront reads --accent / --ink / --bg / --card / --sale from the saved theme, so stores keep their own colors;
+     the utilities below use var(--accent, Volt) and follow the theme. */
+:root {
+  --nt-black: #0a0a0a;
+  --nt-white: #ffffff;
+  --nt-volt: #c8f03c;
+  --nt-graphite: #2a2a2a;
+  --nt-slate: #6b6b6b;
+  --nt-fog: #ddddda;
+  --nt-paper: #f4f4f2;
+  --nt-error: #b00020;
+  --nt-olive: #5c7a00;
+  --nt-hatch-a: #f0f0ec;
+
+  --nt-font-display: 'Unbounded', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --nt-font-text: 'Manrope', 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --nt-font-mono: 'JetBrains Mono', 'IBM Plex Sans Arabic', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --nt-r-hero: 28px;
+  --nt-r-card: 20px;
+  --nt-r-sm: 16px;
+
+  /* Latin: tight display tracking and tight leading; the Arabic overrides below undo both. */
+  --nt-display-ls: -0.02em;
+  --nt-display-lh: 1.1;
+  --nt-text-lh: 1.55;
+  --nt-mono-ls: 0.08em;
+  --nt-hatch: repeating-linear-gradient(45deg, var(--nt-hatch-a) 0 6px, #fff 6px 12px);
+  --nt-hatch-dark: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.07) 0 6px, transparent 6px 12px);
+}
+html[lang='ar'] {
+  --nt-display-ls: 0;
+  --nt-display-lh: 1.35;
+  --nt-text-lh: 1.75;
+  --nt-mono-ls: 0;
+}
+
+/* ───── Pattern + accent utilities ───── */
+/* Hatched 45deg stripes: placeholders, clear space, empty states. */
+.nt-hatch { background: var(--nt-hatch); }
+.nt-hatch-dark { background-color: transparent; background-image: var(--nt-hatch-dark); }
+/* Volt bar: the signature accent under / on boxes, signage and letterhead. */
+.nt-volt-bar { display: block; width: 56px; height: 8px; border-radius: 2px; background: var(--accent, var(--nt-volt)); }
+.nt-volt-bar--lg { height: 10px; width: 96px; }
+.nt-volt-bar--full { width: 100%; border-radius: 0; }
+/* 10px Volt bottom border on a black panel. */
+.nt-volt-edge { border-bottom: 10px solid var(--accent, var(--nt-volt)); }
+/* Solid Volt dot: the hero accent mark / a status light. */
+.nt-volt-dot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent, var(--nt-volt)); }
+.nt-volt-dot--lg { width: 96px; height: 96px; }
+/* Spec / label type and the mono section index ("01", "02"). */
+.nt-mono, .nt-index, .nt-eyebrow {
+  font-family: var(--nt-font-mono); font-weight: 400; font-size: 12px; line-height: 1.4;
+  text-transform: uppercase; letter-spacing: var(--nt-mono-ls);
+}
+.nt-index { color: var(--muted, var(--nt-slate)); display: block; margin-bottom: 10px; }
+.nt-eyebrow { display: inline-flex; align-items: center; gap: 8px; }
+html[lang='ar'] .nt-mono:not(.latin), html[lang='ar'] .nt-index:not(.latin), html[lang='ar'] .nt-eyebrow:not(.latin) { text-transform: none; font-size: 13px; }
