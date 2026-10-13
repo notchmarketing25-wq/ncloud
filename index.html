@@ -26,6 +26,13 @@
           var box = el('div', '', 'max-width:660px;margin:40px auto;padding:24px;font:15px/1.7 system-ui,Tahoma,sans-serif;border:1px solid #ddd;border-radius:20px;background:#fff;color:#0a0a0a');
           box.dir = ar ? 'rtl' : 'ltr';
           box.appendChild(el('h2', ar ? 'الموقع لم يُحمَّل' : 'The site failed to load', 'margin:0 0 8px;font-size:20px'));
+          var isSource = !!document.querySelector('script[src*="/src/"]') || errs.join(' ').indexOf('/src/main.tsx') > -1;
+          if (isSource) {
+            box.appendChild(el('p', ar
+              ? 'هذه ملفات المصدر (src/main.tsx) وليست الموقع المبني، ولا يمكن للمتصفح تشغيلها. لا ترفع الريبو كما هو: ارفع ملف release/install.php فقط وافتحه من المتصفح، أو ارفع محتوى فولدر dist بعد npm run build.'
+              : 'These are the source files (src/main.tsx), not the built site, and browsers cannot run them. Do not deploy the repo as is: upload release/install.php only and open it in the browser, or upload the contents of dist after npm run build.',
+              'margin:0 0 12px;padding:12px;background:#fbeaed;color:#b00020;border-radius:12px;font-weight:600'));
+          }
           box.appendChild(el('p', location.protocol === 'file:'
             ? (ar ? 'أنت فاتح الملف من جهازك مباشرة (file://). ارفعه على استضافة أو شغّل npm run preview.' : 'You opened the file straight from disk (file://). Upload it to a host or run npm run preview.')
             : (ar ? 'ابعت لقطة من هذه الصفحة للدعم. الأسطر التالية تحدد السبب.' : 'Send a screenshot of this page to support. The lines below show the cause.'), 'margin:0 0 12px;color:#555'));
