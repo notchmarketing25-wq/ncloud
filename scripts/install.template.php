@@ -23,7 +23,8 @@ $tok = $_SESSION['nt_tok'];
 $dir = __DIR__;
 $data = $dir . '/api/data';
 $locked = is_file($data . '/installed.lock');
-$exists = file_exists($dir . '/index.html');
+$isSource = is_file($dir . '/src/main.tsx'); // the repo was uploaded as is (source files, no build)
+$exists = file_exists($dir . '/index.html') && !$isSource;
 $phpOk = version_compare(PHP_VERSION, '7.0.0', '>=');
 $jsonOk = function_exists('json_encode') && function_exists('password_hash');
 $writable = is_writable($dir);
@@ -34,7 +35,24 @@ $done = false;
 $deleted = false;
 $updated = false;
 $written = 0;
+$cleaned = 0;
 $f = array('site' => post('site'), 'name' => post('name'), 'email' => strtolower(post('email')));
+
+/** Repo files that must not live on the web root. Exact names only; nothing else is ever deleted. */
+function leftover_names() { return array('src', 'scripts', 'server', 'release', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.tsbuildinfo', 'vite.config.ts', 'README.md', 'INSTALL.md', '.gitignore', '.env.clean', '.env.development', 'node_modules'); }
+function rm_tree($p) {
+    if (is_link($p) || is_file($p)) { return @unlink($p); }
+    if (!is_dir($p)) { return true; }
+    foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { rm_tree($p . '/' . $f); } }
+    return @rmdir($p);
+}
+function clean_leftovers($dir) {
+    $n = 0;
+    foreach (leftover_names() as $name) { $p = $dir . '/' . $name; if (file_exists($p) || is_link($p)) { if (rm_tree($p)) { $n++; } } }
+    $pub = $dir . '/public'; // Vite's public folder: only remove it when it holds nothing but the favicon
+    if (is_dir($pub)) { $left = array_diff(scandir($pub), array('.', '..', 'favicon.svg')); if (!$left) { if (rm_tree($pub)) { $n++; } } }
+    return $n;
+}
 
 function write_site($FILES, $dir, &$errors, &$written) {
     foreach ($FILES as $path => $b64) {
@@ -75,6 +93,7 @@ if ($action !== '' && !$tokenOk) {
             else {
                 @chmod($data . '/db.php', 0600);
                 @file_put_contents($data . '/installed.lock', gmdate('c'));
+                if ($isSource && !empty($_POST['cleanup'])) { $cleaned = clean_leftovers($dir); }
                 $done = true;
             }
         }
@@ -127,7 +146,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
     <div class="row"><a class="btn v" href="<?= h($loginUrl) ?>"><?= h(t('تسجيل الدخول', 'Sign in')) ?></a><a class="btn g" href="<?= h($siteUrl) ?>"><?= h(t('افتح الموقع', 'Open the site')) ?></a></div>
 <?php elseif ($done || $updated): ?>
     <h1><?= h($done ? t('اتثبّت بنجاح', 'Installed successfully') : t('اتحدّث بنجاح', 'Updated successfully')) ?></h1>
-    <div class="good"><?= h(t('تم نسخ ', 'Wrote ')) ?><?= (int) $written ?><?= h(t(' ملف.', ' files.')) ?><?= $done ? ' ' . h(t('وتم إنشاء حساب الأدمن.', 'The admin account was created.')) : ' ' . h(t('بياناتك لم تتغيّر.', 'Your data was not touched.')) ?></div>
+    <div class="good"><?= h(t('تم نسخ ', 'Wrote ')) ?><?= (int) $written ?><?= h(t(' ملف.', ' files.')) ?><?= $done ? ' ' . h(t('وتم إنشاء حساب الأدمن.', 'The admin account was created.')) : ' ' . h(t('بياناتك لم تتغيّر.', 'Your data was not touched.')) ?><?= $cleaned ? ' ' . h(t('ومسحنا ', 'Removed ')) . (int) $cleaned . h(t(' عنصر من ملفات المصدر.', ' leftover source items.')) : '' ?></div>
     <ul id="chk"></ul>
     <script>
     (function(){
@@ -169,6 +188,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
       <div class="field"><label for="email"><?= h(t('الإيميل', 'Email')) ?></label><input id="email" name="email" type="email" class="l" required value="<?= h($f['email']) ?>"></div>
       <div class="field"><label for="password"><?= h(t('كلمة السر (8 حروف على الأقل)', 'Password (8+ characters)')) ?></label><input id="password" name="password" type="password" class="l" minlength="8" required></div>
       <div class="field"><label for="password2"><?= h(t('تأكيد كلمة السر', 'Confirm password')) ?></label><input id="password2" name="password2" type="password" class="l" minlength="8" required></div>
+<?php if ($isSource): ?>
+      <div class="err"><?= h(t('الفولدر ده فيه ملفات الريبو (المصدر) مش الموقع المبني. هيتم استبدالها بالموقع.', 'This folder contains the repo source files, not the built site. They will be replaced by the site.')) ?></div>
+      <label class="c"><input type="checkbox" name="cleanup" value="1" checked> <?= h(t('امسح ملفات المصدر الزايدة (src, scripts, server, package.json ...)', 'Remove the leftover source files (src, scripts, server, package.json ...)')) ?></label>
+<?php endif; ?>
 <?php if ($exists): ?>
       <div class="err"><?= h(t('فيه index.html موجود في الفولدر ده.', 'An index.html already exists in this folder.')) ?></div>
       <label class="c"><input type="checkbox" name="overwrite" value="1"> <?= h(t('اكتب فوقه', 'Overwrite it')) ?></label>
