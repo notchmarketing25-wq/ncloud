@@ -6,6 +6,8 @@ import './brand/tokens.css';
 import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
+import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
+import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
@@ -16,6 +18,7 @@ const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashR
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
+      <AuthProvider>
       <Router>
         <Routes>
           <Route element={<Layout />}>
@@ -31,6 +34,11 @@ createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="portal/login" element={<Login />} />
+          <Route path="admin" element={<AdminLayout />}>
+            <Route index element={<AdminOverview />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="account" element={<AdminAccount />} />
+          </Route>
           <Route path="portal" element={<PortalLayout />}>
             <Route index element={<Overview />} />
             <Route path="domains" element={<PortalDomains />} />
@@ -42,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
           </Route>
         </Routes>
       </Router>
+      </AuthProvider>
     </I18nProvider>
   </StrictMode>,
 );

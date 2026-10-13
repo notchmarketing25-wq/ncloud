@@ -10,7 +10,11 @@ npm run build
 npm run package   # release/install.php (installer من ملف واحد) + release/ncloud-site.zip
 ```
 
-**التثبيت على أي استضافة:** شوف [INSTALL.md](INSTALL.md): ارفع `release/install.php` وافتحه من المتصفح.
+**التثبيت على أي استضافة:** شوف [INSTALL.md](INSTALL.md): ارفع `release/install.php` وافتحه، أنشئ حساب الأدمن، وخلاص.
+
+## الـ Backend
+`server/api/index.php`: API بـ PHP في ملف واحد، تخزين في ملفات (بدون قاعدة بيانات): تسجيل دخول/خروج، حسابات (أدمن وعميل)، إدارة المستخدمين، تغيير كلمة السر، حماية CSRF وحد لمحاولات الدخول.
+الـ installer (`scripts/install.template.php`) بيكتبه مع الموقع وبينشئ أول أدمن. على استضافة من غير PHP الموقع بيشتغل تلقائيًا كنسخة تجريبية.
 
 ## المحتوى
 - **الموقع:** `/` الرئيسية، `/domains`، `/email`، `/websites`، `/hosting`، `/cloud`، `/pricing`، `/status`، `/contact`

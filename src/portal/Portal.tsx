@@ -1,23 +1,36 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { CURRENCY } from '../data/content';
+import { useAuth } from '../auth';
+import { ApiError } from '../lib/api';
 import { Ltr, useI18n } from '../i18n';
 import { LangToggle, Logo } from '../site/Layout';
 import { Ph } from '../site/parts';
 import { domains, hosting, tickets, type Status } from './data';
 import { useDns, useInvoices, useMailboxes, useServers, type DnsRec } from './store';
 
-const KEY = 'ncloud-auth';
-const authed = () => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } };
-
 /* ───────── Login (demo only: any input signs in) ───────── */
 export function Login() {
   const { t } = useI18n();
   const nav = useNavigate();
-  const submit = (e: FormEvent) => {
+  const { mode, user, login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (mode !== 'checking' && user) return <Navigate to={user.role === 'admin' ? '/admin' : '/portal'} replace />;
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    try { localStorage.setItem(KEY, '1'); } catch { /* ignore */ }
-    nav('/portal');
+    setError(''); setBusy(true);
+    try {
+      const u = await login(email.trim(), password);
+      nav(u.role === 'admin' ? '/admin' : '/portal');
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      setError(status === 429 ? t('محاولات كتير. جرّب بعد 10 دقايق.', 'Too many attempts. Try again in 10 minutes.')
+        : status === 401 ? t('الإيميل أو كلمة السر غلط.', 'Wrong email or password.')
+        : t('تعذّر الاتصال بالسيرفر.', 'Could not reach the server.'));
+    } finally { setBusy(false); }
   };
   return (
     <div className="login-page">
@@ -27,15 +40,16 @@ export function Login() {
           <h1>{t('لوحة العميل', 'Client area')}</h1>
           <p>{t('دومينات، إيميلات، استضافة وسيرفرات في لوحة واحدة.', 'Domains, email, hosting and servers in one panel.')}</p>
         </div>
-        <span className="tag volt latin">DEMO</span>
+        {mode === 'demo' && <span className="tag volt latin">DEMO</span>}
       </div>
       <form className="login-form" onSubmit={submit}>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle /></div>
         <h2>{t('تسجيل الدخول', 'Sign in')}</h2>
-        <p className="muted">{t('نسخة تجريبية: أي بيانات هتدخلك.', 'Demo build: any details will sign you in.')}</p>
-        <div className="field"><label htmlFor="em">{t('الإيميل', 'Email')}</label><input id="em" className="input latin" type="email" placeholder="you@company.com" /></div>
-        <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" /></div>
-        <button className="btn btn-primary" type="submit">{t('دخول', 'Sign in')}</button>
+        {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): أي بيانات هتدخلك.', 'Demo build (no server): any details will sign you in.')}</p>}
+        <div className="field"><label htmlFor="em">{t('الإيميل', 'Email')}</label><input id="em" className="input latin" type="email" autoComplete="username" required={mode === 'server'} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
+        <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" autoComplete="current-password" required={mode === 'server'} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <button className="btn btn-primary" type="submit" disabled={busy || mode === 'checking'}>{busy ? '…' : t('دخول', 'Sign in')}</button>
         <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
       </form>
     </div>
@@ -46,8 +60,10 @@ export function Login() {
 export function PortalLayout() {
   const { t } = useI18n();
   const nav = useNavigate();
+  const { mode, user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  if (!authed()) return <Navigate to="/portal/login" replace />;
+  if (mode === 'checking') return null;
+  if (!user) return <Navigate to="/portal/login" replace />;
   const items = [
     { to: '/portal', label: t('نظرة عامة', 'Overview'), end: true },
     { to: '/portal/domains', label: t('الدومينات', 'Domains') },
@@ -57,7 +73,7 @@ export function PortalLayout() {
     { to: '/portal/billing', label: t('الفواتير', 'Billing') },
     { to: '/portal/support', label: t('الدعم', 'Support') },
   ];
-  const logout = () => { try { localStorage.removeItem(KEY); } catch { /* ignore */ } nav('/portal/login'); };
+  const signOut = async () => { await logout(); nav('/portal/login'); };
   return (
     <div className="portal">
       <aside className={`side on-dark${open ? ' is-open' : ''}`}>
@@ -68,13 +84,14 @@ export function PortalLayout() {
         <div className="side-foot">
           <LangToggle />
           <Link to="/" className="side-link">{t('الموقع', 'Website')}</Link>
-          <button className="side-link" onClick={logout}>{t('خروج', 'Sign out')}</button>
+          {user.role === 'admin' && mode === 'server' && <Link to="/admin" className="side-link">{t('لوحة الإدارة', 'Admin panel')}</Link>}
+          <button className="side-link" onClick={signOut}>{t('خروج', 'Sign out')}</button>
         </div>
       </aside>
       <div className="portal-main">
         <div className="portal-top">
           <button className="burger" onClick={() => setOpen(!open)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
-          <span className="tag"><span className="dot pulse" /> <span className="latin">ACME TRADING</span></span>
+          <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
           <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>
         </div>
         <div className="portal-body"><Outlet /></div>

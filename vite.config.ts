@@ -6,5 +6,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   build: { target: 'es2018', cssTarget: 'chrome80' },
+  // `npm run dev` only: proxy the API to a local PHP server (php -S localhost:8000 -t <folder containing api/>).
+  server: { proxy: { '/api': 'http://localhost:8000' } },
   base: mode === 'clean' || mode === 'development' ? '/' : './',
 }));

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
 
 export function Logo({ dark = false }: { dark?: boolean }) {
@@ -23,6 +24,7 @@ export function LangToggle() {
 
 export default function Layout() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -65,7 +67,7 @@ export default function Layout() {
           </nav>
           <div className="header-actions">
             <LangToggle />
-            <Link to="/portal/login" className="btn btn-ghost btn-sm hide-sm">{t('دخول العميل', 'Client login')}</Link>
+            <Link to={user ? (user.role === 'admin' ? '/admin' : '/portal') : '/portal/login'} className="btn btn-ghost btn-sm hide-sm">{user ? t('لوحتي', 'My panel') : t('دخول العميل', 'Client login')}</Link>
             <Link to="/contact" className="btn btn-primary btn-sm hide-sm">{t('ابدأ الآن', 'Get started')}</Link>
             <button className="burger" onClick={() => setOpen(true)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
           </div>

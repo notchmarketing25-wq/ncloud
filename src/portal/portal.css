@@ -82,3 +82,10 @@
 .dns-form { display: grid; grid-template-columns: 110px 140px 1fr 110px auto; gap: 8px; margin-top: 12px; }
 .inline-form { display: grid; grid-template-columns: 1fr 1.2fr 120px auto; gap: 12px; align-items: end; margin-bottom: 16px; }
 @media (max-width: 900px) { .dns-form, .inline-form { grid-template-columns: 1fr 1fr; } .dns-form .input:nth-of-type(2) { grid-column: 1 / -1; } }
+
+.form-error { background: #fbeaed; color: var(--nt-error); border-radius: 14px; padding: 10px 14px; font-size: 14.5px; }
+.form-ok { background: #eef4d4; color: #3f5400; border-radius: 14px; padding: 10px 14px; font-size: 14.5px; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.edit-row td { background: #f4f4f2; }
+.edit-row .inline-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.edit-row .input { max-width: 260px; height: 40px; }
