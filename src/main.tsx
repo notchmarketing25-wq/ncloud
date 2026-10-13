@@ -7,6 +7,8 @@ import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
 import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
+import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
+import { SiteProvider } from './site/settings';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
@@ -19,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
       <AuthProvider>
+      <SiteProvider>
       <Router>
         <Routes>
           <Route element={<Layout />}>
@@ -37,6 +40,15 @@ createRoot(document.getElementById('root')!).render(
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
+            <Route path="domains" element={<AdminDomains />} />
+            <Route path="email" element={<AdminMailboxes />} />
+            <Route path="hosting" element={<AdminHosting />} />
+            <Route path="servers" element={<AdminServers />} />
+            <Route path="invoices" element={<AdminInvoices />} />
+            <Route path="tickets" element={<AdminTickets />} />
+            <Route path="leads" element={<AdminLeads />} />
+            <Route path="settings" element={<AdminSettings />} />
+            <Route path="activity" element={<AdminActivity />} />
             <Route path="account" element={<AdminAccount />} />
           </Route>
           <Route path="portal" element={<PortalLayout />}>
@@ -50,6 +62,7 @@ createRoot(document.getElementById('root')!).render(
           </Route>
         </Routes>
       </Router>
+      </SiteProvider>
       </AuthProvider>
     </I18nProvider>
   </StrictMode>,

@@ -1,8 +1,7 @@
 import { useCallback, useState } from 'react';
-import { dnsRecords, domains, invoices, mailboxes, servers } from './data';
 
-/** Demo persistence: state lives in this browser's localStorage so the client area feels real. Swap for the API later. */
-export function useStore<T>(key: string, initial: T): [T, (next: T | ((prev: T) => T)) => void, () => void] {
+/** Demo persistence: state lives in this browser's localStorage so the static demo feels real. */
+export function useStore<T>(key: string, initial: T): [T, (next: T | ((prev: T) => T)) => void] {
   const k = `ncloud-demo-${key}`;
   const [value, setValue] = useState<T>(() => {
     try {
@@ -18,20 +17,5 @@ export function useStore<T>(key: string, initial: T): [T, (next: T | ((prev: T) 
       return v;
     });
   }, [k]);
-  const reset = useCallback(() => {
-    try { localStorage.removeItem(k); } catch { /* ignore */ }
-    setValue(initial);
-  }, [k, initial]);
-  return [value, set, reset];
+  return [value, set];
 }
-
-export type DnsRec = { type: string; host: string; value: string; ttl: number };
-export type Server = (typeof servers)[number] & { snapshots: number };
-
-const initialServers: Server[] = servers.map((s) => ({ ...s, snapshots: 0 }));
-const initialDns: Record<string, DnsRec[]> = { [domains[0].name]: dnsRecords };
-
-export const useDns = () => useStore<Record<string, DnsRec[]>>('dns', initialDns);
-export const useMailboxes = () => useStore('mailboxes', mailboxes);
-export const useServers = () => useStore<Server[]>('servers', initialServers);
-export const useInvoices = () => useStore('invoices', invoices);

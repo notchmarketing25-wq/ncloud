@@ -89,3 +89,20 @@
 .edit-row td { background: #f4f4f2; }
 .edit-row .inline-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .edit-row .input { max-width: 260px; height: 40px; }
+
+.empty-note { padding: 28px; text-align: center; color: var(--nt-slate); border: 1px dashed var(--nt-fog); border-radius: var(--nt-r-card); }
+.table-wrap .empty-note { border: 0; border-radius: 0; }
+.thread { margin-top: 16px; display: grid; gap: 12px; }
+.msg { padding: 12px 16px; border-radius: 14px; background: #f4f4f2; max-width: 680px; }
+.msg.admin { background: #eef4d4; margin-inline-start: auto; }
+.msg p { white-space: pre-wrap; margin-top: 4px; color: var(--nt-black); }
+.link { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.side nav { overflow-y: auto; }
+.badge-n { margin-inline-start: auto; background: var(--nt-volt); color: #0a0a0a; border-radius: 999px; padding: 0 8px; font: 700 11px/18px var(--nt-font-mono); }
+.side nav a { display: flex; align-items: center; }
+
+.admin-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-block: 16px; }
+.admin-form-actions { grid-column: 1 / -1; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 400; }
+.check input { width: 18px; height: 18px; accent-color: #0a0a0a; }
+@media (max-width: 700px) { .admin-form { grid-template-columns: 1fr; } }

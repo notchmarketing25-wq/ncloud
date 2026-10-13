@@ -2,7 +2,12 @@
 /**
  * Notch Cloud Services: API (single file, flat-file storage, PHP 7.0+).
  * Written to api/ by install.php. Data lives in api/data/db.php (PHP-guarded JSON), never in a public file.
- * Routes: ?r=status | auth/me | auth/login | auth/logout | auth/password | admin/overview | admin/users | admin/user-update | admin/user-delete
+ *
+ * Public : status | public/settings | public/lead
+ * Auth   : auth/me | auth/login | auth/logout | auth/password
+ * Client : me/data | svc/dns-save | svc/dns-delete | svc/server-power | svc/server-snapshot | tickets/create | tickets/reply | tickets/status
+ * Admin  : admin/overview | admin/users | admin/user-update | admin/user-delete | admin/items | admin/item-save | admin/item-delete
+ *          admin/tickets | admin/leads | admin/lead-update | admin/lead-delete | admin/settings | admin/activity
  */
 ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
@@ -12,20 +17,31 @@ header('X-Content-Type-Options: nosniff');
 define('NC_DATA', __DIR__ . '/data');
 define('NC_DB', NC_DATA . '/db.php');
 const NC_GUARD = "<?php http_response_code(404); exit; ?>\n";
+const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb9rW';
+
+/** Resources an admin manages for clients: field => [type, max/options, 'req'?]. Every item also has id, uid (owner), created. */
+$SCHEMA = array(
+    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool')),
+    'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
+    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
+    'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
+    'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
+);
 
 function out($data, $code = 200) { http_response_code($code); echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 function fail($msg, $code = 400) { out(array('error' => $msg), $code); }
+function nc_len($s) { return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s); }
+function nc_cut($s, $n) { return function_exists('mb_substr') ? mb_substr($s, 0, $n, 'UTF-8') : substr($s, 0, $n); }
 
-function db_default() { return array('users' => array(), 'attempts' => new stdClass(), 'meta' => new stdClass()); }
+/* ───────── storage ───────── */
+function db_default() { return array('users' => array(), 'attempts' => array(), 'meta' => array(), 'items' => array(), 'tickets' => array(), 'leads' => array(), 'log' => array()); }
 function db_read() {
     if (!is_file(NC_DB)) { return db_default(); }
     $raw = file_get_contents(NC_DB);
     $nl = strpos($raw, "\n");
     $d = json_decode($nl === false ? '' : substr($raw, $nl + 1), true);
     if (!is_array($d)) { return db_default(); }
-    if (!isset($d['users']) || !is_array($d['users'])) { $d['users'] = array(); }
-    if (!isset($d['attempts']) || !is_array($d['attempts'])) { $d['attempts'] = array(); }
-    if (!isset($d['meta']) || !is_array($d['meta'])) { $d['meta'] = array(); }
+    foreach (db_default() as $k => $v) { if (!isset($d[$k]) || !is_array($d[$k])) { $d[$k] = $v; } }
     return $d;
 }
 /** Locked read-modify-write. $fn receives the db array by reference and may return a value. */
@@ -43,21 +59,69 @@ function db_update($fn) {
     return $ret;
 }
 
+/* ───────── helpers ───────── */
 function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null); }
 function new_id() { return function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)); }
-function find_user($db, $key, $val) { foreach ($db['users'] as $i => $u) { if ($u[$key] === $val) { return $i; } } return -1; }
+function find_by($list, $key, $val) { foreach ($list as $i => $u) { if (isset($u[$key]) && $u[$key] === $val) { return $i; } } return -1; }
+function find_user($db, $key, $val) { return find_by($db['users'], $key, $val); }
 function clean_email($e) { return strtolower(trim((string) $e)); }
-function clean_name($n) { return trim(preg_replace('/\s+/u', ' ', strip_tags((string) $n))); }
-
+function clean_text($s, $max) { return nc_cut(trim(preg_replace('/[ \t]+/u', ' ', strip_tags((string) $s))), $max); }
+function clean_name($n) { return clean_text(preg_replace('/\s+/u', ' ', (string) $n), 80); }
+function meta_get($db, $k, $default) { return isset($db['meta'][$k]) ? $db['meta'][$k] : $default; }
+function log_act(&$db, $actor, $action, $detail) {
+    $db['log'][] = array('at' => gmdate('c'), 'by' => $actor ? $actor['name'] : '-', 'action' => $action, 'detail' => clean_text($detail, 200));
+    if (count($db['log']) > 300) { array_splice($db['log'], 0, count($db['log']) - 300); }
+}
 function body() {
-    $raw = file_get_contents('php://input');
-    $d = json_decode($raw, true);
+    if (isset($_SERVER['CONTENT_LENGTH']) && (int) $_SERVER['CONTENT_LENGTH'] > 200000) { fail('request too large', 413); }
+    $d = json_decode(file_get_contents('php://input'), true);
     return is_array($d) ? $d : array();
 }
 function require_post() {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail('POST required', 405); }
     // Custom header + JSON body: a cross-site form cannot send these, which is our CSRF guard (with SameSite cookies).
     if (!isset($_SERVER['HTTP_X_NC']) || $_SERVER['HTTP_X_NC'] !== '1') { fail('bad request', 400); }
+}
+function check_password($p) { if (!is_string($p) || strlen($p) < 8) { fail('password must be at least 8 characters', 422); } if (strlen($p) > 200) { fail('password too long', 422); } }
+function admin_count($db) { $n = 0; foreach ($db['users'] as $u) { if ($u['role'] === 'admin') { $n++; } } return $n; }
+function user_name($db, $uid) { $i = find_user($db, 'id', $uid); return $i < 0 ? '-' : $db['users'][$i]['name']; }
+
+function rate_blocked(&$db, $key, $max, $window) {
+    $now = time();
+    foreach ($db['attempts'] as $k => $l) { if (!$l || max($l) < $now - 3600) { unset($db['attempts'][$k]); } }
+    $list = isset($db['attempts'][$key]) ? $db['attempts'][$key] : array();
+    $list = array_values(array_filter($list, function ($t) use ($now, $window) { return $t > $now - $window; }));
+    if ($list) { $db['attempts'][$key] = $list; } else { unset($db['attempts'][$key]); }
+    return count($list) >= $max;
+}
+function rate_hit(&$db, $key) { $db['attempts'][$key][] = time(); }
+function client_ip() { return md5(isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : ''); }
+
+/** Validate a record against a field schema. Returns the clean record or null (and sets $err). */
+function clean_fields($fields, $in, &$err) {
+    $o = array();
+    foreach ($fields as $k => $d) {
+        $type = $d[0];
+        $req = in_array('req', $d, true);
+        $v = array_key_exists($k, $in) ? $in[$k] : null;
+        if ($type === 'str') {
+            $v = clean_text($v === null ? '' : $v, $d[1]);
+            if ($req && $v === '') { $err = $k . ' is required'; return null; }
+        } elseif ($type === 'num') {
+            if (!is_numeric($v)) { if ($req) { $err = $k . ' must be a number'; return null; } $v = 0; }
+            $v = $v + 0;
+            if ($v < 0 || $v > 1000000000) { $err = $k . ' is out of range'; return null; }
+        } elseif ($type === 'bool') {
+            $v = (bool) $v;
+        } elseif ($type === 'date') {
+            $v = (string) $v;
+            if ($v !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) { $err = $k . ' must be YYYY-MM-DD'; return null; }
+        } elseif ($type === 'enum') {
+            if (!in_array($v, $d[1], true)) { $v = $d[1][0]; }
+        }
+        $o[$k] = $v;
+    }
+    return $o;
 }
 
 function start_session() {
@@ -78,9 +142,12 @@ function current_user() {
 }
 function need_user() { $u = current_user(); if (!$u) { fail('not signed in', 401); } return $u; }
 function need_admin() { $u = need_user(); if ($u['role'] !== 'admin') { fail('forbidden', 403); } return $u; }
-function admin_count($db) { $n = 0; foreach ($db['users'] as $u) { if ($u['role'] === 'admin') { $n++; } } return $n; }
-function check_password($p) { if (!is_string($p) || strlen($p) < 8) { fail('password must be at least 8 characters', 422); } if (strlen($p) > 200) { fail('password too long', 422); } }
+function can_touch($u, $item) { return $u['role'] === 'admin' || (isset($item['uid']) && $item['uid'] === $u['id']); }
+function res_name() { global $SCHEMA; $r = isset($_GET['res']) ? (string) $_GET['res'] : ''; if (!isset($SCHEMA[$r])) { fail('unknown resource', 404); } return $r; }
+function items_of($db, $res) { return isset($db['items'][$res]) && is_array($db['items'][$res]) ? $db['items'][$res] : array(); }
+function mine($db, $res, $uid) { return array_values(array_filter(items_of($db, $res), function ($i) use ($uid) { return $i['uid'] === $uid; })); }
 
+/* ───────── routing ───────── */
 $r = isset($_GET['r']) ? (string) $_GET['r'] : '';
 if (!is_file(NC_DATA . '/installed.lock')) {
     if ($r === 'status') { out(array('installed' => false)); }
@@ -89,10 +156,42 @@ if (!is_file(NC_DATA . '/installed.lock')) {
 start_session();
 
 switch ($r) {
+    /* ── public ── */
     case 'status':
         $db = db_read();
-        out(array('installed' => true, 'site' => isset($db['meta']['site']) ? $db['meta']['site'] : ''));
+        out(array('installed' => true, 'site' => meta_get($db, 'site', '')));
 
+    case 'public/settings':
+        $db = db_read();
+        out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', true), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', '')));
+
+    case 'public/lead':
+        require_post();
+        $b = body();
+        if (!empty($b['website'])) { out(array('ok' => true)); } // honeypot: bots fill the hidden field
+        $name = clean_name(isset($b['name']) ? $b['name'] : '');
+        $email = clean_email(isset($b['email']) ? $b['email'] : '');
+        $msg = clean_text(isset($b['message']) ? $b['message'] : '', 3000);
+        $service = clean_text(isset($b['service']) ? $b['service'] : '', 60);
+        $phone = clean_text(isset($b['phone']) ? $b['phone'] : '', 30);
+        if ($name === '') { fail('name is required', 422); }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
+        $ip = client_ip();
+        $lead = array('id' => new_id(), 'name' => $name, 'email' => $email, 'phone' => $phone, 'service' => $service, 'message' => $msg, 'status' => 'new', 'at' => gmdate('c'));
+        $res = db_update(function (&$db) use ($ip, $lead) {
+            if (rate_blocked($db, 'lead:' . $ip, 5, 3600)) { return array('blocked' => true); }
+            rate_hit($db, 'lead:' . $ip);
+            $db['leads'][] = $lead;
+            if (count($db['leads']) > 1000) { array_shift($db['leads']); }
+            return array('to' => meta_get($db, 'contactEmail', ''));
+        });
+        if (!empty($res['blocked'])) { fail('too many messages, try later', 429); }
+        if (!empty($res['to']) && function_exists('mail')) {
+            @mail($res['to'], '=?UTF-8?B?' . base64_encode('New request: ' . $name) . '?=', "Name: $name\nEmail: $email\nPhone: $phone\nService: $service\n\n$msg", "Content-Type: text/plain; charset=UTF-8\r\nReply-To: $email");
+        }
+        out(array('ok' => true), 201);
+
+    /* ── auth ── */
     case 'auth/me':
         $u = current_user();
         out(array('user' => $u ? public_user($u) : null));
@@ -102,22 +201,15 @@ switch ($r) {
         $b = body();
         $email = clean_email(isset($b['email']) ? $b['email'] : '');
         $pass = isset($b['password']) ? (string) $b['password'] : '';
-        $ip = md5(isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '');
-        $now = time();
-        $blocked = db_update(function (&$db) use ($ip, $now) {
-            $list = isset($db['attempts'][$ip]) ? $db['attempts'][$ip] : array();
-            $list = array_values(array_filter($list, function ($t) use ($now) { return $t > $now - 600; }));
-            $db['attempts'][$ip] = $list;
-            foreach ($db['attempts'] as $k => $v) { if (!$v) { unset($db['attempts'][$k]); } }
-            return count($list) >= 8;
-        });
+        $ip = client_ip();
+        $blocked = db_update(function (&$db) use ($ip) { return rate_blocked($db, 'login:' . $ip, 8, 600); });
         if ($blocked) { fail('too many attempts, try again in 10 minutes', 429); }
         $db = db_read();
         $i = find_user($db, 'email', $email);
-        $hash = $i >= 0 ? $db['users'][$i]['hash'] : '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb9rW';
+        $hash = $i >= 0 ? $db['users'][$i]['hash'] : NC_DUMMY_HASH;
         $ok = password_verify($pass, $hash) && $i >= 0;
         if (!$ok) {
-            db_update(function (&$db) use ($ip, $now) { $db['attempts'][$ip][] = $now; });
+            db_update(function (&$db) use ($ip) { rate_hit($db, 'login:' . $ip); });
             fail('wrong email or password', 401);
         }
         session_regenerate_id(true);
@@ -137,32 +229,203 @@ switch ($r) {
         if (!password_verify(isset($b['current']) ? (string) $b['current'] : '', $u['hash'])) { fail('current password is wrong', 403); }
         check_password(isset($b['new']) ? $b['new'] : '');
         $h = password_hash($b['new'], PASSWORD_DEFAULT);
-        db_update(function (&$db) use ($u, $h) { $i = find_user($db, 'id', $u['id']); if ($i >= 0) { $db['users'][$i]['hash'] = $h; } });
+        db_update(function (&$db) use ($u, $h) { $i = find_user($db, 'id', $u['id']); if ($i >= 0) { $db['users'][$i]['hash'] = $h; log_act($db, $u, 'password', 'changed own password'); } });
         out(array('ok' => true));
 
+    /* ── client data ── */
+    case 'me/data':
+        $u = need_user();
+        $db = db_read();
+        $o = array();
+        foreach (array_keys($SCHEMA) as $res) { $o[$res] = mine($db, $res, $u['id']); }
+        $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        out($o);
+
+    case 'svc/dns-save':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $types = array('A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA');
+        $type = isset($b['type']) ? (string) $b['type'] : '';
+        $value = clean_text(isset($b['value']) ? $b['value'] : '', 500);
+        $host = clean_text(isset($b['host']) ? $b['host'] : '', 253);
+        $ttl = isset($b['ttl']) ? (int) $b['ttl'] : 3600;
+        if (!in_array($type, $types, true)) { fail('invalid record type', 422); }
+        if ($value === '') { fail('value is required', 422); }
+        if (!in_array($ttl, array(300, 3600, 14400, 86400), true)) { $ttl = 3600; }
+        $rec = array('id' => new_id(), 'type' => $type, 'host' => $host === '' ? '@' : $host, 'value' => $value, 'ttl' => $ttl);
+        $res = db_update(function (&$db) use ($id, $u, $rec) {
+            $i = find_by(items_of($db, 'domains'), 'id', $id);
+            if ($i < 0) { return 'missing'; }
+            $d = $db['items']['domains'][$i];
+            if (!can_touch($u, $d)) { return 'forbidden'; }
+            $dns = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
+            if (count($dns) >= 100) { return 'limit'; }
+            $dns[] = $rec;
+            $db['items']['domains'][$i]['dns'] = $dns;
+            log_act($db, $u, 'dns-add', $d['name'] . ' ' . $rec['type'] . ' ' . $rec['host']);
+            return 'ok';
+        });
+        if ($res === 'missing') { fail('domain not found', 404); }
+        if ($res === 'forbidden') { fail('forbidden', 403); }
+        if ($res === 'limit') { fail('too many records', 409); }
+        out(array('ok' => true, 'record' => $rec), 201);
+
+    case 'svc/dns-delete':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $rid = isset($b['rid']) ? (string) $b['rid'] : '';
+        $res = db_update(function (&$db) use ($id, $rid, $u) {
+            $i = find_by(items_of($db, 'domains'), 'id', $id);
+            if ($i < 0) { return 'missing'; }
+            $d = $db['items']['domains'][$i];
+            if (!can_touch($u, $d)) { return 'forbidden'; }
+            $dns = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
+            $db['items']['domains'][$i]['dns'] = array_values(array_filter($dns, function ($x) use ($rid) { return $x['id'] !== $rid; }));
+            log_act($db, $u, 'dns-delete', $d['name']);
+            return 'ok';
+        });
+        if ($res === 'missing') { fail('domain not found', 404); }
+        if ($res === 'forbidden') { fail('forbidden', 403); }
+        out(array('ok' => true));
+
+    case 'svc/server-power':
+    case 'svc/server-snapshot':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $power = ($r === 'svc/server-power');
+        $on = !empty($b['on']);
+        $res = db_update(function (&$db) use ($id, $u, $power, $on) {
+            $i = find_by(items_of($db, 'servers'), 'id', $id);
+            if ($i < 0) { return 'missing'; }
+            $s = $db['items']['servers'][$i];
+            if (!can_touch($u, $s)) { return 'forbidden'; }
+            if ($power) {
+                if ($s['status'] === 'pending') { return 'pending'; }
+                $db['items']['servers'][$i]['status'] = $on ? 'active' : 'stopped';
+                $db['items']['servers'][$i]['cpu'] = $on ? 8 : 0;
+                $db['items']['servers'][$i]['ram'] = $on ? 22 : 0;
+                log_act($db, $u, $on ? 'server-start' : 'server-stop', $s['name']);
+            } else {
+                $n = isset($s['snapshots']) ? (int) $s['snapshots'] : 0;
+                $db['items']['servers'][$i]['snapshots'] = min(50, $n + 1);
+                log_act($db, $u, 'server-snapshot', $s['name']);
+            }
+            return 'ok';
+        });
+        if ($res === 'missing') { fail('server not found', 404); }
+        if ($res === 'forbidden') { fail('forbidden', 403); }
+        if ($res === 'pending') { fail('server is still being set up', 409); }
+        out(array('ok' => true));
+
+    /* ── tickets (client + admin) ── */
+    case 'tickets/create':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $subject = clean_text(isset($b['subject']) ? $b['subject'] : '', 120);
+        $text = clean_text(isset($b['text']) ? $b['text'] : '', 4000);
+        if ($subject === '' || $text === '') { fail('subject and message are required', 422); }
+        $now = gmdate('c');
+        $t = array('id' => new_id(), 'uid' => $u['id'], 'subject' => $subject, 'status' => 'open', 'updated' => $now, 'created' => $now,
+            'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
+        db_update(function (&$db) use ($t, $u) { $db['tickets'][] = $t; log_act($db, $u, 'ticket-create', $t['subject']); });
+        out(array('ticket' => $t), 201);
+
+    case 'tickets/reply':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $text = clean_text(isset($b['text']) ? $b['text'] : '', 4000);
+        if ($text === '') { fail('message is required', 422); }
+        $res = db_update(function (&$db) use ($id, $text, $u) {
+            $i = find_by($db['tickets'], 'id', $id);
+            if ($i < 0) { return 'missing'; }
+            $t = $db['tickets'][$i];
+            if (!can_touch($u, $t)) { return 'forbidden'; }
+            $admin = $u['role'] === 'admin' && $t['uid'] !== $u['id'];
+            $now = gmdate('c');
+            $db['tickets'][$i]['messages'][] = array('from' => $admin ? 'admin' : 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now);
+            $db['tickets'][$i]['status'] = $admin ? 'answered' : 'open';
+            $db['tickets'][$i]['updated'] = $now;
+            log_act($db, $u, 'ticket-reply', $t['subject']);
+            return 'ok';
+        });
+        if ($res === 'missing') { fail('ticket not found', 404); }
+        if ($res === 'forbidden') { fail('forbidden', 403); }
+        out(array('ok' => true));
+
+    case 'tickets/status':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $st = isset($b['status']) ? (string) $b['status'] : '';
+        if (!in_array($st, array('open', 'answered', 'closed'), true)) { fail('invalid status', 422); }
+        $res = db_update(function (&$db) use ($id, $st, $u) {
+            $i = find_by($db['tickets'], 'id', $id);
+            if ($i < 0) { return 'missing'; }
+            if (!can_touch($u, $db['tickets'][$i])) { return 'forbidden'; }
+            if ($u['role'] !== 'admin' && $st === 'answered') { return 'forbidden'; }
+            $db['tickets'][$i]['status'] = $st;
+            $db['tickets'][$i]['updated'] = gmdate('c');
+            log_act($db, $u, 'ticket-status', $db['tickets'][$i]['subject'] . ' -> ' . $st);
+            return 'ok';
+        });
+        if ($res === 'missing') { fail('ticket not found', 404); }
+        if ($res === 'forbidden') { fail('forbidden', 403); }
+        out(array('ok' => true));
+
+    /* ── admin: overview ── */
     case 'admin/overview':
         need_admin();
         $db = db_read();
         $admins = admin_count($db);
-        out(array('users' => count($db['users']), 'admins' => $admins, 'clients' => count($db['users']) - $admins, 'site' => isset($db['meta']['site']) ? $db['meta']['site'] : ''));
+        $active = 0; $counts = array();
+        foreach (array_keys($SCHEMA) as $res) {
+            $list = items_of($db, $res);
+            $counts[$res] = count($list);
+            if ($res !== 'invoices') { foreach ($list as $it) { if ($it['status'] === 'active') { $active++; } } }
+        }
+        $paid = 0; $due = 0;
+        foreach (items_of($db, 'invoices') as $inv) { if ($inv['status'] === 'paid') { $paid += $inv['amount']; } elseif ($inv['status'] === 'due') { $due += $inv['amount']; } }
+        $open = 0; foreach ($db['tickets'] as $t) { if ($t['status'] === 'open') { $open++; } } // open = waiting for an admin reply
+        $newLeads = 0; foreach ($db['leads'] as $l) { if ($l['status'] === 'new') { $newLeads++; } }
+        $soon = date('Y-m-d', time() + 30 * 86400);
+        $expiring = array();
+        foreach (items_of($db, 'domains') as $d) {
+            if ($d['status'] === 'expiring' || ($d['expires'] !== '' && $d['expires'] <= $soon)) { $expiring[] = array('id' => $d['id'], 'name' => $d['name'], 'expires' => $d['expires'], 'owner' => user_name($db, $d['uid'])); }
+        }
+        out(array('users' => count($db['users']), 'admins' => $admins, 'clients' => count($db['users']) - $admins, 'site' => meta_get($db, 'site', ''),
+            'counts' => $counts, 'activeServices' => $active, 'paid' => $paid, 'due' => $due, 'openTickets' => $open, 'newLeads' => $newLeads,
+            'expiring' => array_slice($expiring, 0, 6), 'recent' => array_slice(array_reverse($db['log']), 0, 8)));
 
+    /* ── admin: users ── */
     case 'admin/users':
         need_admin();
         $db = db_read();
         if ($_SERVER['REQUEST_METHOD'] === 'GET') { out(array('users' => array_map('public_user', $db['users']))); }
+        $me = need_admin();
         require_post();
         $b = body();
         $name = clean_name(isset($b['name']) ? $b['name'] : '');
         $email = clean_email(isset($b['email']) ? $b['email'] : '');
         $role = (isset($b['role']) && $b['role'] === 'admin') ? 'admin' : 'client';
-        if ($name === '' || mb_strlen($name) > 80) { fail('name is required', 422); }
+        if ($name === '') { fail('name is required', 422); }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         check_password(isset($b['password']) ? $b['password'] : '');
         $hash = password_hash($b['password'], PASSWORD_DEFAULT);
         $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => $role, 'hash' => $hash, 'created' => gmdate('c'));
-        $dup = db_update(function (&$db) use ($user) {
+        $dup = db_update(function (&$db) use ($user, $me) {
             if (find_user($db, 'email', $user['email']) >= 0) { return true; }
             $db['users'][] = $user;
+            log_act($db, $me, 'user-create', $user['email'] . ' (' . $user['role'] . ')');
             return false;
         });
         if ($dup) { fail('this email is already registered', 409); }
@@ -184,6 +447,7 @@ switch ($r) {
             if ($name !== null && $name !== '') { $db['users'][$i]['name'] = $name; }
             if ($role !== null) { $db['users'][$i]['role'] = $role; }
             if ($hash !== null) { $db['users'][$i]['hash'] = $hash; }
+            log_act($db, $me, 'user-update', $db['users'][$i]['email']);
             return 'ok';
         });
         if ($res === 'missing') { fail('user not found', 404); }
@@ -196,16 +460,151 @@ switch ($r) {
         $b = body();
         $id = isset($b['id']) ? (string) $b['id'] : '';
         if ($id === $me['id']) { fail('you cannot delete your own account', 409); }
-        $res = db_update(function (&$db) use ($id) {
+        $res = db_update(function (&$db) use ($id, $me, $SCHEMA) {
             $i = find_user($db, 'id', $id);
             if ($i < 0) { return 'missing'; }
             if ($db['users'][$i]['role'] === 'admin' && admin_count($db) <= 1) { return 'last-admin'; }
+            $email = $db['users'][$i]['email'];
             array_splice($db['users'], $i, 1);
+            foreach (array_keys($SCHEMA) as $res) { $db['items'][$res] = array_values(array_filter(items_of($db, $res), function ($it) use ($id) { return $it['uid'] !== $id; })); }
+            $db['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($id) { return $t['uid'] !== $id; }));
+            log_act($db, $me, 'user-delete', $email . ' (and their services)');
             return 'ok';
         });
         if ($res === 'missing') { fail('user not found', 404); }
         if ($res === 'last-admin') { fail('there must be at least one admin', 409); }
         out(array('ok' => true));
+
+    /* ── admin: client services ── */
+    case 'admin/items':
+        need_admin();
+        $res = res_name();
+        $db = db_read();
+        out(array('items' => items_of($db, $res)));
+
+    case 'admin/item-save':
+        $me = need_admin();
+        require_post();
+        $res = res_name();
+        $b = body();
+        $in = (isset($b['item']) && is_array($b['item'])) ? $b['item'] : array();
+        $err = '';
+        $clean = clean_fields($SCHEMA[$res], $in, $err);
+        if ($clean === null) { fail($err, 422); }
+        $uid = isset($in['uid']) ? (string) $in['uid'] : '';
+        $id = isset($in['id']) ? (string) $in['id'] : '';
+        $saved = db_update(function (&$db) use ($res, $clean, $uid, $id, $me) {
+            if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            if (!isset($db['items'][$res]) || !is_array($db['items'][$res])) { $db['items'][$res] = array(); }
+            $i = $id === '' ? -1 : find_by($db['items'][$res], 'id', $id);
+            if ($id !== '' && $i < 0) { return array('err' => 'item not found'); }
+            if ($i >= 0) {
+                $item = array_merge($db['items'][$res][$i], $clean, array('uid' => $uid));
+                $db['items'][$res][$i] = $item;
+                log_act($db, $me, $res . '-update', user_name($db, $uid));
+            } else {
+                $item = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c')), $clean);
+                if ($res === 'domains') { $item['dns'] = array(); }
+                if ($res === 'servers') { $item['snapshots'] = 0; }
+                if ($res === 'invoices') {
+                    $seq = (int) meta_get($db, 'invoiceSeq', 1000) + 1;
+                    $db['meta']['invoiceSeq'] = $seq;
+                    $item['number'] = 'INV-' . $seq;
+                    if ($item['date'] === '') { $item['date'] = gmdate('Y-m-d'); }
+                }
+                $db['items'][$res][] = $item;
+                log_act($db, $me, $res . '-create', user_name($db, $uid));
+            }
+            return array('item' => $item);
+        });
+        if (isset($saved['err'])) { fail($saved['err'], 422); }
+        out($saved);
+
+    case 'admin/item-delete':
+        $me = need_admin();
+        require_post();
+        $res = res_name();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $ok = db_update(function (&$db) use ($res, $id, $me) {
+            $i = find_by(items_of($db, $res), 'id', $id);
+            if ($i < 0) { return false; }
+            array_splice($db['items'][$res], $i, 1);
+            log_act($db, $me, $res . '-delete', $id);
+            return true;
+        });
+        if (!$ok) { fail('item not found', 404); }
+        out(array('ok' => true));
+
+    /* ── admin: tickets, leads ── */
+    case 'admin/tickets':
+        need_admin();
+        $db = db_read();
+        $list = array_map(function ($t) use ($db) { $t['owner'] = user_name($db, $t['uid']); return $t; }, $db['tickets']);
+        usort($list, function ($a, $b) { return strcmp($b['updated'], $a['updated']); });
+        out(array('tickets' => $list));
+
+    case 'admin/leads':
+        need_admin();
+        $db = db_read();
+        out(array('leads' => array_reverse($db['leads'])));
+
+    case 'admin/lead-update':
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $st = isset($b['status']) ? (string) $b['status'] : '';
+        if (!in_array($st, array('new', 'contacted', 'closed'), true)) { fail('invalid status', 422); }
+        $ok = db_update(function (&$db) use ($id, $st, $me) {
+            $i = find_by($db['leads'], 'id', $id);
+            if ($i < 0) { return false; }
+            $db['leads'][$i]['status'] = $st;
+            log_act($db, $me, 'lead-status', $db['leads'][$i]['email'] . ' -> ' . $st);
+            return true;
+        });
+        if (!$ok) { fail('lead not found', 404); }
+        out(array('ok' => true));
+
+    case 'admin/lead-delete':
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $ok = db_update(function (&$db) use ($id, $me) {
+            $i = find_by($db['leads'], 'id', $id);
+            if ($i < 0) { return false; }
+            array_splice($db['leads'], $i, 1);
+            log_act($db, $me, 'lead-delete', $id);
+            return true;
+        });
+        if (!$ok) { fail('lead not found', 404); }
+        out(array('ok' => true));
+
+    /* ── admin: settings + activity ── */
+    case 'admin/settings':
+        $me = need_admin();
+        $db = db_read();
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            out(array('site' => meta_get($db, 'site', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', true), 'currency' => meta_get($db, 'currency', ''), 'version' => meta_get($db, 'version', '')));
+        }
+        require_post();
+        $b = body();
+        $site = clean_text(isset($b['site']) ? $b['site'] : '', 80);
+        $ce = clean_email(isset($b['contactEmail']) ? $b['contactEmail'] : '');
+        if ($ce !== '' && !filter_var($ce, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
+        $cur = clean_text(isset($b['currency']) ? $b['currency'] : '', 8);
+        $ph = !empty($b['placeholder']);
+        db_update(function (&$db) use ($site, $ce, $cur, $ph, $me) {
+            $db['meta']['site'] = $site; $db['meta']['contactEmail'] = $ce; $db['meta']['currency'] = $cur; $db['meta']['placeholder'] = $ph;
+            log_act($db, $me, 'settings', 'updated site settings');
+        });
+        out(array('ok' => true));
+
+    case 'admin/activity':
+        need_admin();
+        $db = db_read();
+        out(array('log' => array_slice(array_reverse($db['log']), 0, 100)));
 
     default:
         fail('not found', 404);

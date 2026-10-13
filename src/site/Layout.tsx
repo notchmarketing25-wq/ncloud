@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
+import { useSite } from './settings';
 
 export function Logo({ dark = false }: { dark?: boolean }) {
   return (
@@ -25,6 +26,7 @@ export function LangToggle() {
 export default function Layout() {
   const { t } = useI18n();
   const { user } = useAuth();
+  const { settings } = useSite();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -58,7 +60,7 @@ export default function Layout() {
 
   return (
     <>
-      <div className="announce"><span className="dot pulse" /> {t('كل الأرقام والأسعار في الموقع تجريبية لحد الإطلاق', 'All numbers and prices on this site are placeholders until launch')}</div>
+      {settings.placeholder && <div className="announce"><span className="dot pulse" /> {t('كل الأرقام والأسعار في الموقع تجريبية لحد الإطلاق', 'All numbers and prices on this site are placeholders until launch')}</div>}
       <header className={`header${scrolled ? ' is-scrolled' : ''}`}>
         <div className="container header-in">
           <Logo />
@@ -93,6 +95,7 @@ export default function Layout() {
 
 function Footer() {
   const { t } = useI18n();
+  const { settings } = useSite();
   return (
     <footer className="footer on-dark">
       <div className="container">
@@ -107,7 +110,7 @@ function Footer() {
           <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link></div>
         </div>
         <div className="footer-word" aria-hidden>NOTCH</div>
-        <div className="footer-bottom latin"><span>© {new Date().getFullYear()} NOTCH CLOUD SERVICES</span><span>PLACEHOLDER CONTENT</span></div>
+        <div className="footer-bottom latin"><span>© {new Date().getFullYear()} {settings.site ? settings.site.toUpperCase() : 'NOTCH CLOUD SERVICES'}</span>{settings.placeholder && <span>PLACEHOLDER CONTENT</span>}</div>
       </div>
     </footer>
   );

@@ -1,13 +1,13 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { CURRENCY } from '../data/content';
+import { useState, type FormEvent } from 'react';
+import { Link, Navigate, NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { ApiError } from '../lib/api';
 import { Ltr, useI18n } from '../i18n';
+import { ApiError } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { Ph } from '../site/parts';
-import { domains, hosting, tickets, type Status } from './data';
-import { useDns, useInvoices, useMailboxes, useServers, type DnsRec } from './store';
+import { useCurrency } from '../site/settings';
+import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
+import { PortalDataProvider, usePortal } from './PortalData';
 
 /* ───────── Login (demo only: any input signs in) ───────── */
 export function Login() {
@@ -94,46 +94,34 @@ export function PortalLayout() {
           <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
           <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>
         </div>
-        <div className="portal-body"><Outlet /></div>
+        <div className="portal-body"><PortalDataProvider><Outlet /></PortalDataProvider></div>
       </div>
     </div>
   );
 }
 
-/* ───────── Helpers ───────── */
-function Page({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  return <><div className="page-head"><h1>{title}</h1>{action}</div>{children}</>;
-}
-function StatusTag({ s }: { s: Status }) {
-  const { t } = useI18n();
-  const map: Record<Status, [string, string, string]> = {
-    active: ['ok', 'نشط', 'Active'], pending: ['warn', 'قيد التفعيل', 'Pending'], expiring: ['bad', 'قرب ينتهي', 'Expiring'], stopped: ['', 'متوقف', 'Stopped'],
-  };
-  const [cls, ar, en] = map[s];
-  return <span className={`tag ${cls}`}>{s === 'active' && <i className="dot" />}{t(ar, en)}</span>;
-}
-function Table({ head, children }: { head: string[]; children: ReactNode }) {
-  return (
-    <div className="table-wrap"><table className="tbl"><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
-  );
-}
-function Meter({ value, tone }: { value: number; tone?: 'warn' }) {
-  return <div className={`meter${tone ? ' ' + tone : ''}`} role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(100, value)}%` }} /></div>;
-}
 
 /* ───────── Pages ───────── */
+function Loading() {
+  const { t } = useI18n();
+  const { error } = usePortal();
+  return error ? <div className="form-error">{error}</div> : <p className="muted">{t('جاري التحميل…', 'Loading…')}</p>;
+}
+function Empty({ children }: { children: string }) { return <div className="empty-note nt-hatch">{children}</div>; }
+
 export function Overview() {
-  const { t, L } = useI18n();
-  const [invoices] = useInvoices();
-  const [servers] = useServers();
-  const [mailboxes] = useMailboxes();
-  const due = invoices.filter((i) => i.status === 'due');
+  const { t } = useI18n();
+  const cur = useCurrency();
+  const { data } = usePortal();
+  if (!data) return <Loading />;
+  const due = data.invoices.filter((i) => i.status === 'due');
   const kpis = [
-    { to: '/portal/domains', label: t('دومينات', 'Domains'), v: domains.length },
-    { to: '/portal/email', label: t('إيميلات', 'Mailboxes'), v: mailboxes.length },
-    { to: '/portal/hosting', label: t('استضافة', 'Hosting'), v: hosting.length },
-    { to: '/portal/servers', label: t('سيرفرات', 'Servers'), v: servers.length },
+    { to: '/portal/domains', label: t('دومينات', 'Domains'), v: data.domains.length },
+    { to: '/portal/email', label: t('إيميلات', 'Mailboxes'), v: data.mailboxes.length },
+    { to: '/portal/hosting', label: t('استضافة', 'Hosting'), v: data.hosting.length },
+    { to: '/portal/servers', label: t('سيرفرات', 'Servers'), v: data.servers.length },
   ];
+  const attention = data.domains.filter((d) => d.status === 'expiring').length + due.length + data.servers.filter((s) => s.status === 'stopped').length;
   return (
     <Page title={t('نظرة عامة', 'Overview')}>
       <div className="grid g4 kpis">
@@ -141,15 +129,15 @@ export function Overview() {
       </div>
       <div className="grid g2" style={{ marginTop: 16 }}>
         <div className="card"><h3>{t('محتاج انتباه', 'Needs attention')}</h3>
+          {attention === 0 && <p className="muted">{t('كل حاجة تمام.', 'Everything looks good.')}</p>}
           <ul className="attn">
-            {domains.filter((d) => d.status === 'expiring').map((d) => <li key={d.name}><i className="dot bad" /> <Ltr>{d.name}</Ltr> {t('بينتهي في', 'expires')} <Ltr>{d.expires}</Ltr></li>)}
-            {due.map((i) => <li key={i.id}><i className="dot bad" /> {t('فاتورة مستحقة', 'Invoice due')}: <Ltr>{i.id}</Ltr> · {L(i.item)}</li>)}
-            {servers.filter((s) => s.status === 'stopped').map((s) => <li key={s.name}><i className="dot idle" /> <Ltr>{s.name}</Ltr> {t('متوقف', 'is stopped')}</li>)}
+            {data.domains.filter((d) => d.status === 'expiring').map((d) => <li key={d.id}><i className="dot bad" /> <Ltr>{d.name}</Ltr> {t('بينتهي في', 'expires')} <Ltr>{d.expires}</Ltr></li>)}
+            {due.map((i) => <li key={i.id}><i className="dot bad" /> {t('فاتورة مستحقة', 'Invoice due')}: <Ltr>{i.number}</Ltr> · {i.item} · <Ltr>{i.amount} {cur}</Ltr></li>)}
+            {data.servers.filter((s) => s.status === 'stopped').map((s) => <li key={s.id}><i className="dot idle" /> <Ltr>{s.name}</Ltr> {t('متوقف', 'is stopped')}</li>)}
           </ul>
         </div>
         <div className="card"><h3>{t('حالة الخدمات', 'Service health')}</h3>
           <p className="status-line-d"><i className="dot pulse" /> <span className="latin">ALL SYSTEMS OPERATIONAL</span></p>
-          <p className="muted">{t('آخر فحص: دلوقتي (تجريبي)', 'Last check: just now (demo)')}</p>
         </div>
       </div>
     </Page>
@@ -158,169 +146,226 @@ export function Overview() {
 
 export function PortalDomains() {
   const { t } = useI18n();
-  const [sel, setSel] = useState(domains[0].name);
-  const [all, setAll] = useDns();
-  const records = all[sel] ?? [];
-  const [form, setForm] = useState<DnsRec>({ type: 'A', host: '', value: '', ttl: 3600 });
-  const add = (e: FormEvent) => {
+  const { data, addDns, delDns } = usePortal();
+  const [sel, setSel] = useState<string | null>(null);
+  const [form, setForm] = useState({ type: 'A', host: '', value: '', ttl: 3600 });
+  const [err, setErr] = useState('');
+  if (!data) return <Loading />;
+  const current = data.domains.find((d) => d.id === sel) ?? data.domains[0];
+  const add = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.value.trim()) return;
-    setAll((p) => ({ ...p, [sel]: [...(p[sel] ?? []), { ...form, host: form.host.trim() || '@', value: form.value.trim() }] }));
-    setForm({ ...form, host: '', value: '' });
+    if (!current || !form.value.trim()) return;
+    setErr('');
+    try { await addDns(current.id, { ...form, host: form.host.trim() || '@', value: form.value.trim() }); setForm({ ...form, host: '', value: '' }); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); }
   };
-  const remove = (i: number) => setAll((p) => ({ ...p, [sel]: (p[sel] ?? []).filter((_, j) => j !== i) }));
   return (
-    <Page title={t('الدومينات', 'Domains')} action={<Link to="/domains" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
-      <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
-        {domains.map((d) => (
-          <tr key={d.name} className={d.name === sel ? 'is-sel' : ''}>
-            <td><Ltr>{d.name}</Ltr></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires}</Ltr></td>
-            <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
-            <td><button className="btn btn-ghost btn-sm" onClick={() => setSel(d.name)}>{t('إدارة DNS', 'Manage DNS')}</button></td>
-          </tr>
-        ))}
-      </Table>
-      <h2 className="sub">{t('سجلات DNS', 'DNS records')} · <Ltr>{sel}</Ltr></h2>
-      <div className="dns">
-        <div className="dns-row dns-head"><span>TYPE</span><span>HOST</span><span>VALUE</span><span>TTL</span><span /></div>
-        {records.length === 0 && <div className="dns-empty nt-hatch-dark">{t('مفيش سجلات لسه', 'No records yet')}</div>}
-        {records.map((r, i) => (
-          <div className="dns-row" key={i}>
-            <span>{r.type}</span><span>{r.host}</span><span>{r.value}</span><span>{r.ttl}</span>
-            <button className="dns-del" onClick={() => remove(i)} aria-label={t('حذف السجل', 'Delete record')}>×</button>
-          </div>
-        ))}
-      </div>
-      <form className="dns-form" onSubmit={add}>
-        <select className="select" aria-label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-          {['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS'].map((x) => <option key={x}>{x}</option>)}
-        </select>
-        <input className="input latin" aria-label="Host" placeholder="@ / www" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
-        <input className="input latin" aria-label="Value" placeholder={t('القيمة', 'Value')} required value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
-        <select className="select" aria-label="TTL" value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })}>
-          {[300, 3600, 14400, 86400].map((x) => <option key={x}>{x}</option>)}
-        </select>
-        <button className="btn btn-primary" type="submit">{t('إضافة', 'Add')}</button>
-      </form>
+    <Page title={t('الدومينات', 'Domains')} action={<Link to="/portal/support?new=domain" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
+      {data.domains.length === 0 ? <Empty>{t('مفيش دومينات لسه. اطلب دومين من الدعم.', 'No domains yet. Request one from support.')}</Empty> : (
+        <>
+          <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
+            {data.domains.map((d) => (
+              <tr key={d.id} className={d.id === current?.id ? 'is-sel' : ''}>
+                <td><Ltr>{d.name}</Ltr></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires || '-'}</Ltr></td>
+                <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
+                <td><button className="btn btn-ghost btn-sm" onClick={() => setSel(d.id)}>{t('إدارة DNS', 'Manage DNS')}</button></td>
+              </tr>
+            ))}
+          </Table>
+          {current && (
+            <>
+              <h2 className="sub">{t('سجلات DNS', 'DNS records')} · <Ltr>{current.name}</Ltr></h2>
+              <div className="dns">
+                <div className="dns-row dns-head"><span>TYPE</span><span>HOST</span><span>VALUE</span><span>TTL</span><span /></div>
+                {current.dns.length === 0 && <div className="dns-empty nt-hatch-dark">{t('مفيش سجلات لسه', 'No records yet')}</div>}
+                {current.dns.map((r) => (
+                  <div className="dns-row" key={r.id}>
+                    <span>{r.type}</span><span>{r.host}</span><span>{r.value}</span><span>{r.ttl}</span>
+                    <button className="dns-del" onClick={() => void delDns(current.id, r.id)} aria-label={t('حذف السجل', 'Delete record')}>×</button>
+                  </div>
+                ))}
+              </div>
+              {err && <div className="form-error" style={{ marginTop: 10 }}>{err}</div>}
+              <form className="dns-form" onSubmit={add}>
+                <select className="select" aria-label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((x) => <option key={x}>{x}</option>)}</select>
+                <input className="input latin" aria-label="Host" placeholder="@ / www" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+                <input className="input latin" aria-label="Value" placeholder={t('القيمة', 'Value')} required value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+                <select className="select" aria-label="TTL" value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })}>{[300, 3600, 14400, 86400].map((x) => <option key={x}>{x}</option>)}</select>
+                <button className="btn btn-primary" type="submit">{t('إضافة', 'Add')}</button>
+              </form>
+            </>
+          )}
+        </>
+      )}
     </Page>
   );
 }
 
 export function PortalEmail() {
   const { t } = useI18n();
-  const [boxes, setBoxes] = useMailboxes();
+  const { data, demo } = usePortal();
   const [adding, setAdding] = useState(false);
   const [local, setLocal] = useState('');
-  const [dom, setDom] = useState(domains[0].name);
   const [quota, setQuota] = useState(5);
-  const address = `${local.trim().toLowerCase()}@${dom}`;
-  const exists = boxes.some((b) => b.address === address);
-  const create = (e: FormEvent) => {
-    e.preventDefault();
-    if (!local.trim() || exists) return;
-    setBoxes((p) => [...p, { address, usedGb: 0, quotaGb: quota, status: 'active' }]);
-    setLocal(''); setAdding(false);
-  };
+  if (!data) return <Loading />;
+  const domain = data.domains[0]?.name ?? 'example.com';
+  const create = (e: FormEvent) => { e.preventDefault(); if (demo && local) { demo.addMailbox(`${local.toLowerCase()}@${domain}`, quota); setLocal(''); setAdding(false); } };
   return (
-    <Page title={t('الإيميلات', 'Email')} action={<button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>{adding ? t('إلغاء', 'Cancel') : t('+ صندوق جديد', '+ New mailbox')}</button>}>
-      {adding && (
-        <form className="card inline-form" onSubmit={create}>
+    <Page title={t('الإيميلات', 'Email')} action={demo
+      ? <button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>{adding ? t('إلغاء', 'Cancel') : t('+ صندوق جديد', '+ New mailbox')}</button>
+      : <Link to="/portal/support?new=mailbox" className="btn btn-primary btn-sm">{t('+ اطلب صندوق جديد', '+ Request mailbox')}</Link>}>
+      {adding && demo && (
+        <form className="card inline-form" onSubmit={create} style={{ gridTemplateColumns: '1fr 120px auto' }}>
           <div className="field"><label htmlFor="ml">{t('الاسم', 'Name')}</label><input id="ml" className="input latin" value={local} onChange={(e) => setLocal(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))} placeholder="support" required /></div>
-          <div className="field"><label htmlFor="md">{t('الدومين', 'Domain')}</label><select id="md" className="select latin" value={dom} onChange={(e) => setDom(e.target.value)}>{domains.map((d) => <option key={d.name}>{d.name}</option>)}</select></div>
           <div className="field"><label htmlFor="mq">{t('المساحة', 'Quota')}</label><select id="mq" className="select" value={quota} onChange={(e) => setQuota(Number(e.target.value))}>{[5, 30, 100].map((q) => <option key={q} value={q}>{q} GB</option>)}</select></div>
-          <button className="btn btn-accent" type="submit" disabled={!local || exists}>{exists ? t('موجود بالفعل', 'Already exists') : t('إنشاء', 'Create')}</button>
+          <button className="btn btn-accent" type="submit">{t('إنشاء', 'Create')}</button>
         </form>
       )}
-      <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']}>
-        {boxes.map((m) => (
-          <tr key={m.address}>
-            <td><Ltr>{m.address}</Ltr></td>
-            <td className="usage"><Meter value={(m.usedGb / m.quotaGb) * 100} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
-            <td><StatusTag s={m.status} /></td>
-            <td><button className="btn btn-ghost btn-sm" onClick={() => setBoxes((p) => p.filter((b) => b.address !== m.address))}>{t('حذف', 'Delete')}</button></td>
-          </tr>
-        ))}
-      </Table>
+      {data.mailboxes.length === 0 ? <Empty>{t('مفيش صناديق إيميل لسه.', 'No mailboxes yet.')}</Empty> : (
+        <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']}>
+          {data.mailboxes.map((m) => (
+            <tr key={m.id}>
+              <td><Ltr>{m.address}</Ltr></td>
+              <td className="usage"><Meter value={pct(m.usedGb, m.quotaGb)} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
+              <td><StatusTag s={m.status} /></td>
+              <td>{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
     </Page>
   );
 }
 
 export function PortalHosting() {
   const { t } = useI18n();
+  const { data } = usePortal();
+  if (!data) return <Loading />;
   return (
-    <Page title={t('الاستضافة', 'Hosting')}>
-      <Table head={[t('الخطة', 'Plan'), t('الدومين', 'Domain'), t('المساحة', 'Disk'), t('الحالة', 'Status'), '']}>
-        {hosting.map((h) => (
-          <tr key={h.domain}>
-            <td>{h.plan}</td><td><Ltr>{h.domain}</Ltr></td>
-            <td className="usage"><Meter value={(h.usedGb / h.diskGb) * 100} /><span className="latin">{h.usedGb} / {h.diskGb} GB</span></td>
-            <td><StatusTag s={h.status} /></td>
-            <td><button className="btn btn-ghost btn-sm">{t('فتح اللوحة', 'Open panel')}</button></td>
-          </tr>
-        ))}
-      </Table>
+    <Page title={t('الاستضافة', 'Hosting')} action={<Link to="/portal/support?new=hosting" className="btn btn-primary btn-sm">{t('+ اطلب استضافة', '+ Request hosting')}</Link>}>
+      {data.hosting.length === 0 ? <Empty>{t('مفيش خطط استضافة لسه.', 'No hosting plans yet.')}</Empty> : (
+        <Table head={[t('الخطة', 'Plan'), t('الدومين', 'Domain'), t('المساحة', 'Disk'), t('الحالة', 'Status')]}>
+          {data.hosting.map((h) => (
+            <tr key={h.id}>
+              <td>{h.plan}</td><td><Ltr>{h.domain || '-'}</Ltr></td>
+              <td className="usage"><Meter value={pct(h.usedGb, h.diskGb)} /><span className="latin">{h.usedGb} / {h.diskGb} GB</span></td>
+              <td><StatusTag s={h.status} /></td>
+            </tr>
+          ))}
+        </Table>
+      )}
     </Page>
   );
 }
 
 export function PortalServers() {
   const { t } = useI18n();
-  const [list, setList] = useServers();
-  const patch = (name: string, fn: (s: (typeof list)[number]) => (typeof list)[number]) => setList((p) => p.map((s) => (s.name === name ? fn(s) : s)));
-  const toggle = (name: string) => patch(name, (s) => (s.status === 'stopped' ? { ...s, status: 'active', cpu: 8, ram: 22 } : { ...s, status: 'stopped', cpu: 0, ram: 0 }));
-  const create = () => setList((p) => [...p, { name: `vps-${String(p.length + 1).padStart(2, '0')}`, ip: `203.0.113.${30 + p.length}`, spec: '1 vCPU · 2 GB · 40 GB', cpu: 3, ram: 14, status: 'active', snapshots: 0 }]);
+  const { data, power, snapshot, demo } = usePortal();
+  if (!data) return <Loading />;
   return (
-    <Page title={t('السيرفرات', 'Servers')} action={<button className="btn btn-primary btn-sm" onClick={create}>{t('+ سيرفر جديد', '+ New server')}</button>}>
-      <div className="grid g3">
-        {list.map((s) => (
-          <div className="card" key={s.name}>
-            <div className="srv-head"><h3 className="latin">{s.name}</h3><StatusTag s={s.status} /></div>
-            <p className="latin muted">{s.ip}</p><p className="latin spec">{s.spec}</p>
-            <div className="srv-m"><span className="nt-mono">CPU</span><Meter value={s.cpu} /><span className="latin">{s.cpu}%</span></div>
-            <div className="srv-m"><span className="nt-mono">RAM</span><Meter value={s.ram} tone={s.ram > 80 ? 'warn' : undefined} /><span className="latin">{s.ram}%</span></div>
-            <div className="srv-btns">
-              <button className="btn btn-ghost btn-sm" onClick={() => toggle(s.name)}>{s.status === 'stopped' ? t('تشغيل', 'Start') : t('إيقاف', 'Stop')}</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => patch(s.name, (x) => ({ ...x, snapshots: x.snapshots + 1 }))}>Snapshot{s.snapshots > 0 && <span className="latin"> ({s.snapshots})</span>}</button>
+    <Page title={t('السيرفرات', 'Servers')} action={demo
+      ? <button className="btn btn-primary btn-sm" onClick={demo.addServer}>{t('+ سيرفر جديد', '+ New server')}</button>
+      : <Link to="/portal/support?new=server" className="btn btn-primary btn-sm">{t('+ اطلب سيرفر', '+ Request server')}</Link>}>
+      {data.servers.length === 0 ? <Empty>{t('مفيش سيرفرات لسه.', 'No servers yet.')}</Empty> : (
+        <div className="grid g3">
+          {data.servers.map((s) => (
+            <div className="card" key={s.id}>
+              <div className="srv-head"><h3 className="latin">{s.name}</h3><StatusTag s={s.status} /></div>
+              <p className="latin muted">{s.ip}</p><p className="latin spec">{s.spec}</p>
+              <div className="srv-m"><span className="nt-mono">CPU</span><Meter value={s.cpu} /><span className="latin">{s.cpu}%</span></div>
+              <div className="srv-m"><span className="nt-mono">RAM</span><Meter value={s.ram} tone={s.ram > 80 ? 'warn' : undefined} /><span className="latin">{s.ram}%</span></div>
+              <div className="srv-btns">
+                <button className="btn btn-ghost btn-sm" disabled={s.status === 'pending'} onClick={() => void power(s.id, s.status === 'stopped')}>{s.status === 'stopped' ? t('تشغيل', 'Start') : t('إيقاف', 'Stop')}</button>
+                <button className="btn btn-ghost btn-sm" disabled={s.status === 'pending'} onClick={() => void snapshot(s.id)}>Snapshot{s.snapshots > 0 && <span className="latin"> ({s.snapshots})</span>}</button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </Page>
   );
 }
 
 export function PortalBilling() {
-  const { t, L } = useI18n();
-  const [invoices, setInvoices] = useInvoices();
-  const pay = (id: string) => setInvoices((p) => p.map((i) => (i.id === id ? { ...i, status: 'paid' as const } : i)));
+  const { t } = useI18n();
+  const cur = useCurrency();
+  const { data, demo } = usePortal();
+  if (!data) return <Loading />;
+  const hasDue = data.invoices.some((i) => i.status === 'due');
   return (
     <Page title={t('الفواتير', 'Billing')}>
-      <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('الحالة', 'Status'), '']}>
-        {invoices.map((i) => (
-          <tr key={i.id}>
-            <td><Ltr>{i.id}</Ltr></td><td><Ltr>{i.date}</Ltr></td><td>{L(i.item)}</td>
-            <td><b className="latin">{i.amount}</b> {L(CURRENCY)} <Ph /></td>
-            <td><span className={`tag ${i.status === 'paid' ? 'ok' : 'bad'}`}>{i.status === 'paid' ? t('مدفوعة', 'Paid') : t('مستحقة', 'Due')}</span></td>
-            <td>{i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => pay(i.id)}>{t('ادفع', 'Pay')}</button>}</td>
-          </tr>
-        ))}
-      </Table>
+      {hasDue && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. للدفع تواصل مع الدعم وهنأكد الدفع من عندنا.', 'You have invoices due. Contact support to pay and we will confirm the payment.')} <Link to="/portal/support?new=payment" className="link">{t('تواصل مع الدعم', 'Contact support')}</Link></p></div>}
+      {data.invoices.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
+        <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('الحالة', 'Status'), '']}>
+          {data.invoices.map((i) => (
+            <tr key={i.id}>
+              <td><Ltr>{i.number}</Ltr></td><td><Ltr>{day(i.date)}</Ltr></td><td>{i.item}</td>
+              <td><b className="latin">{i.amount}</b> {cur} {demo && <Ph />}</td>
+              <td><InvoiceTag s={i.status} /></td>
+              <td>{demo && i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => demo.pay(i.id)}>{t('ادفع', 'Pay')}</button>}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
     </Page>
   );
 }
 
 export function PortalSupport() {
-  const { t, L } = useI18n();
+  const { t } = useI18n();
+  const { data, createTicket, replyTicket, closeTicket } = usePortal();
+  const [params, setParams] = useSearchParams();
+  const topic = params.get('new');
+  const topics: Record<string, [string, string]> = {
+    domain: ['طلب دومين جديد', 'New domain request'], mailbox: ['طلب صندوق إيميل جديد', 'New mailbox request'], hosting: ['طلب خطة استضافة', 'Hosting request'],
+    server: ['طلب سيرفر جديد', 'New server request'], payment: ['دفع فاتورة', 'Invoice payment'],
+  };
+  const [creating, setCreating] = useState(Boolean(topic));
+  const [subject, setSubject] = useState(topic && topics[topic] ? t(topics[topic][0], topics[topic][1]) : '');
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
+  const [reply, setReply] = useState('');
+  const [err, setErr] = useState('');
+  if (!data) return <Loading />;
+  const run = async (fn: () => Promise<void>) => { setErr(''); try { await fn(); return true; } catch (x) { setErr(x instanceof Error ? x.message : 'error'); return false; } };
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    if (await run(() => createTicket(subject.trim(), text.trim()))) { setCreating(false); setSubject(''); setText(''); setParams({}); }
+  };
+  const current = data.tickets.find((x) => x.id === open);
   return (
-    <Page title={t('الدعم', 'Support')} action={<button className="btn btn-primary btn-sm">{t('+ تذكرة جديدة', '+ New ticket')}</button>}>
-      <Table head={[t('الرقم', 'No.'), t('الموضوع', 'Subject'), t('آخر تحديث', 'Updated'), t('الحالة', 'Status')]}>
-        {tickets.map((k) => (
-          <tr key={k.id}>
-            <td><Ltr>{k.id}</Ltr></td><td>{L(k.subject)}</td><td><Ltr>{k.updated}</Ltr></td>
-            <td><span className={`tag ${k.status === 'closed' ? '' : k.status === 'answered' ? 'ok' : 'warn'}`}>{k.status === 'closed' ? t('مغلقة', 'Closed') : k.status === 'answered' ? t('تم الرد', 'Answered') : t('مفتوحة', 'Open')}</span></td>
-          </tr>
-        ))}
-      </Table>
+    <Page title={t('الدعم', 'Support')} action={<button className="btn btn-primary btn-sm" onClick={() => setCreating(!creating)}>{creating ? t('إلغاء', 'Cancel') : t('+ تذكرة جديدة', '+ New ticket')}</button>}>
+      {err && <div className="form-error" role="alert">{err}</div>}
+      {creating && (
+        <form className="card form" onSubmit={create} style={{ marginBottom: 16 }}>
+          <div className="field"><label htmlFor="ts">{t('الموضوع', 'Subject')}</label><input id="ts" className="input" required maxLength={120} value={subject} onChange={(e) => setSubject(e.target.value)} /></div>
+          <div className="field"><label htmlFor="tt">{t('التفاصيل', 'Details')}</label><textarea id="tt" className="textarea" required maxLength={4000} value={text} onChange={(e) => setText(e.target.value)} /></div>
+          <button className="btn btn-accent" type="submit">{t('إرسال', 'Send')}</button>
+        </form>
+      )}
+      {data.tickets.length === 0 ? <Empty>{t('مفيش تذاكر لسه.', 'No tickets yet.')}</Empty> : (
+        <Table head={[t('الموضوع', 'Subject'), t('آخر تحديث', 'Updated'), t('الحالة', 'Status'), '']}>
+          {data.tickets.map((k) => (
+            <tr key={k.id} className={k.id === open ? 'is-sel' : ''}>
+              <td>{k.subject}</td><td><Ltr>{day(k.updated)}</Ltr></td><td><TicketTag s={k.status} /></td>
+              <td><button className="btn btn-ghost btn-sm" onClick={() => setOpen(open === k.id ? null : k.id)}>{t('فتح', 'Open')}</button></td>
+            </tr>
+          ))}
+        </Table>
+      )}
+      {current && (
+        <div className="card thread">
+          <h3>{current.subject}</h3>
+          {current.messages.map((m, i) => (
+            <div key={i} className={`msg ${m.from}`}><b>{m.from === 'admin' ? t('الدعم', 'Support') : m.name}</b> <span className="muted latin">{day(m.at)}</span><p>{m.text}</p></div>
+          ))}
+          {current.status !== 'closed' ? (
+            <form className="form" onSubmit={async (e) => { e.preventDefault(); if (await run(() => replyTicket(current.id, reply.trim()))) setReply(''); }}>
+              <textarea className="textarea" required maxLength={4000} placeholder={t('اكتب ردك…', 'Write a reply…')} value={reply} onChange={(e) => setReply(e.target.value)} />
+              <div className="row-actions"><button className="btn btn-primary btn-sm" type="submit">{t('رد', 'Reply')}</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void run(() => closeTicket(current.id))}>{t('إغلاق التذكرة', 'Close ticket')}</button></div>
+            </form>
+          ) : <p className="muted">{t('التذكرة مغلقة.', 'This ticket is closed.')}</p>}
+        </div>
+      )}
     </Page>
   );
 }

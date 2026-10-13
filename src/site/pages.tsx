@@ -1,7 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { bundle, emailPlans, faqs, hostingPlans, services, sitePackages, stats, steps, tlds, vpsPlans, type Plan } from '../data/content';
+import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
+import { post } from '../lib/api';
 import { DomainSearch, Faq, Money, Ph, PlanCard, SectionHead } from './parts';
 
 /* ───────── Home ───────── */
@@ -305,23 +307,41 @@ export function Status() {
 
 /* ───────── Contact ───────── */
 export function Contact() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const { mode } = useAuth();
   const [sent, setSent] = useState(false);
-  const submit = (e: FormEvent) => { e.preventDefault(); setSent(true); };
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setError('');
+    if (mode !== 'server') { setSent(true); return; }
+    setBusy(true);
+    try {
+      await post('public/lead', { name: f.get('name'), email: f.get('email'), phone: f.get('phone'), service: f.get('service'), message: f.get('message'), website: f.get('website') });
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error && err.message.includes('too many') ? t('رسائل كتير، جرّب بعد شوية.', 'Too many messages, try again later.') : t('تعذّر الإرسال، حاول تاني.', 'Could not send, please try again.'));
+    } finally { setBusy(false); }
+  };
   return (
     <>
       <section className="container hero-wrap"><div className="hero hero-sm on-dark"><span className="eyebrow latin">CONTACT</span><h1>{t('كلمنا', 'Talk to us')}</h1><p>{t('احكيلنا محتاج إيه ونرجعلك بأسرع وقت.', 'Tell us what you need and we will get back to you quickly.')}</p></div></section>
       <section className="section container contact">
         {sent ? (
-          <div className="card"><h3>{t('وصلتنا رسالتك', 'Message received')}</h3><p>{t('(نموذج تجريبي: مفيش إرسال فعلي لحد ربطه بالسيرفر.)', '(Demo form: nothing is sent until it is wired to a backend.)')}</p></div>
+          <div className="card"><h3>{t('وصلتنا رسالتك', 'Message received')}</h3><p>{mode === 'server' ? t('هنرد عليك في أقرب وقت.', 'We will get back to you shortly.') : t('(نموذج تجريبي: مفيش إرسال فعلي لحد تثبيت الموقع على استضافة PHP.)', '(Demo form: nothing is sent until the site is installed on a PHP host.)')}</p></div>
         ) : (
           <form className="card form" onSubmit={submit}>
-            <div className="field"><label htmlFor="n">{t('الاسم', 'Name')}</label><input id="n" className="input" required /></div>
-            <div className="field"><label htmlFor="e">{t('الإيميل', 'Email')}</label><input id="e" className="input latin" type="email" required /></div>
+            <div className="field"><label htmlFor="n">{t('الاسم', 'Name')}</label><input id="n" name="name" className="input" required maxLength={80} /></div>
+            <div className="field"><label htmlFor="e">{t('الإيميل', 'Email')}</label><input id="e" name="email" className="input latin" type="email" required /></div>
+            <div className="field"><label htmlFor="ph">{t('الموبايل (اختياري)', 'Phone (optional)')}</label><input id="ph" name="phone" className="input latin" maxLength={30} /></div>
             <div className="field"><label htmlFor="s">{t('الخدمة', 'Service')}</label>
-              <select id="s" className="select">{services.map((x) => <option key={x.key}>{x.title[t('ar', 'en') as 'ar' | 'en']}</option>)}</select></div>
-            <div className="field"><label htmlFor="m">{t('رسالتك', 'Message')}</label><textarea id="m" className="textarea" /></div>
-            <button className="btn btn-accent" type="submit">{t('إرسال', 'Send')}</button>
+              <select id="s" name="service" className="select">{services.map((x) => <option key={x.key} value={x.title.en}>{x.title[lang]}</option>)}</select></div>
+            <div className="field"><label htmlFor="m">{t('رسالتك', 'Message')}</label><textarea id="m" name="message" className="textarea" required minLength={5} maxLength={3000} /></div>
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0 }} />
+            {error && <div className="form-error" role="alert">{error}</div>}
+            <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('إرسال', 'Send')}</button>
           </form>
         )}
       </section>

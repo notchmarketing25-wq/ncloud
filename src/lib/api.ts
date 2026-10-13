@@ -6,20 +6,24 @@ function base(): string {
   // Default build uses a relative base ('./'): resolve against the folder the page was opened from.
   return b === './' ? new URL('./', document.baseURI).href : b;
 }
-export const apiUrl = (route: string) => `${base()}api/index.php?r=${encodeURIComponent(route).replace('%2F', '/')}`;
+type Query = Record<string, string>;
+export const apiUrl = (route: string, query?: Query) => {
+  const extra = query ? Object.entries(query).map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('') : '';
+  return `${base()}api/index.php?r=${encodeURIComponent(route).replace('%2F', '/')}${extra}`;
+};
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
-export async function api<T = unknown>(route: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(route: string, body?: unknown, query?: Query): Promise<T> {
   const init: RequestInit = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
   if (body !== undefined) {
     init.method = 'POST';
     init.headers = { ...init.headers, 'Content-Type': 'application/json', 'X-NC': '1' };
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(apiUrl(route), init);
+  const res = await fetch(apiUrl(route, query), init);
   let data: unknown = null;
   try { data = await res.json(); } catch { /* not JSON: static host or PHP error page */ }
   if (!res.ok || data === null) {
@@ -30,4 +34,4 @@ export async function api<T = unknown>(route: string, body?: unknown): Promise<T
 }
 
 /** POST with an empty JSON body (logout etc.). */
-export const post = <T = unknown>(route: string, body: unknown = {}) => api<T>(route, body);
+export const post = <T = unknown>(route: string, body: unknown = {}, query?: Query) => api<T>(route, body, query);

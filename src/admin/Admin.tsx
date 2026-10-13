@@ -1,30 +1,29 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { api, ApiError, post, type User } from '../lib/api';
+import { api, post, type User } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
+import { useCurrency } from '../site/settings';
+import { Page } from '../ui';
+import { errText } from './errors';
 
-function errText(e: unknown, t: (ar: string, en: string) => string): string {
-  const m = e instanceof ApiError ? e.message : '';
-  const map: Record<string, [string, string]> = {
-    'this email is already registered': ['الإيميل ده مسجّل قبل كده.', 'This email is already registered.'],
-    'invalid email': ['الإيميل غير صحيح.', 'Invalid email.'],
-    'name is required': ['الاسم مطلوب.', 'Name is required.'],
-    'password must be at least 8 characters': ['كلمة السر لازم تكون 8 حروف على الأقل.', 'Password must be at least 8 characters.'],
-    'there must be at least one admin': ['لازم يفضل أدمن واحد على الأقل.', 'There must be at least one admin.'],
-    'you cannot delete your own account': ['ماينفعش تحذف حسابك.', 'You cannot delete your own account.'],
-    'current password is wrong': ['كلمة السر الحالية غلط.', 'Current password is wrong.'],
-  };
-  const hit = map[m];
-  return hit ? t(hit[0], hit[1]) : m || t('حصل خطأ، حاول تاني.', 'Something went wrong, try again.');
-}
+type Overview = {
+  users: number; admins: number; clients: number; paid: number; due: number; activeServices: number; openTickets: number; newLeads: number;
+  expiring: { id: string; name: string; expires: string; owner: string }[]; recent: { at: string; by: string; action: string; detail: string }[];
+};
 
 export function AdminLayout() {
   const { t } = useI18n();
   const nav = useNavigate();
   const { mode, user, logout } = useAuth();
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const [badges, setBadges] = useState({ tickets: 0, leads: 0 });
+  useEffect(() => {
+    if (mode !== 'server' || user?.role !== 'admin') return;
+    api<Overview>('admin/overview').then((o) => setBadges({ tickets: o.openTickets, leads: o.newLeads })).catch(() => undefined);
+  }, [mode, user, pathname]);
   if (mode === 'checking') return null;
   if (!user) return <Navigate to="/portal/login" replace />;
   if (mode === 'demo') return <DemoNotice />;
@@ -32,6 +31,15 @@ export function AdminLayout() {
   const items = [
     { to: '/admin', label: t('نظرة عامة', 'Overview'), end: true },
     { to: '/admin/users', label: t('المستخدمين', 'Users') },
+    { to: '/admin/domains', label: t('الدومينات', 'Domains') },
+    { to: '/admin/email', label: t('الإيميلات', 'Email') },
+    { to: '/admin/hosting', label: t('الاستضافة', 'Hosting') },
+    { to: '/admin/servers', label: t('السيرفرات', 'Servers') },
+    { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
+    { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
+    { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },
+    { to: '/admin/settings', label: t('الإعدادات', 'Settings') },
+    { to: '/admin/activity', label: t('سجل النشاط', 'Activity') },
     { to: '/admin/account', label: t('حسابي', 'My account') },
   ];
   const signOut = async () => { await logout(); nav('/portal/login'); };
@@ -39,7 +47,7 @@ export function AdminLayout() {
     <div className="portal">
       <aside className={`side on-dark${open ? ' is-open' : ''}`}>
         <Logo dark />
-        <nav onClick={() => setOpen(false)}>{items.map((i) => <NavLink key={i.to} to={i.to} end={i.end}>{i.label}</NavLink>)}</nav>
+        <nav onClick={() => setOpen(false)}>{items.map((i) => <NavLink key={i.to} to={i.to} end={i.end}>{i.label}{i.badge ? <span className="badge-n latin">{i.badge}</span> : null}</NavLink>)}</nav>
         <div className="side-foot">
           <LangToggle />
           <Link to="/portal" className="side-link">{t('لوحة العميل', 'Client area')}</Link>
@@ -71,26 +79,41 @@ function DemoNotice() {
   );
 }
 
-function Page({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  return <><div className="page-head"><h1>{title}</h1>{action}</div>{children}</>;
-}
-
 export function AdminOverview() {
   const { t } = useI18n();
-  const [d, setD] = useState<{ users: number; admins: number; clients: number; site: string } | null>(null);
+  const cur = useCurrency();
+  const [d, setD] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
-  useEffect(() => { api<typeof d>('admin/overview').then(setD).catch((e) => setErr(errText(e, t))); }, [t]);
+  useEffect(() => { api<Overview>('admin/overview').then(setD).catch((e) => setErr(errText(e, t))); }, [t]);
+  const kpi = (to: string, label: string, v: string | number) => <Link to={to} className="card kpi" key={to + label}><span className="nt-mono">{label}</span><b className="latin">{v}</b></Link>;
   return (
     <Page title={t('نظرة عامة', 'Overview')}>
       {err && <div className="form-error">{err}</div>}
       {d && (
-        <div className="grid g3 kpis">
-          <div className="card kpi"><span className="nt-mono">{t('كل المستخدمين', 'All users')}</span><b className="latin">{d.users}</b></div>
-          <div className="card kpi"><span className="nt-mono">{t('أدمن', 'Admins')}</span><b className="latin">{d.admins}</b></div>
-          <div className="card kpi"><span className="nt-mono">{t('عملاء', 'Clients')}</span><b className="latin">{d.clients}</b></div>
-        </div>
+        <>
+          <div className="grid g4 kpis">
+            {kpi('/admin/users', t('العملاء', 'Clients'), d.clients)}
+            {kpi('/admin/domains', t('خدمات نشطة', 'Active services'), d.activeServices)}
+            {kpi('/admin/tickets', t('تذاكر مفتوحة', 'Open tickets'), d.openTickets)}
+            {kpi('/admin/leads', t('طلبات جديدة', 'New leads'), d.newLeads)}
+          </div>
+          <div className="grid g2" style={{ marginTop: 16 }}>
+            <div className="card kpi"><span className="nt-mono">{t('مدفوع', 'Paid')}</span><b className="latin">{d.paid.toLocaleString('en-US')} <small>{cur}</small></b></div>
+            <Link to="/admin/invoices" className="card kpi"><span className="nt-mono">{t('مستحق', 'Due')}</span><b className="latin">{d.due.toLocaleString('en-US')} <small>{cur}</small></b></Link>
+          </div>
+          <div className="grid g2" style={{ marginTop: 16 }}>
+            <div className="card"><h3>{t('دومينات قربت تنتهي', 'Domains expiring soon')}</h3>
+              {d.expiring.length === 0 ? <p className="muted">{t('مفيش.', 'None.')}</p> : (
+                <ul className="attn">{d.expiring.map((x) => <li key={x.id}><i className="dot bad" /> <Ltr>{x.name}</Ltr> · {x.owner} · <Ltr>{x.expires}</Ltr></li>)}</ul>)}
+            </div>
+            <div className="card"><h3>{t('آخر النشاط', 'Recent activity')}</h3>
+              {d.recent.length === 0 ? <p className="muted">{t('مفيش نشاط لسه.', 'No activity yet.')}</p> : (
+                <ul className="attn">{d.recent.map((x, i) => <li key={i}><span className="tag latin">{x.action}</span> {x.by} <span className="muted">{x.detail}</span></li>)}</ul>)}
+              <p style={{ marginTop: 10 }}><Link to="/admin/activity" className="link">{t('كل السجل', 'Full log')}</Link></p>
+            </div>
+          </div>
+        </>
       )}
-      <p className="muted" style={{ marginTop: 16 }}>{t('أنشئ حسابات العملاء من صفحة المستخدمين، وهم يدخلوا من صفحة دخول العميل.', 'Create client accounts from the Users page; they sign in from the client login.')}</p>
     </Page>
   );
 }

@@ -1,7 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { CURRENCY, SHOW_PLACEHOLDER, tlds, type Plan } from '../data/content';
+import { tlds, type Plan } from '../data/content';
 import { Ltr, useI18n } from '../i18n';
+import { useCurrency, useSite } from './settings';
 
 export function SectionHead({ title, text }: { title: string; text?: string }) {
   return (
@@ -15,13 +16,14 @@ export function SectionHead({ title, text }: { title: string; text?: string }) {
 /** Marks a number as a placeholder until real pricing is set (see SHOW_PLACEHOLDER). */
 export function Ph() {
   const { t } = useI18n();
-  if (!SHOW_PLACEHOLDER) return null;
+  const { settings } = useSite();
+  if (!settings.placeholder) return null;
   return <span className="ph" title={t('رقم تجريبي', 'Placeholder value')}>{t('تجريبي', 'placeholder')}</span>;
 }
 
 export function Money({ value }: { value: number }) {
-  const { L } = useI18n();
-  return <span className="money"><b className="latin">{value.toLocaleString('en-US')}</b> <small>{L(CURRENCY)}</small></span>;
+  const cur = useCurrency();
+  return <span className="money"><b className="latin">{value.toLocaleString('en-US')}</b> <small>{cur}</small></span>;
 }
 
 export function PlanCard({ plan, per, cta }: { plan: Plan; per: string; cta: ReactNode }) {
