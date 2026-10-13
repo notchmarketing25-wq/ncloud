@@ -91,6 +91,19 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
 <?php elseif ($done): ?>
     <h1><?= h(t('اتثبّت بنجاح', 'Installed successfully')) ?></h1>
     <div class="good"><?= h(t('تم نسخ ', 'Wrote ')) ?><?= (int) $written ?><?= h(t(' ملف.', ' files.')) ?></div>
+    <ul id="chk"><li><span><?= h(t('فحص الملفات...', 'Checking files...')) ?></span><span>…</span></li></ul>
+    <script>
+    (function(){
+      var ul=document.getElementById('chk'); function row(a,b,ok){var li=document.createElement('li');var x=document.createElement('span');x.textContent=a;var y=document.createElement('span');y.textContent=b;y.className=ok?'ok':'bad';li.appendChild(x);li.appendChild(y);ul.appendChild(li);}
+      ul.innerHTML='';
+      fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text().then(function(html){
+        row('index.html',r.status+'',r.ok);
+        var urls=[],re=/(?:src|href)="(\.\/assets\/[^"]+)"/g,m;while((m=re.exec(html)))urls.push(m[1]);
+        urls.forEach(function(u){fetch(u,{cache:'no-store'}).then(function(rr){var ct=(rr.headers.get('content-type')||'').split(';')[0];var bad=/\.js$/.test(u)&&!/javascript|ecmascript/.test(ct);row(u.replace('./',''),rr.status+' '+ct,rr.ok&&!bad);}).catch(function(e){row(u,String(e),false);});});
+        if(!urls.length)row('assets','not found in index.html',false);
+      });}).catch(function(e){row('index.html',String(e),false);});
+    })();
+    </script>
     <p><?= h(t('احذف ملف التثبيت دلوقتي عشان الأمان.', 'Delete the installer now, for safety.')) ?></p>
     <form method="post" class="row"><input type="hidden" name="tok" value="<?= h($tok) ?>">
       <a class="btn v" href="<?= h($siteUrl) ?>"><?= h(t('افتح الموقع', 'Open the site')) ?></a>

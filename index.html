@@ -7,9 +7,47 @@
     <meta name="description" content="Notch Cloud Services — دومينات، إيميلات أعمال، تصميم مواقع، استضافة وخدمات كلاود في مكان واحد." />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <title>Notch Cloud Services | نوتش كلاود</title>
+    <script>
+      /* Boot diagnostics (plain ES5, runs before the app): if the app never renders, show why instead of a blank page. */
+      (function () {
+        var errs = [];
+        function add(m) { errs.push(String(m).slice(0, 300)); }
+        window.addEventListener('error', function (e) {
+          var t = e.target;
+          if (t && t !== window && (t.src || t.href)) add('LOAD FAILED: ' + (t.src || t.href));
+          else add((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) { add('Promise: ' + ((e.reason && e.reason.message) || e.reason)); });
+        function el(tag, text, css) { var n = document.createElement(tag); if (text) n.textContent = text; if (css) n.style.cssText = css; return n; }
+        function show() {
+          var root = document.getElementById('root');
+          if (!root || root.childNodes.length) return;
+          var ar = (navigator.language || '').indexOf('ar') === 0;
+          var box = el('div', '', 'max-width:660px;margin:40px auto;padding:24px;font:15px/1.7 system-ui,Tahoma,sans-serif;border:1px solid #ddd;border-radius:20px;background:#fff;color:#0a0a0a');
+          box.dir = ar ? 'rtl' : 'ltr';
+          box.appendChild(el('h2', ar ? 'الموقع لم يُحمَّل' : 'The site failed to load', 'margin:0 0 8px;font-size:20px'));
+          box.appendChild(el('p', location.protocol === 'file:'
+            ? (ar ? 'أنت فاتح الملف من جهازك مباشرة (file://). ارفعه على استضافة أو شغّل npm run preview.' : 'You opened the file straight from disk (file://). Upload it to a host or run npm run preview.')
+            : (ar ? 'ابعت لقطة من هذه الصفحة للدعم. الأسطر التالية تحدد السبب.' : 'Send a screenshot of this page to support. The lines below show the cause.'), 'margin:0 0 12px;color:#555'));
+          var pre = el('pre', '', 'margin:0;padding:12px;background:#f4f4f2;border-radius:12px;white-space:pre-wrap;word-break:break-all;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;direction:ltr;text-align:left');
+          pre.textContent = 'URL: ' + location.href + '\nBrowser: ' + navigator.userAgent + '\nErrors: ' + (errs.length ? '\n - ' + errs.join('\n - ') : 'none captured');
+          box.appendChild(pre);
+          root.appendChild(box);
+          var nodes = document.querySelectorAll('script[src],link[rel=stylesheet]');
+          Array.prototype.forEach.call(nodes, function (n) {
+            var u = n.src || n.href;
+            if (!window.fetch) return;
+            fetch(u).then(function (r) { pre.textContent += '\nCHECK ' + u.split('/').slice(-2).join('/') + ' -> ' + r.status + ' ' + (r.headers.get('content-type') || ''); })
+              .catch(function (e) { pre.textContent += '\nCHECK ' + u + ' -> ' + e; });
+          });
+        }
+        window.addEventListener('load', function () { setTimeout(show, 3000); });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript style="display:block;padding:24px;font:16px system-ui">يلزم تفعيل JavaScript لتشغيل الموقع. / Please enable JavaScript.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
