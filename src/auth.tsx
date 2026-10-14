@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let info = '';
       try {
         try {
-          const s = await api<{ installed?: boolean }>('status');
+          const s = await api<{ installed?: boolean }>('status', undefined, { _: String(Date.now()) });
           if (!s.installed) { why = 'not-installed'; throw new Error('not installed'); }
         } catch (e) {
           if (why !== 'not-installed') {

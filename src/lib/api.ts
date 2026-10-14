@@ -7,9 +7,11 @@ function base(): string {
   return b === './' ? new URL('./', document.baseURI).href : b;
 }
 type Query = Record<string, string>;
-export const apiUrl = (route: string, query?: Query) => {
+/** Where the backend answers: api/index.php, or nc-api.php next to index.html when a host does not serve the api/ folder. */
+let endpoint = 'api/index.php';
+export const apiUrl = (route: string, query?: Query, file = endpoint) => {
   const extra = query ? Object.entries(query).map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('') : '';
-  return `${base()}api/index.php?r=${encodeURIComponent(route).replace('%2F', '/')}${extra}`;
+  return `${base()}${file}?r=${encodeURIComponent(route).replace('%2F', '/')}${extra}`;
 };
 
 export class ApiError extends Error {
@@ -17,15 +19,23 @@ export class ApiError extends Error {
 }
 
 export async function api<T = unknown>(route: string, body?: unknown, query?: Query): Promise<T> {
-  const init: RequestInit = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+  const init: RequestInit = { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } };
   if (body !== undefined) {
     init.method = 'POST';
     init.headers = { ...init.headers, 'Content-Type': 'application/json', 'X-NC': '1' };
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(apiUrl(route, query), init);
+  let res = await fetch(apiUrl(route, query), init);
   let data: unknown = null;
   try { data = await res.json(); } catch { /* not JSON: static host or PHP error page */ }
+  // The status check is the first call: when api/ is missing (404, not a JSON answer) try the root-level entry once.
+  if (route === 'status' && endpoint === 'api/index.php' && (!res.ok || data === null) && (data === null || res.status === 404)) {
+    try {
+      const alt = await fetch(apiUrl(route, { _: String(Date.now()) }, 'nc-api.php'), init);
+      const j = await alt.json();
+      if (alt.ok && j) { endpoint = 'nc-api.php'; res = alt; data = j; }
+    } catch { /* keep the first failure */ }
+  }
   if (!res.ok || data === null) {
     const msg = data && typeof data === 'object' && 'error' in data ? String((data as { error: unknown }).error) : `HTTP ${res.status}`;
     throw new ApiError(msg, res.status);

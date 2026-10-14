@@ -214,7 +214,8 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
     <script>
     (function(){
       var ul=document.getElementById('chk'); function row(a,b,ok){var li=document.createElement('li');var x=document.createElement('span');x.textContent=a;var y=document.createElement('span');y.textContent=b;y.className=ok?'ok':'bad';li.appendChild(x);li.appendChild(y);ul.appendChild(li);}
-      fetch('./api/index.php?r=status',{cache:'no-store'}).then(function(r){return r.json().then(function(j){row('API',j&&j.installed?'OK':'not installed',!!(j&&j.installed));});}).catch(function(e){row('API',String(e),false);});
+      function chk(u){return fetch(u+'?r=status&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.text().then(function(t){var j=null;try{j=JSON.parse(t);}catch(e){}var ok=!!(j&&j.installed);row(u,'HTTP '+r.status+' '+(ok?'OK'+(j.storage?' ('+j.storage+')':''):(j&&j.error?j.error:(t||'').replace(/\s+/g,' ').slice(0,90))),ok);return ok;});}).catch(function(e){row(u,String(e),false);return false;});}
+      chk('./api/index.php').then(function(ok){if(!ok)chk('./nc-api.php');});
       fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text().then(function(html){
         row('index.html',r.status+'',r.ok);
         var urls=[],re=/(?:src|href)="(\.\/assets\/[^"]+)"/g,m;while((m=re.exec(html)))urls.push(m[1]);
@@ -231,6 +232,19 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
 <?php elseif ($locked): ?>
     <h1><?= h(t('الموقع مثبّت بالفعل', 'Already installed')) ?></h1>
     <p><?= h(t('حسابات الأدمن موجودة ومحمية. تقدر تحدّث ملفات الموقع من غير ما تتأثر البيانات.', 'The admin accounts exist and are protected. You can update the site files without touching your data.')) ?></p>
+    <h2><?= h(t('فحص', 'Diagnostics')) ?></h2>
+    <ul id="diag">
+<?php foreach (array('api/index.php', 'api/providers.php', 'api/schema.php', 'nc-api.php', 'api/data/installed.lock', 'api/data/config.php', 'index.html') as $fn): $ex = is_file($dir . '/' . $fn); ?>
+      <li><span><code><?= h($fn) ?></code></span><span class="<?= $ex ? 'ok' : 'bad' ?>"><?= $ex ? h(t('موجود', 'found')) . ' · ' . (int) filesize($dir . '/' . $fn) . ' B' : h(t('مش موجود', 'missing')) ?></span></li>
+<?php endforeach; ?>
+      <li><span>PHP</span><span class="ok"><?= h(PHP_VERSION) ?></span></li>
+      <li><span><?= h(t('فولدر api/data قابل للكتابة', 'api/data writable')) ?></span><span class="<?= is_writable($data) ? 'ok' : 'bad' ?>"><?= is_writable($data) ? h(t('تمام', 'OK')) : h(t('لا', 'No')) ?></span></li>
+    </ul>
+    <script>
+    (function(){var ul=document.getElementById('diag');function row(a,b,ok){var li=document.createElement('li');var x=document.createElement('span');x.textContent=a;var y=document.createElement('span');y.textContent=b;y.className=ok?'ok':'bad';li.appendChild(x);li.appendChild(y);ul.appendChild(li);}
+      function chk(u){return fetch(u+'?r=status&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.text().then(function(t){var j=null;try{j=JSON.parse(t);}catch(e){}var ok=!!(j&&j.installed);row(u,'HTTP '+r.status+' '+(ok?'OK'+(j.storage?' ('+j.storage+')':''):(j&&j.error?j.error:(t||'').replace(/\s+/g,' ').slice(0,90))),ok);});}).catch(function(e){row(u,String(e),false);});}
+      chk('./api/index.php');chk('./nc-api.php');})();
+    </script>
 <?php foreach ($errors as $e): ?><div class="err"><?= h($e) ?></div><?php endforeach; ?>
     <form method="post" class="row"><input type="hidden" name="tok" value="<?= h($tok) ?>">
       <button class="btn v" name="action" value="update" type="submit" <?= $writable ? '' : 'disabled' ?>><?= h(t('تحديث ملفات الموقع', 'Update site files')) ?></button>
