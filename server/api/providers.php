@@ -369,13 +369,15 @@ function prov_name($id) { $d = prov_defs(); return isset($d[$id]) ? $d[$id]['nam
 function prov_id() { $d = prov_defs(); $id = isset($_GET['id']) ? (string) $_GET['id'] : ''; if (!isset($d[$id])) { fail('unknown provider', 404); } return $id; }
 
 /* ───────── pricing ───────── */
-function prov_pricing_defaults() { return array('marginPct' => 30, 'rounding' => 5, 'rates' => array('USD' => 50, 'EUR' => 55), 'tldMargins' => new stdClass(), 'popular' => array('com', 'net', 'org', 'info', 'store', 'online', 'site', 'xyz', 'co', 'io', 'app', 'tech', 'shop')); }
+function prov_pricing_defaults() { return array('marginPct' => 30, 'rounding' => 5, 'rates' => array('USD' => 50, 'EUR' => 55), 'tldMargins' => new stdClass(), 'tldProfits' => new stdClass(), 'selected' => array(), 'popular' => array('com', 'net', 'org', 'info', 'store', 'online', 'site', 'xyz', 'co', 'io', 'app', 'tech', 'shop')); }
 function prov_pricing($db) {
     $p = meta_get($db, 'pricing', array());
     $d = prov_pricing_defaults();
     $out = array_merge($d, is_array($p) ? $p : array());
     $out['rates'] = array_merge($d['rates'], isset($p['rates']) && is_array($p['rates']) ? $p['rates'] : array());
     $out['tldMargins'] = isset($p['tldMargins']) && is_array($p['tldMargins']) ? $p['tldMargins'] : array();
+    $out['tldProfits'] = isset($p['tldProfits']) && is_array($p['tldProfits']) ? $p['tldProfits'] : array();
+    $out['selected'] = isset($p['selected']) && is_array($p['selected']) ? array_values($p['selected']) : array();
     return $out;
 }
 function prov_cache_file() { return NC_DATA . '/cache-tlds.json'; }
@@ -413,13 +415,21 @@ function prov_tld_table($db, $cache) {
     foreach ($rows as $tld => $r) {
         usort($r['offers'], function ($a, $b) { return $a['costStore'] <=> $b['costStore']; });
         $best = $r['offers'][0];
+        $fixed = isset($pricing['tldProfits'][$tld]) ? (float) $pricing['tldProfits'][$tld] : null; // a fixed profit in store currency beats the percentage
         $margin = isset($pricing['tldMargins'][$tld]) ? (float) $pricing['tldMargins'][$tld] : (float) $pricing['marginPct'];
-        $sell = prov_sell($best['costStore'], $margin, (float) $pricing['rounding']);
-        $renewSell = prov_sell($best['renewStore'], $margin, (float) $pricing['rounding']);
-        $out[] = array('tld' => $tld, 'offers' => $r['offers'], 'best' => $best['provider'], 'cost' => $best['costStore'], 'renewCost' => $best['renewStore'], 'marginPct' => $margin, 'custom' => isset($pricing['tldMargins'][$tld]),
-            'sell' => $sell, 'renewSell' => $renewSell, 'profit' => round($sell - $best['costStore'], 2), 'currency' => $store);
+        if ($fixed !== null) {
+            $sell = prov_sell($best['costStore'] + $fixed, 0, (float) $pricing['rounding']);
+            $renewSell = prov_sell($best['renewStore'] + $fixed, 0, (float) $pricing['rounding']);
+            $margin = $best['costStore'] > 0 ? round(($sell - $best['costStore']) / $best['costStore'] * 100, 1) : 0;
+        } else {
+            $sell = prov_sell($best['costStore'], $margin, (float) $pricing['rounding']);
+            $renewSell = prov_sell($best['renewStore'], $margin, (float) $pricing['rounding']);
+        }
+        $out[] = array('tld' => $tld, 'offers' => $r['offers'], 'best' => $best['provider'], 'cost' => $best['costStore'], 'renewCost' => $best['renewStore'], 'marginPct' => $margin, 'custom' => isset($pricing['tldMargins'][$tld]), 'fixedProfit' => $fixed,
+            'selected' => in_array($tld, $pricing['selected'], true), 'sell' => $sell, 'renewSell' => $renewSell, 'profit' => round($sell - $best['costStore'], 2), 'currency' => $store);
     }
     usort($out, function ($a, $b) use ($pricing) {
+        if ($a['selected'] !== $b['selected']) { return $a['selected'] ? -1 : 1; }
         $pa = array_search($a['tld'], $pricing['popular']); $pb = array_search($b['tld'], $pricing['popular']);
         if ($pa !== false && $pb !== false) { return $pa <=> $pb; }
         if ($pa !== false) { return -1; } if ($pb !== false) { return 1; }
@@ -439,12 +449,12 @@ function prov_search($db, $q, $tldsWanted, $admin) {
     $cache = prov_cache_read();
     if (!$cache['providers']) { $cache = prov_cache_refresh($db); }
     $table = array();
-    foreach (prov_tld_table($db, $cache) as $r) { $table[$r['tld']] = $r; }
-    if (!$table) { fail('no provider prices yet — connect a provider in Apps first', 409); }
+    foreach (prov_tld_table($db, $cache) as $r) { if ($r['selected']) { $table[$r['tld']] = $r; } } // only extensions you chose to sell
+    if (!$table) { fail('no extensions are enabled for sale yet — choose them in TLD pricing', 409); }
     $pricing = prov_pricing($db);
     $want = array();
-    if ($forced) { $want[] = $forced; }
-    foreach ($tldsWanted ?: $pricing['popular'] as $t) { $t = strtolower(trim($t)); if ($t !== '' && !in_array($t, $want, true)) { $want[] = $t; } }
+    if ($forced && isset($table[$forced])) { $want[] = $forced; }
+    foreach ($tldsWanted ?: array_keys($table) as $t) { $t = strtolower(trim($t)); if ($t !== '' && !in_array($t, $want, true)) { $want[] = $t; } }
     $byProv = array();
     foreach ($want as $t) { if (isset($table[$t])) { $byProv[$table[$t]['best']][] = $t; } }
     $results = array(); $errors = array();
@@ -660,6 +670,15 @@ function prov_route($r, $me) {
                 if (isset($b['marginPct'])) { $p['marginPct'] = max(0, min(1000, (float) $b['marginPct'])); }
                 if (isset($b['rounding'])) { $p['rounding'] = max(0, min(1000, (float) $b['rounding'])); }
                 if (isset($b['rates']) && is_array($b['rates'])) { foreach ($b['rates'] as $c => $v) { $c = strtoupper(preg_replace('/[^A-Za-z]/', '', (string) $c)); if ($c !== '' && is_numeric($v) && $v > 0) { $p['rates'][$c] = (float) $v; } } }
+                if (isset($b['selected']) && is_array($b['selected'])) {
+                    $p['selected'] = array();
+                    foreach ($b['selected'] as $t) { $t = strtolower(preg_replace('/[^A-Za-z0-9.\-]/', '', (string) $t)); if ($t !== '' && !in_array($t, $p['selected'], true)) { $p['selected'][] = $t; } }
+                    $p['selected'] = array_slice($p['selected'], 0, 500);
+                }
+                if (isset($b['tldProfits']) && is_array($b['tldProfits'])) {
+                    $p['tldProfits'] = array();
+                    foreach ($b['tldProfits'] as $t => $v) { $t = strtolower(preg_replace('/[^A-Za-z0-9.\-]/', '', (string) $t)); if ($t !== '' && is_numeric($v) && $v >= 0) { $p['tldProfits'][$t] = round((float) $v, 2); } }
+                }
                 if (isset($b['tldMargins']) && is_array($b['tldMargins'])) {
                     $p['tldMargins'] = array();
                     foreach ($b['tldMargins'] as $t => $v) { $t = strtolower(preg_replace('/[^A-Za-z0-9.\-]/', '', (string) $t)); if ($t !== '' && is_numeric($v)) { $p['tldMargins'][$t] = max(0, min(1000, (float) $v)); } }
@@ -670,7 +689,7 @@ function prov_route($r, $me) {
             $cache = isset($_GET['refresh']) || $isPost && !empty($b['refresh']) ? prov_cache_refresh($db) : prov_cache_read();
             if (!$cache['providers'] && !$cache['errors']) { $cache = prov_cache_refresh($db); }
             $p = prov_pricing($db);
-            out(array('pricing' => array('marginPct' => $p['marginPct'], 'rounding' => $p['rounding'], 'rates' => $p['rates'], 'tldMargins' => (object) $p['tldMargins']), 'currency' => meta_get($db, 'currency', '') ?: 'EGP', 'fetchedAt' => $cache['at'], 'errors' => $cache['errors'], 'tlds' => prov_tld_table($db, $cache)));
+            out(array('pricing' => array('marginPct' => $p['marginPct'], 'rounding' => $p['rounding'], 'rates' => $p['rates'], 'tldMargins' => (object) $p['tldMargins'], 'tldProfits' => (object) $p['tldProfits'], 'selected' => $p['selected']), 'currency' => meta_get($db, 'currency', '') ?: 'EGP', 'fetchedAt' => $cache['at'], 'errors' => $cache['errors'], 'tlds' => prov_tld_table($db, $cache)));
 
         case 'admin/pricing/search':
             need_admin();

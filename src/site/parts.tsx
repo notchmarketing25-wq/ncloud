@@ -93,7 +93,7 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
     if (mode !== 'server' || !clean) return;
     setBusy(true);
     try { setLive((await api<{ results: Found[] }>('public/domain-search', undefined, { q: raw })).results); }
-    catch (x) { setErr(x instanceof Error && /409|prices/.test(x.message) ? t('البحث غير متاح حاليًا.', 'Search is not available right now.') : t('تعذّر البحث، حاول تاني.', 'Search failed, please try again.')); }
+    catch (x) { setErr(x instanceof Error && /enabled|prices/.test(x.message) ? t('البحث غير متاح حاليًا.', 'Search is not available right now.') : t('تعذّر البحث، حاول تاني.', 'Search failed, please try again.')); }
     finally { setBusy(false); }
   };
   const row = (domain: string, taken: boolean, price: ReactNode, key: string) => (

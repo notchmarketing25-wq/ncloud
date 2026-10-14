@@ -7,7 +7,7 @@ import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
 import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
-import { AdminDomainDetail, AdminUpdates, AdminWebsites } from './admin/Detail';
+import { AdminDomainDetail, AdminHostingDetail, AdminUpdates, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchases } from './admin/Providers';
 import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
 import { SiteProvider } from './site/settings';
@@ -45,6 +45,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="domains" element={<AdminDomains />} />
             <Route path="domains/:id" element={<AdminDomainDetail />} />
             <Route path="websites" element={<AdminWebsites />} />
+            <Route path="websites/:id" element={<AdminWebsiteDetail />} />
+            <Route path="hosting/:id" element={<AdminHostingDetail />} />
+            <Route path="users/:id" element={<AdminUserDetail />} />
             <Route path="updates" element={<AdminUpdates />} />
             <Route path="email" element={<AdminMailboxes />} />
             <Route path="hosting" element={<AdminHosting />} />

@@ -163,7 +163,7 @@ export function AdminUsers() {
             {users.map((u) => (
               <Fragment key={u.id}>
                 <tr>
-                  <td>{u.name}{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}</td>
+                  <td><Link className="link" to={`/admin/users/${u.id}`}>{u.name}</Link>{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}</td>
                   <td><Ltr>{u.email}</Ltr></td>
                   <td><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : t('عميل', 'Client')}</span></td>
                   <td><div className="row-actions">

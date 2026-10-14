@@ -165,10 +165,11 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
 
 /* ───────── TLD prices, margin and search ───────── */
 type Offer = { provider: string; currency: string; register: number; renew: number; costStore: number; renewStore: number };
-type Tld = { tld: string; offers: Offer[]; best: string; cost: number; renewCost: number; marginPct: number; custom: boolean; sell: number; renewSell: number; profit: number; currency: string };
-type PricingResp = { pricing: { marginPct: number; rounding: number; rates: Record<string, number>; tldMargins: Record<string, number> }; currency: string; fetchedAt: string; errors: Record<string, string>; tlds: Tld[] };
+type Tld = { tld: string; offers: Offer[]; best: string; cost: number; renewCost: number; marginPct: number; custom: boolean; fixedProfit: number | null; selected: boolean; sell: number; renewSell: number; profit: number; currency: string };
+type PricingResp = { pricing: { marginPct: number; rounding: number; rates: Record<string, number>; tldMargins: Record<string, number>; tldProfits: Record<string, number>; selected: string[] }; currency: string; fetchedAt: string; errors: Record<string, string>; tlds: Tld[] };
 type Hit = { domain: string; tld: string; available: boolean; sell: number; renewSell: number; currency: string; provider: string; cost: number; profit: number; marginPct: number };
 
+/** Extensions are only offered to clients when you choose them here; the provider catalogs are just a list to pick from. */
 export function AdminPricing() {
   const { t } = useI18n();
   const [d, setD] = useState<PricingResp | null>(null);
@@ -176,50 +177,74 @@ export function AdminPricing() {
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('');
+  const [only, setOnly] = useState(false);
+  const [limit, setLimit] = useState(60);
   const [margin, setMargin] = useState('30');
   const [rounding, setRounding] = useState('5');
   const [usd, setUsd] = useState('50');
   const [eur, setEur] = useState('55');
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [pct, setPct] = useState<Record<string, string>>({});
+  const [fixed, setFixed] = useState<Record<string, string>>({});
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [searchErr, setSearchErr] = useState<Record<string, string>>({});
-  const apply = (r: PricingResp) => { setD(r); setMargin(String(r.pricing.marginPct)); setRounding(String(r.pricing.rounding)); setUsd(String(r.pricing.rates.USD ?? 50)); setEur(String(r.pricing.rates.EUR ?? 55)); };
+  const apply = (r: PricingResp) => {
+    setD(r); setMargin(String(r.pricing.marginPct)); setRounding(String(r.pricing.rounding)); setUsd(String(r.pricing.rates.USD ?? 50)); setEur(String(r.pricing.rates.EUR ?? 55));
+    setSel(new Set(r.pricing.selected));
+    setPct(Object.fromEntries(Object.entries(r.pricing.tldMargins).map(([k, v]) => [k, String(v)])));
+    setFixed(Object.fromEntries(Object.entries(r.pricing.tldProfits).map(([k, v]) => [k, String(v)])));
+  };
   const load = useCallback((refresh = false) => {
     setBusy(true); setErr('');
     api<PricingResp>('admin/pricing', undefined, refresh ? { refresh: '1' } : undefined).then(apply).catch((e) => setErr(errText(e, t))).finally(() => setBusy(false));
   }, [t]);
   useEffect(() => load(), [load]);
-  const saveSettings = async (extra: Record<string, unknown> = {}) => {
-    setErr(''); setOk('');
-    try { apply(await post<PricingResp>('admin/pricing', { marginPct: Number(margin), rounding: Number(rounding), rates: { USD: Number(usd), EUR: Number(eur) }, ...extra })); setOk(t('اتحفظ.', 'Saved.')); } catch (e) { setErr(errText(e, t)); }
-  };
-  const setTldMargin = (tld: string, v: string) => {
-    const m = { ...(d?.pricing.tldMargins ?? {}) };
-    if (v.trim() === '') delete m[tld]; else m[tld] = Number(v);
-    void saveSettings({ tldMargins: m });
+  const dirty = useMemo(() => {
+    if (!d) return false;
+    const same = (a: Record<string, number>, b: Record<string, string>) => { const ak = Object.keys(a).sort(), bk = Object.keys(b).filter((k) => b[k] !== '').sort(); return ak.length === bk.length && ak.every((k, i) => k === bk[i] && Number(b[k]) === a[k]); };
+    const cur = [...d.pricing.selected].sort().join();
+    return cur !== [...sel].sort().join() || !same(d.pricing.tldMargins, pct) || !same(d.pricing.tldProfits, fixed)
+      || Number(margin) !== d.pricing.marginPct || Number(rounding) !== d.pricing.rounding || Number(usd) !== (d.pricing.rates.USD ?? 50) || Number(eur) !== (d.pricing.rates.EUR ?? 55);
+  }, [d, sel, pct, fixed, margin, rounding, usd, eur]);
+  const clean = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([k, v]) => v !== '' && Number.isFinite(Number(v)) && (sel.has(k) || d?.pricing.selected.includes(k))).map(([k, v]) => [k, Number(v)]));
+  const save = async () => {
+    setErr(''); setOk(''); setBusy(true);
+    try { apply(await post<PricingResp>('admin/pricing', { marginPct: Number(margin), rounding: Number(rounding), rates: { USD: Number(usd), EUR: Number(eur) }, selected: [...sel], tldMargins: clean(pct), tldProfits: clean(fixed) })); setOk(t('اتحفظ.', 'Saved.')); }
+    catch (e) { setErr(errText(e, t)); } finally { setBusy(false); }
   };
   const search = async (e: FormEvent) => {
     e.preventDefault(); setErr(''); setHits(null);
     try { const r = await api<{ results: Hit[]; errors: Record<string, string> }>('admin/pricing/search', undefined, { q }); setHits(r.results); setSearchErr(r.errors); } catch (x) { setErr(errText(x, t)); }
   };
-  const shown = (d?.tlds ?? []).filter((x) => !filter || x.tld.includes(filter.toLowerCase().replace(/^\./, '')));
+  const f = filter.toLowerCase().replace(/^\./, '');
+  const shown = (d?.tlds ?? []).filter((x) => (!f || x.tld.includes(f)) && (!only || sel.has(x.tld)));
+  const page = shown.slice(0, limit);
   const cur = d?.currency ?? '';
+  const toggle = (tld: string, on: boolean) => setSel((s) => { const n = new Set(s); if (on) n.add(tld); else n.delete(tld); return n; });
+  // A live preview of the price for a row, using what is typed now (before saving).
+  const preview = (x: Tld) => {
+    const r = Number(rounding) || 0;
+    const fx = fixed[x.tld] !== undefined && fixed[x.tld] !== '' ? Number(fixed[x.tld]) : null;
+    const m = pct[x.tld] !== undefined && pct[x.tld] !== '' ? Number(pct[x.tld]) : Number(margin);
+    const raw = fx !== null ? x.cost + fx : x.cost * (1 + m / 100);
+    const sell = r > 0 ? Math.ceil(raw / r) * r : Math.round(raw * 100) / 100;
+    return { sell, profit: sell - x.cost };
+  };
   return (
     <Page title={t('أسعار الدومينات', 'TLD pricing')} action={<button className="btn btn-primary btn-sm" onClick={() => load(true)} disabled={busy}>{busy ? '…' : t('تحديث الأسعار من المزوّدين', 'Refresh provider prices')}</button>}>
       <Notice err={err} ok={ok} />
       {d && Object.entries(d.errors).map(([id, m]) => <div className="form-error" key={id}>{id}: {m}</div>)}
       {d && d.tlds.length === 0 && !busy && <div className="empty-note">{t('مفيش أسعار لسه. اربط Hostinger أو Namecheap أو ResellerClub من صفحة التطبيقات.', 'No prices yet. Connect Hostinger, Namecheap or ResellerClub in Apps.')}</div>}
-      <form className="card inline-form" style={{ gridTemplateColumns: 'repeat(5, 1fr) auto', margin: '16px 0' }} onSubmit={(e) => { e.preventDefault(); void saveSettings(); }}>
-        <div className="field"><label htmlFor="pm">{t('نسبة المكسب %', 'Profit margin %')}</label><input id="pm" className="input latin" type="number" min={0} step="any" value={margin} onChange={(e) => setMargin(e.target.value)} /></div>
+      <div className="card inline-form" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '16px 0' }}>
+        <div className="field"><label htmlFor="pm">{t('نسبة المكسب الافتراضية %', 'Default margin %')}</label><input id="pm" className="input latin" type="number" min={0} step="any" value={margin} onChange={(e) => setMargin(e.target.value)} /></div>
         <div className="field"><label htmlFor="pr">{t('تقريب السعر لأقرب', 'Round price up to')}</label><input id="pr" className="input latin" type="number" min={0} step="any" value={rounding} onChange={(e) => setRounding(e.target.value)} /></div>
         <div className="field"><label htmlFor="pu">1 USD = ? {cur}</label><input id="pu" className="input latin" type="number" min={0} step="any" value={usd} onChange={(e) => setUsd(e.target.value)} /></div>
         <div className="field"><label htmlFor="pe">1 EUR = ? {cur}</label><input id="pe" className="input latin" type="number" min={0} step="any" value={eur} onChange={(e) => setEur(e.target.value)} /></div>
-        <div className="field"><label htmlFor="pf">{t('فلتر الامتداد', 'Filter extension')}</label><input id="pf" className="input latin" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder=".com" /></div>
-        <button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button>
-      </form>
+      </div>
 
       <form className="card inline-form" style={{ gridTemplateColumns: '1fr auto', margin: '16px 0' }} onSubmit={search}>
-        <div className="field"><label htmlFor="sq">{t('ابحث عن دومين (زي ما العميل هيشوفه، مع تكلفتك ومكسبك)', 'Search a domain (as clients see it, with your cost and profit)')}</label><input id="sq" className="input latin" dir="ltr" value={q} onChange={(e) => setQ(e.target.value)} placeholder="mybrand" /></div>
+        <div className="field"><label htmlFor="sq">{t('جرّب البحث (بيدوّر في الامتدادات اللي اخترتها بس، وبتشوف التكلفة والمكسب)', 'Try a search (only the extensions you chose, with your cost and profit)')}</label><input id="sq" className="input latin" dir="ltr" value={q} onChange={(e) => setQ(e.target.value)} placeholder="mybrand" /></div>
         <button className="btn btn-primary" type="submit">{t('ابحث', 'Search')}</button>
       </form>
       {hits && (
@@ -236,19 +261,35 @@ export function AdminPricing() {
 
       {d && d.tlds.length > 0 && (
         <>
-          <p className="muted" style={{ marginTop: 16 }}>{t('آخر تحديث', 'Last refreshed')}: <Ltr>{day(d.fetchedAt)}</Ltr> · {t('الأسعار بعملة المتجر', 'Prices in store currency')}: {cur} · {t('بنختار أرخص مزوّد لكل امتداد.', 'The cheapest provider is used for each extension.')}</p>
-          <Table head={[t('الامتداد', 'Extension'), t('أرخص مزوّد', 'Cheapest'), t('التكلفة (تسجيل)', 'Cost (register)'), t('المكسب %', 'Margin %'), t('سعر البيع (سنة)', 'Sell (1 yr)'), t('المكسب', 'Profit'), t('تجديد (تكلفة → بيع)', 'Renew (cost → sell)'), t('كل المزوّدين', 'All providers')]}>
-            {shown.map((x) => (
-              <tr key={x.tld}>
-                <td><Ltr>.{x.tld}</Ltr></td><td>{x.best}</td><td className="latin">{money(x.cost)}</td>
-                <td><input className="input latin" style={{ width: 80, height: 36 }} type="number" min={0} step="any" defaultValue={x.custom ? x.marginPct : ''} placeholder={String(x.marginPct)} aria-label={`${x.tld} margin`}
-                  onBlur={(e) => { if ((e.target.value === '' && x.custom) || (e.target.value !== '' && Number(e.target.value) !== x.marginPct)) setTldMargin(x.tld, e.target.value); }} /></td>
-                <td className="latin"><b>{money(x.sell)}</b> {cur}</td><td className="latin">{money(x.profit)} {cur}</td>
-                <td className="latin">{money(x.renewCost)} → {money(x.renewSell)}</td>
-                <td className="latin muted">{x.offers.map((o) => `${o.provider} ${money(o.costStore)}`).join(' · ')}</td>
-              </tr>
-            ))}
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>{t('اختار الامتدادات اللي هتبيعها', 'Choose the extensions you sell')} <span className="tag">{t(`${sel.size} مختار`, `${sel.size} selected`)}</span></h3>
+            <p className="muted">{t('الامتدادات اللي مش متعلّم عليها مش بتظهر للعملاء ومش بتتبحث. لكل امتداد تقدر تحط نسبة مكسب % أو مكسب ثابت بالجنيه (الثابت بيغلب النسبة).', 'Extensions you do not tick are never shown to clients or searched. For each one you can set a margin % or a fixed profit amount (the fixed amount wins).')}</p>
+            <div className="row-actions" style={{ alignItems: 'center' }}>
+              <input className="input latin" style={{ maxWidth: 200, height: 40 }} value={filter} onChange={(e) => { setFilter(e.target.value); setLimit(60); }} placeholder={t('ابحث: .com', 'Filter: .com')} aria-label={t('فلتر الامتداد', 'Filter extension')} />
+              <label className="check"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} /> {t('المختارة بس', 'Selected only')}</label>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => new Set([...s, ...shown.map((x) => x.tld)]))}>{t(`تحديد الظاهر (${shown.length})`, `Select shown (${shown.length})`)}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => { const n = new Set(s); shown.forEach((x) => n.delete(x.tld)); return n; })}>{t('إلغاء تحديد الظاهر', 'Clear shown')}</button>
+              <button className="btn btn-accent" disabled={!dirty || busy} onClick={() => void save()}>{t('حفظ', 'Save')}</button>
+            </div>
+          </div>
+          <p className="muted" style={{ marginTop: 12 }}>{t('آخر تحديث', 'Last refreshed')}: <Ltr>{day(d.fetchedAt)}</Ltr> · {t('الأسعار بعملة المتجر', 'Prices in store currency')}: {cur} · {t('بنختار أرخص مزوّد لكل امتداد.', 'The cheapest provider is used for each extension.')}</p>
+          <Table head={[t('بيع', 'Sell'), t('الامتداد', 'Extension'), t('أرخص مزوّد', 'Cheapest'), t('التكلفة', 'Cost'), t('مكسب %', 'Margin %'), t('مكسب ثابت', 'Fixed profit'), t('سعر البيع (سنة)', 'Sell (1 yr)'), t('المكسب', 'Profit'), t('كل المزوّدين', 'All providers')]}>
+            {page.map((x) => {
+              const on = sel.has(x.tld);
+              const pv = preview(x);
+              return (
+                <tr key={x.tld} style={on ? undefined : { opacity: .7 }}>
+                  <td><input type="checkbox" checked={on} onChange={(e) => toggle(x.tld, e.target.checked)} aria-label={`.${x.tld}`} /></td>
+                  <td><Ltr>.{x.tld}</Ltr></td><td>{x.best}</td><td className="latin">{money(x.cost)}</td>
+                  <td><input className="input latin" style={{ width: 76, height: 36 }} type="number" min={0} step="any" disabled={!on || !!fixed[x.tld]} value={pct[x.tld] ?? ''} placeholder={margin} aria-label={`${x.tld} margin`} onChange={(e) => setPct({ ...pct, [x.tld]: e.target.value })} /></td>
+                  <td><input className="input latin" style={{ width: 90, height: 36 }} type="number" min={0} step="any" disabled={!on} value={fixed[x.tld] ?? ''} placeholder="—" aria-label={`${x.tld} fixed profit`} onChange={(e) => setFixed({ ...fixed, [x.tld]: e.target.value })} /></td>
+                  <td className="latin"><b>{money(pv.sell)}</b> {cur}</td><td className="latin">{money(pv.profit)} {cur}</td>
+                  <td className="latin muted">{x.offers.map((o) => `${o.provider} ${money(o.costStore)}`).join(' · ')}</td>
+                </tr>
+              );
+            })}
           </Table>
+          {shown.length > page.length && <div className="row-actions"><button className="btn btn-ghost btn-sm" onClick={() => setLimit(limit + 100)}>{t(`عرض المزيد (${shown.length - page.length})`, `Show more (${shown.length - page.length})`)}</button></div>}
         </>
       )}
     </Page>

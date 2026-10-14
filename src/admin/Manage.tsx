@@ -180,7 +180,7 @@ export const AdminHosting = () => (
       { key: 'expires', label: ['التجديد القادم', 'Next renewal'], type: 'date' },
     ]}
     columns={[
-      { label: ['الخطة', 'Plan'], render: (it) => String(it.plan) }, { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.domain || '-')}</Ltr> },
+      { label: ['الخطة', 'Plan'], render: (it) => <Link className="link" to={`/admin/hosting/${it.id}`}>{String(it.plan)}</Link> }, { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.domain || '-')}</Ltr> },
       { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
       { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
       { label: ['التجديد', 'Renews'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> },

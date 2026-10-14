@@ -642,6 +642,14 @@ switch ($r) {
         $db = db_read();
         out(array('items' => items_of($db, $res)));
 
+    case 'admin/all':
+        need_admin();
+        $db = db_read();
+        $o = array('users' => array_map('public_user', $db['users']), 'items' => array(), 'tickets' => array());
+        foreach (array_keys($SCHEMA) as $res) { if ($res !== 'purchases') { $o['items'][$res] = items_of($db, $res); } }
+        foreach ($db['tickets'] as $t) { $o['tickets'][] = array('id' => $t['id'], 'uid' => $t['uid'], 'subject' => $t['subject'], 'status' => $t['status'], 'updated' => isset($t['updated']) ? $t['updated'] : ''); }
+        out($o);
+
     case 'admin/item-save':
         $me = need_admin();
         require_post();
