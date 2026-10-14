@@ -2,7 +2,8 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from '../auth';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
-import { tlds, type Plan } from '../data/content';
+import { tlds } from '../data/content';
+import type { CPlan } from './catalog';
 import { Ltr, useI18n } from '../i18n';
 import { useCurrency, useSite } from './settings';
 
@@ -28,8 +29,9 @@ export function Money({ value }: { value: number }) {
   return <span className="money"><b className="latin">{value.toLocaleString('en-US')}</b> <small>{cur}</small></span>;
 }
 
-export function PlanCard({ plan, per, cta }: { plan: Plan; per: string; cta: ReactNode }) {
+export function PlanCard({ plan, ctaLabel }: { plan: CPlan; ctaLabel?: string }) {
   const { L, t } = useI18n();
+  const per = plan.per === 'year' ? t('سنة', 'yr') : plan.per === 'once' ? t('مرة واحدة', 'one-time') : t('شهر', 'mo');
   return (
     <article className={`plan${plan.featured ? ' is-featured on-dark' : ''}`}>
       <header>
@@ -45,7 +47,7 @@ export function PlanCard({ plan, per, cta }: { plan: Plan; per: string; cta: Rea
         ))}
       </dl>
       <ul className="plan-list">{plan.features.map((f) => <li key={f.en}>{L(f)}</li>)}</ul>
-      <div className="plan-cta">{cta}</div>
+      <div className="plan-cta"><Link to={`/portal/order/${plan.id}`} className={`btn ${plan.featured ? 'btn-accent' : 'btn-ghost'}`}>{ctaLabel ?? t('اطلب الخطة', 'Choose plan')}</Link></div>
     </article>
   );
 }

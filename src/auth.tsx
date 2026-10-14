@@ -13,6 +13,8 @@ type Ctx = {
   mode: Mode; problem: Problem | null; detail: string; user: User | null;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  /** Re-reads the signed-in user (after sign-up). */
+  refresh: () => Promise<void>;
 };
 const Auth = createContext<Ctx | null>(null);
 const DEMO_KEY = 'ncloud-auth';
@@ -79,7 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, [mode]);
 
-  const value = useMemo(() => ({ mode, problem, detail, user, login, logout }), [mode, problem, detail, user, login, logout]);
+  const refresh = useCallback(async () => { try { const me = await api<{ user: User | null }>('auth/me'); setUser(me.user); } catch { /* keep the current state */ } }, []);
+  const value = useMemo(() => ({ mode, problem, detail, user, login, logout, refresh }), [mode, problem, detail, user, login, logout, refresh]);
   return <Auth.Provider value={value}>{children}</Auth.Provider>;
 }
 

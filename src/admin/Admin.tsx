@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { api, post, type User } from '../lib/api';
+import { api, post } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency } from '../site/settings';
 import { Page } from '../ui';
@@ -30,7 +30,7 @@ export function AdminLayout() {
   if (user.role !== 'admin') return <Navigate to="/portal" replace />;
   const items = [
     { to: '/admin', label: t('نظرة عامة', 'Overview'), end: true },
-    { to: '/admin/users', label: t('المستخدمين', 'Users') },
+    { to: '/admin/users', label: t('العملاء', 'Customers') },
     { to: '/admin/domains', label: t('الدومينات', 'Domains') },
     { to: '/admin/email', label: t('الإيميلات', 'Email') },
     { to: '/admin/hosting', label: t('الاستضافة', 'Hosting') },
@@ -39,6 +39,7 @@ export function AdminLayout() {
     { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
     { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
     { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },
+    { to: '/admin/plans', label: t('الباقات والأسعار', 'Plans') },
     { to: '/admin/apps', label: t('التطبيقات', 'Apps') },
     { to: '/admin/pricing', label: t('أسعار الدومينات', 'TLD pricing') },
     { to: '/admin/purchases', label: t('فواتير الشراء', 'Purchases') },
@@ -119,72 +120,6 @@ export function AdminOverview() {
           </div>
         </>
       )}
-    </Page>
-  );
-}
-
-export function AdminUsers() {
-  const { t } = useI18n();
-  const { user: me } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', role: 'client', password: '' });
-  const [editing, setEditing] = useState<string | null>(null);
-  const [newPass, setNewPass] = useState('');
-
-  const load = useCallback(() => { api<{ users: User[] }>('admin/users').then((r) => setUsers(r.users)).catch((e) => setErr(errText(e, t))); }, [t]);
-  useEffect(load, [load]);
-
-  const run = async (fn: () => Promise<unknown>, done: string) => {
-    setErr(''); setOk('');
-    try { await fn(); setOk(done); load(); return true; } catch (e) { setErr(errText(e, t)); return false; }
-  };
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
-    if (await run(() => post('admin/users', form), t('تم إنشاء المستخدم.', 'User created.'))) setForm({ name: '', email: '', role: 'client', password: '' });
-  };
-
-  return (
-    <Page title={t('المستخدمين', 'Users')}>
-      {err && <div className="form-error" role="alert">{err}</div>}
-      {ok && <div className="form-ok" role="status">{ok}</div>}
-      <form className="card inline-form" onSubmit={create} style={{ gridTemplateColumns: '1fr 1.2fr 120px 1fr auto', margin: '16px 0' }}>
-        <div className="field"><label htmlFor="un">{t('الاسم', 'Name')}</label><input id="un" className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div className="field"><label htmlFor="ue">{t('الإيميل', 'Email')}</label><input id="ue" className="input latin" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-        <div className="field"><label htmlFor="ur">{t('النوع', 'Role')}</label><select id="ur" className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="client">{t('عميل', 'Client')}</option><option value="admin">{t('أدمن', 'Admin')}</option></select></div>
-        <div className="field"><label htmlFor="up">{t('كلمة السر', 'Password')}</label><input id="up" className="input latin" type="password" minLength={8} required autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
-        <button className="btn btn-accent" type="submit">{t('إضافة', 'Add')}</button>
-      </form>
-      <div className="table-wrap">
-        <table className="tbl">
-          <thead><tr><th>{t('الاسم', 'Name')}</th><th>{t('الإيميل', 'Email')}</th><th>{t('النوع', 'Role')}</th><th /></tr></thead>
-          <tbody>
-            {users.map((u) => (
-              <Fragment key={u.id}>
-                <tr>
-                  <td><Link className="link" to={`/admin/users/${u.id}`}>{u.name}</Link>{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}</td>
-                  <td><Ltr>{u.email}</Ltr></td>
-                  <td><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : t('عميل', 'Client')}</span></td>
-                  <td><div className="row-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(editing === u.id ? null : u.id); setNewPass(''); }}>{t('كلمة سر جديدة', 'New password')}</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => run(() => post('admin/user-update', { id: u.id, role: u.role === 'admin' ? 'client' : 'admin' }), t('تم تغيير النوع.', 'Role changed.'))}>{u.role === 'admin' ? t('خفّض لعميل', 'Make client') : t('اجعله أدمن', 'Make admin')}</button>
-                    {me?.id !== u.id && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف المستخدم ده؟', 'Delete this user?'))) run(() => post('admin/user-delete', { id: u.id }), t('تم الحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>}
-                  </div></td>
-                </tr>
-                {editing === u.id && (
-                  <tr className="edit-row"><td colSpan={4}>
-                    <form className="inline-edit" onSubmit={async (e) => { e.preventDefault(); if (await run(() => post('admin/user-update', { id: u.id, password: newPass }), t('تم تغيير كلمة السر.', 'Password changed.'))) setEditing(null); }}>
-                      <input className="input latin" type="password" minLength={8} required autoComplete="new-password" placeholder={t('كلمة السر الجديدة (8+)', 'New password (8+)')} value={newPass} onChange={(e) => setNewPass(e.target.value)} />
-                      <button className="btn btn-primary btn-sm" type="submit">{t('حفظ', 'Save')}</button>
-                    </form>
-                  </td></tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </Page>
   );
 }

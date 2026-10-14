@@ -1,6 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { bundle, emailPlans, faqs, hostingPlans, services, sitePackages, stats, steps, tlds, vpsPlans, type Plan } from '../data/content';
+import { faqs, services, stats, steps } from '../data/content';
+import { useCatalog, type CPlan } from './catalog';
+import { useSite } from './settings';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { post } from '../lib/api';
@@ -9,17 +11,20 @@ import { DomainSearch, Faq, Money, Ph, PlanCard, SectionHead } from './parts';
 /* ───────── Home ───────── */
 export function Home() {
   const { t, L } = useI18n();
+  const { mode } = useAuth();
+  const { tlds, of, live } = useCatalog();
+  const hosting = of('hosting');
   return (
     <>
       <section className="container hero-wrap">
         <div className="hero on-dark">
-          <span className="status-pill"><span className="dot pulse" /> <span className="latin">ALL SYSTEMS OPERATIONAL</span></span>
+          {mode === 'server' && <span className="status-pill"><span className="dot pulse" /> <span className="latin">SERVICES ONLINE</span></span>}
           <h1>{t('كل اللي شركتك محتاجاه ', 'Everything your business needs ')}<em>{t('أونلاين', 'online')}</em>{t('… في مكان واحد', ', in one place')}</h1>
           <p>{t('دومينات، إيميلات أعمال، تصميم مواقع، استضافة وخدمات كلاود كاملة. ابدأ باسم براندك.', 'Domains, business email, web design, hosting and full cloud services. Start with your brand name.')}</p>
           <DomainSearch dark />
-          <div className="hero-tlds latin">
-            {tlds.slice(0, 4).map((x) => <span key={x.ext}>{x.ext} <b>{x.register}</b></span>)}<Ph />
-          </div>
+          {tlds.length > 0 && <div className="hero-tlds latin">
+            {tlds.slice(0, 4).map((x) => <span key={x.ext}>{x.ext} <b>{x.register}</b></span>)}{!live && <Ph />}
+          </div>}
         </div>
       </section>
 
@@ -37,19 +42,19 @@ export function Home() {
         </div>
       </section>
 
-      <section className="section container tld-section">
+      {tlds.length > 0 && <section className="section container tld-section">
         <SectionHead title={t('أسعار الدومينات', 'Domain prices')} text={t('تسجيل وتجديد بسعر واضح، وإدارة DNS مجانية.', 'Clear registration and renewal prices, with free DNS management.')} />
         <TldTable />
-      </section>
+      </section>}
 
-      <section className="section container">
+      {hosting.length > 0 && <section className="section container">
         <SectionHead title={t('خطط الاستضافة', 'Hosting plans')} />
         <div className="grid g3 plans">
-          {hostingPlans.map((p) => <PlanCard key={p.id} plan={p} per={t('شهر', 'mo')} cta={<Link to="/contact" className={`btn ${p.featured ? 'btn-accent' : 'btn-ghost'}`}>{t('اطلب الخطة', 'Choose plan')}</Link>} />)}
+          {hosting.map((p) => <PlanCard key={p.id} plan={p} />)}
         </div>
-      </section>
+      </section>}
 
-      <section className="section stats-wrap on-dark">
+      {!live && <section className="section stats-wrap on-dark">
         <div className="container">
           <SectionHead title={t('أرقام نفتخر بيها', 'Numbers we stand behind')} />
           <div className="grid g4 stats">
@@ -57,7 +62,7 @@ export function Home() {
           </div>
           <p className="stats-note"><Ph /> {t('أرقام تجريبية لحد ما نحط الأرقام الحقيقية.', 'Placeholder numbers until real figures are available.')}</p>
         </div>
-      </section>
+      </section>}
 
       <section className="section container">
         <SectionHead title={t('إزاي بنشتغل', 'How it works')} />
@@ -82,17 +87,21 @@ export function Home() {
 
 export function BundleBanner() {
   const { t, L } = useI18n();
+  const { of } = useCatalog();
+  const cur = useSite();
+  const b = of('bundle')[0];
+  void cur;
+  if (!b) return null;
   return (
     <div className="bundle on-dark nt-volt-edge">
       <div>
         <span className="tag volt">{t('باقة كاملة', 'Bundle')}</span>
-        <h2>{L(bundle.title)}</h2>
-        <p>{L(bundle.text)}</p>
-        <ul>{bundle.items.map((i) => <li key={i.en}>{L(i)}</li>)}</ul>
+        <h2>{L(b.name)}</h2>
+        <ul>{(b.included ?? []).map((i) => <li key={i.en}>{L(i)}</li>)}</ul>
       </div>
       <div className="bundle-buy">
-        <div className="plan-price"><Money value={bundle.price} /> <span className="per">/ {t('سنة', 'yr')}</span> <Ph /></div>
-        <Link to="/contact" className="btn btn-accent">{t('اطلب الباقة', 'Get the bundle')}</Link>
+        <div className="plan-price"><Money value={b.price} /> <span className="per">/ {b.per === 'year' ? t('سنة', 'yr') : b.per === 'once' ? t('مرة واحدة', 'one-time') : t('شهر', 'mo')}</span></div>
+        <Link to={`/portal/order/${b.id}`} className="btn btn-accent">{t('اطلب الباقة', 'Get the bundle')}</Link>
       </div>
     </div>
   );
@@ -113,6 +122,8 @@ export function CtaBand() {
 
 function TldTable() {
   const { t } = useI18n();
+  const { tlds, live } = useCatalog();
+  if (tlds.length === 0) return null;
   return (
     <div className="table-wrap">
       <table className="tbl">
@@ -121,7 +132,7 @@ function TldTable() {
           {tlds.map((x) => (
             <tr key={x.ext}>
               <td><Ltr>{x.ext}</Ltr> {x.popular && <span className="tag dark">{t('الأشهر', 'Popular')}</span>}</td>
-              <td><Money value={x.register} /> <Ph /></td>
+              <td><Money value={x.register} /> {!live && <Ph />}</td>
               <td><Money value={x.renew} /></td>
             </tr>
           ))}
@@ -133,9 +144,9 @@ function TldTable() {
 
 /* ───────── Generic service page ───────── */
 type Feature = { title: string; text: string };
-function ServicePage({ eyebrow, title, intro, hero, features, plansTitle, plans, per, planCta }: {
+function ServicePage({ eyebrow, title, intro, hero, features, plansTitle, plans, planCta }: {
   eyebrow: string; title: ReactNode; intro: string; hero?: ReactNode; features: Feature[];
-  plansTitle?: string; plans?: Plan[]; per?: string; planCta?: string;
+  plansTitle?: string; plans?: CPlan[]; planCta?: string;
 }) {
   const { t } = useI18n();
   return (
@@ -156,11 +167,11 @@ function ServicePage({ eyebrow, title, intro, hero, features, plansTitle, plans,
           ))}
         </div>
       </section>
-      {plans && (
+      {plans && plans.length > 0 && (
         <section className="section container">
           <SectionHead title={plansTitle ?? t('الخطط', 'Plans')} />
           <div className="grid g3 plans">
-            {plans.map((p) => <PlanCard key={p.id} plan={p} per={per ?? t('شهر', 'mo')} cta={<Link to="/contact" className={`btn ${p.featured ? 'btn-accent' : 'btn-ghost'}`}>{planCta ?? t('اطلب الخطة', 'Choose plan')}</Link>} />)}
+            {plans.map((p) => <PlanCard key={p.id} plan={p} ctaLabel={planCta} />)}
           </div>
         </section>
       )}
@@ -191,6 +202,7 @@ export function Domains() {
 
 export function EmailPage() {
   const { t } = useI18n();
+  const { of } = useCatalog();
   return (
     <ServicePage
       eyebrow="BUSINESS EMAIL"
@@ -201,14 +213,14 @@ export function EmailPage() {
         { title: 'SPF · DKIM · DMARC', text: t('بنظبطهم لك عشان رسايلك توصل Inbox مش Spam.', 'We set them up so your mail lands in the inbox, not spam.') },
         { title: t('على كل أجهزتك', 'On every device'), text: t('Webmail وIMAP وتطبيقات موبايل.', 'Webmail, IMAP and mobile apps.') },
       ]}
-      plans={emailPlans}
-      per={t('مستخدم / شهر', 'user / mo')}
+      plans={of('email')}
     />
   );
 }
 
 export function Websites() {
   const { t } = useI18n();
+  const { of } = useCatalog();
   return (
     <ServicePage
       eyebrow="WEB DESIGN"
@@ -220,8 +232,7 @@ export function Websites() {
         { title: t('بتديره بنفسك', 'Edit it yourself'), text: t('لوحة محتوى بسيطة بدون ما تحتاج مبرمج.', 'A simple content panel, no developer needed.') },
       ]}
       plansTitle={t('باقات المواقع', 'Website packages')}
-      plans={sitePackages}
-      per={t('مرة واحدة', 'one-time')}
+      plans={of('site')}
       planCta={t('اطلب عرض', 'Request a quote')}
     />
   );
@@ -229,6 +240,7 @@ export function Websites() {
 
 export function Hosting() {
   const { t } = useI18n();
+  const { of } = useCatalog();
   return (
     <ServicePage
       eyebrow="HOSTING"
@@ -239,13 +251,14 @@ export function Hosting() {
         { title: t('أمان', 'Security'), text: t('SSL مجاني وجدار حماية ومسح للبرمجيات الخبيثة.', 'Free SSL, a firewall and malware scanning.') },
         { title: t('نسخ احتياطي', 'Backups'), text: t('نسخ يومي واسترجاع بضغطة.', 'Daily backups and one-click restore.') },
       ]}
-      plans={hostingPlans}
+      plans={of('hosting')}
     />
   );
 }
 
 export function Cloud() {
   const { t } = useI18n();
+  const { of } = useCatalog();
   return (
     <ServicePage
       eyebrow="CLOUD & VPS"
@@ -257,7 +270,7 @@ export function Cloud() {
         { title: t('مراقبة وتنبيهات', 'Monitoring & alerts'), text: t('تنبيه فوري لو فيه مشكلة في أي خدمة.', 'Instant alerts if any service has a problem.') },
       ]}
       plansTitle={t('خطط VPS', 'VPS plans')}
-      plans={vpsPlans}
+      plans={of('vps')}
     />
   );
 }
@@ -265,23 +278,25 @@ export function Cloud() {
 /* ───────── Pricing ───────── */
 export function Pricing() {
   const { t } = useI18n();
-  const groups: { title: string; plans: Plan[]; per: string }[] = [
-    { title: t('الاستضافة', 'Hosting'), plans: hostingPlans, per: t('شهر', 'mo') },
-    { title: t('الإيميلات', 'Email'), plans: emailPlans, per: t('مستخدم / شهر', 'user / mo') },
-    { title: 'VPS', plans: vpsPlans, per: t('شهر', 'mo') },
-    { title: t('تصميم المواقع', 'Web design'), plans: sitePackages, per: t('مرة واحدة', 'one-time') },
-  ];
+  const { of, tlds, ready } = useCatalog();
+  const groups: { title: string; plans: CPlan[] }[] = [
+    { title: t('الاستضافة', 'Hosting'), plans: of('hosting') },
+    { title: t('الإيميلات', 'Email'), plans: of('email') },
+    { title: 'VPS', plans: of('vps') },
+    { title: t('تصميم المواقع', 'Web design'), plans: of('site') },
+  ].filter((g) => g.plans.length > 0);
   return (
     <>
-      <section className="container hero-wrap"><div className="hero hero-sm on-dark"><span className="eyebrow latin">PRICING</span><h1>{t('أسعار واضحة', 'Clear pricing')}</h1><p>{t('كل الأسعار تجريبية لحد الإطلاق.', 'All prices are placeholders until launch.')} <Ph /></p></div></section>
+      <section className="container hero-wrap"><div className="hero hero-sm on-dark"><span className="eyebrow latin">PRICING</span><h1>{t('أسعار واضحة', 'Clear pricing')}</h1><p>{t('اختار الباقة المناسبة واطلبها من حسابك.', 'Pick the plan that fits and order it from your account.')}</p></div></section>
       {groups.map((g) => (
         <section className="section container" key={g.title} style={{ paddingBlock: 40 }}>
           <SectionHead title={g.title} />
-          <div className="grid g3 plans">{g.plans.map((p) => <PlanCard key={p.id} plan={p} per={g.per} cta={<Link to="/contact" className={`btn ${p.featured ? 'btn-accent' : 'btn-ghost'}`}>{t('اطلب', 'Order')}</Link>} />)}</div>
+          <div className="grid g3 plans">{g.plans.map((p) => <PlanCard key={p.id} plan={p} />)}</div>
         </section>
       ))}
+      {ready && groups.length === 0 && tlds.length === 0 && <section className="section container"><div className="card"><h3>{t('اتواصل معنا للأسعار', 'Contact us for pricing')}</h3><p>{t('هنجهّز لك عرض يناسب احتياجك.', 'We will prepare a quote that fits your needs.')}</p><Link to="/contact" className="btn btn-accent">{t('تواصل معنا', 'Contact us')}</Link></div></section>}
       <section className="container"><BundleBanner /></section>
-      <section className="section container tld-section"><SectionHead title={t('الدومينات', 'Domains')} /><TldTable /></section>
+      {tlds.length > 0 && <section className="section container tld-section"><SectionHead title={t('الدومينات', 'Domains')} /><TldTable /></section>}
       <CtaBand />
     </>
   );
@@ -289,17 +304,17 @@ export function Pricing() {
 
 /* ───────── Status ───────── */
 export function Status() {
-  const { t, L } = useI18n();
-  const rows = services.map((s) => ({ s, up: '99.98%' }));
+  const { t } = useI18n();
+  const { mode } = useAuth();
+  const up = mode === 'server';
   return (
     <>
-      <section className="container hero-wrap"><div className="hero hero-sm on-dark"><span className="status-pill"><span className="dot pulse" /> <span className="latin">ALL SYSTEMS OPERATIONAL</span></span><h1>{t('حالة الخدمات', 'Service status')}</h1><p>{t('بيانات تجريبية لعرض التصميم.', 'Demo data to show the design.')} <Ph /></p></div></section>
+      <section className="container hero-wrap"><div className="hero hero-sm on-dark">{mode !== 'checking' && <span className="status-pill"><span className={`dot${up ? ' pulse' : ''}`} /> <span className="latin">{up ? 'ALL SYSTEMS OPERATIONAL' : 'DEGRADED'}</span></span>}<h1>{t('حالة الخدمات', 'Service status')}</h1><p>{t('الفحص بيتم مباشرة وقت فتح الصفحة.', 'Checked live, when you open this page.')}</p></div></section>
       <section className="section container">
         <div className="status-list">
-          {rows.map(({ s, up }) => (
-            <div key={s.key} className="status-row"><span className="dot pulse" /><b>{L(s.title)}</b><span className="tag ok">{t('شغال', 'Operational')}</span><span className="latin up">{up}</span></div>
-          ))}
+          <div className="status-row"><span className={`dot${up ? ' pulse' : ''}`} /><b>{t('الموقع ولوحة التحكم', 'Website & control panel')}</b><span className={`tag ${up ? 'ok' : 'bad'}`}>{up ? t('شغال', 'Operational') : t('مشكلة', 'Problem')}</span><span className="latin up">{new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</span></div>
         </div>
+        <p className="muted" style={{ marginTop: 16 }}>{t('لو عندك مشكلة في خدمة معيّنة، افتح تذكرة دعم من لوحتك.', 'If a specific service is not working for you, open a support ticket from your panel.')}</p>
       </section>
     </>
   );
@@ -330,6 +345,7 @@ export function Contact() {
     <>
       <section className="container hero-wrap"><div className="hero hero-sm on-dark"><span className="eyebrow latin">CONTACT</span><h1>{t('كلمنا', 'Talk to us')}</h1><p>{t('احكيلنا محتاج إيه ونرجعلك بأسرع وقت.', 'Tell us what you need and we will get back to you quickly.')}</p></div></section>
       <section className="section container contact">
+        <ContactDetails />
         {sent ? (
           <div className="card"><h3>{t('وصلتنا رسالتك', 'Message received')}</h3><p>{mode === 'server' ? t('هنرد عليك في أقرب وقت.', 'We will get back to you shortly.') : t('(نموذج تجريبي: مفيش إرسال فعلي لحد تثبيت الموقع على استضافة PHP.)', '(Demo form: nothing is sent until the site is installed on a PHP host.)')}</p></div>
         ) : (
@@ -363,4 +379,18 @@ export function NotFound() {
       </div>
     </section>
   );
+}
+
+function ContactDetails() {
+  const { t } = useI18n();
+  const { settings } = useSite();
+  const rows: [string, string, string | null][] = [
+    [t('الإيميل', 'Email'), settings.contactEmail ?? '', settings.contactEmail ? `mailto:${settings.contactEmail}` : null],
+    [t('الموبايل', 'Phone'), settings.phone ?? '', settings.phone ? `tel:${settings.phone}` : null],
+    ['WhatsApp', settings.whatsapp ?? '', settings.whatsapp ? `https://wa.me/${settings.whatsapp.replace(/[^0-9]/g, '')}` : null],
+    [t('العنوان', 'Address'), settings.address ?? '', null],
+  ];
+  const shown = rows.filter((r) => r[1]);
+  if (shown.length === 0) return null;
+  return <div className="card" style={{ marginBottom: 16 }}><dl className="kv">{shown.map(([k, v, href]) => <div key={k}><dt>{k}</dt><dd>{href ? <a className="link" href={href} dir="ltr">{v}</a> : v}</dd></div>)}</dl></div>;
 }

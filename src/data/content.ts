@@ -83,7 +83,7 @@ export const bundle = {
 
 export const faqs: { q: Bi; a: Bi }[] = [
   { q: { ar: 'أقدر أنقل دومين عندي لنوتش كلاود؟', en: 'Can I transfer my existing domain?' }, a: { ar: 'أيوه، بنساعدك في النقل بدون توقف في الموقع أو الإيميلات.', en: 'Yes. We handle the transfer with no downtime for your site or email.' } },
-  { q: { ar: 'الأسعار شاملة الضريبة؟', en: 'Do prices include tax?' }, a: { ar: 'الأسعار الحالية تجريبية. الأسعار النهائية هتتحدد قبل الإطلاق.', en: 'Current prices are placeholders. Final pricing will be set before launch.' } },
+  { q: { ar: 'الأسعار شاملة الضريبة؟', en: 'Do prices include tax?' }, a: { ar: 'الأسعار المعروضة هي سعر الخدمة، وأي ضرائب مطبّقة بتظهر في الفاتورة.', en: 'Listed prices are the price of the service; any applicable tax is shown on the invoice.' } },
   { q: { ar: 'إيه طرق الدفع؟', en: 'How can I pay?' }, a: { ar: 'كروت بنكية، InstaPay، محافظ إلكترونية وتحويل بنكي للشركات.', en: 'Bank cards, InstaPay, e-wallets and bank transfer for companies.' } },
   { q: { ar: 'فيه نسخ احتياطي؟', en: 'Are backups included?' }, a: { ar: 'نسخ يومية على خطط الاستضافة من بيزنس وأعلى، واسترجاع بضغطة.', en: 'Daily backups on Business hosting and above, with one-click restore.' } },
   { q: { ar: 'الدعم بيشتغل إمتى؟', en: 'When is support available?' }, a: { ar: 'الدعم الفني والمراقبة 24/7 على كل الخدمات.', en: 'Technical support and monitoring are available 24/7 on all services.' } },

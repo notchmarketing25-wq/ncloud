@@ -3,7 +3,7 @@
  * Notch Cloud Services: API (single file, flat-file storage, PHP 7.0+).
  * Written to api/ by install.php. Data lives in api/data/db.php (PHP-guarded JSON), never in a public file.
  *
- * Public : status | public/settings | public/lead
+ * Public : status | public/settings | public/catalog | public/lead | public/domain-search | auth/register
  * Auth   : auth/me | auth/login | auth/logout | auth/password
  * Client : me/data | svc/dns-save | svc/dns-delete | svc/server-power | svc/server-snapshot | tickets/create | tickets/reply | tickets/status
  * Admin  : admin/update | admin/domain | admin/domain-dns | admin/providers* | admin/pricing* | admin/overview | admin/users | admin/user-update | admin/user-delete | admin/items | admin/item-save | admin/item-delete
@@ -29,6 +29,8 @@ $SCHEMA = array(
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
     // Websites: each one is linked to a hosting plan and a domain (and, through the domain, to its mailboxes).
     'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500)),
+    // Public price list shown on the website (edited in Admin → Plans). Not owned by a client.
+    'plans' => array('category' => array('enum', array('hosting', 'email', 'vps', 'site', 'bundle')), 'nameAr' => array('str', 80, 'req'), 'nameEn' => array('str', 80), 'price' => array('num', 'req'), 'per' => array('enum', array('month', 'year', 'once')), 'featured' => array('bool'), 'active' => array('bool'), 'sort' => array('num'), 'specs' => array('str', 700), 'features' => array('str', 900)),
     // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
     'purchases' => array('item' => array('str', 160, 'req'), 'provider' => array('str', 30), 'ref' => array('str', 80), 'service' => array('str', 20), 'client' => array('str', 32), 'amount' => array('num', 'req'), 'period' => array('enum', array('monthly', 'yearly', 'once')), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
 );
@@ -188,7 +190,7 @@ function db_update($fn) {
 }
 
 /* ───────── helpers ───────── */
-function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null); }
+function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : ''); }
 function new_id() { return function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)); }
 function find_by($list, $key, $val) { foreach ($list as $i => $u) { if (isset($u[$key]) && $u[$key] === $val) { return $i; } } return -1; }
 function find_user($db, $key, $val) { return find_by($db['users'], $key, $val); }
@@ -272,6 +274,8 @@ function need_user() { $u = current_user(); if (!$u) { fail('not signed in', 401
 function need_admin() { $u = need_user(); if ($u['role'] !== 'admin') { fail('forbidden', 403); } return $u; }
 function can_touch($u, $item) { return $u['role'] === 'admin' || (isset($item['uid']) && $item['uid'] === $u['id']); }
 function res_name() { global $SCHEMA; $r = isset($_GET['res']) ? (string) $_GET['res'] : ''; if (!isset($SCHEMA[$r])) { fail('unknown resource', 404); } return $r; }
+/** Records that belong to the company, not to a client (purchase bills, the public plans). */
+function res_unowned($res) { return $res === 'purchases' || $res === 'plans'; }
 function items_of($db, $res) { return isset($db['items'][$res]) && is_array($db['items'][$res]) ? $db['items'][$res] : array(); }
 function mine($db, $res, $uid) { return array_values(array_filter(items_of($db, $res), function ($i) use ($uid) { return $i['uid'] === $uid; })); }
 
@@ -283,7 +287,7 @@ if (!is_file(NC_DATA . '/installed.lock')) {
 }
 start_session();
 
-if ($r === 'admin/update') {
+if ($r === 'admin/update' || $r === 'admin/update/restore') {
     require_once __DIR__ . '/update.php';
     $me = need_admin();
     upd_route($r, $me);
@@ -304,7 +308,20 @@ switch ($r) {
 
     case 'public/settings':
         $db = db_read();
-        out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', true), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', '')));
+        out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''),
+            'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true)));
+
+    case 'public/catalog':
+        // What the website sells: the active plans (Admin → Plans) and the domain extensions chosen in TLD pricing. No costs, no providers.
+        $db = db_read();
+        $plans = array_values(array_filter(items_of($db, 'plans'), function ($p) { return !empty($p['active']); }));
+        usort($plans, function ($a, $b) { return ((float) $a['sort']) <=> ((float) $b['sort']); });
+        $tlds = array();
+        if (is_file(NC_DATA . '/cache-tlds.json')) {
+            require_once __DIR__ . '/providers.php';
+            foreach (prov_tld_table($db, prov_cache_read()) as $r) { if ($r['selected']) { $tlds[] = array('ext' => '.' . $r['tld'], 'register' => $r['sell'], 'renew' => $r['renewSell']); } }
+        }
+        out(array('plans' => array_map(function ($p) { unset($p['uid'], $p['created']); return $p; }, $plans), 'tlds' => $tlds, 'currency' => meta_get($db, 'currency', '')));
 
     case 'public/lead':
         require_post();
@@ -370,6 +387,56 @@ switch ($r) {
         $_SESSION['uid'] = $db['users'][$i]['id'];
         out(array('user' => public_user($db['users'][$i])));
 
+    case 'auth/register':
+        require_post();
+        $b = body();
+        $name = clean_name(isset($b['name']) ? $b['name'] : '');
+        $email = clean_email(isset($b['email']) ? $b['email'] : '');
+        $phone = clean_text(isset($b['phone']) ? $b['phone'] : '', 30);
+        $company = clean_text(isset($b['company']) ? $b['company'] : '', 80);
+        if ($name === '') { fail('name is required', 422); }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
+        check_password(isset($b['password']) ? $b['password'] : '');
+        $ip = client_ip();
+        $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => 'client', 'hash' => password_hash($b['password'], PASSWORD_DEFAULT), 'created' => gmdate('c'), 'phone' => $phone, 'company' => $company, 'source' => 'signup');
+        $res = db_update(function (&$db) use ($user, $ip) {
+            if (!meta_get($db, 'allowRegistration', true)) { return 'closed'; }
+            if (rate_blocked($db, 'reg:' . $ip, 5, 3600)) { return 'rate'; }
+            if (find_user($db, 'email', $user['email']) >= 0) { return 'dup'; }
+            rate_hit($db, 'reg:' . $ip);
+            $db['users'][] = $user;
+            log_act($db, $user, 'signup', $user['email']);
+            return array('to' => meta_get($db, 'contactEmail', ''));
+        });
+        if ($res === 'closed') { fail('new sign-ups are closed', 403); }
+        if ($res === 'rate') { fail('too many attempts, try later', 429); }
+        if ($res === 'dup') { fail('this email is already registered', 409); }
+        if (!empty($res['to']) && function_exists('mail')) {
+            @mail($res['to'], '=?UTF-8?B?' . base64_encode('New client: ' . $name) . '?=', "A new client signed up.\nName: $name\nEmail: $email\nPhone: $phone\nCompany: $company", "Content-Type: text/plain; charset=UTF-8\r\nReply-To: $email");
+        }
+        session_regenerate_id(true);
+        $_SESSION['uid'] = $user['id'];
+        out(array('user' => public_user($user)), 201);
+
+    case 'orders/create':
+        $u = need_user();
+        require_post();
+        $b = body();
+        $planId = isset($b['planId']) ? (string) $b['planId'] : '';
+        $note = clean_text(isset($b['note']) ? $b['note'] : '', 2000);
+        $db0 = db_read();
+        $pi = find_by(items_of($db0, 'plans'), 'id', $planId);
+        if ($pi < 0) { fail('plan not found', 404); }
+        $plan = $db0['items']['plans'][$pi];
+        $now = gmdate('c');
+        $line = $plan['nameEn'] !== '' ? $plan['nameEn'] : $plan['nameAr'];
+        $per = array('month' => '/ month', 'year' => '/ year', 'once' => 'one-time');
+        $text = 'New order request: ' . $line . ' — ' . $plan['price'] . ' ' . (meta_get($db0, 'currency', '') ?: 'EGP') . ' ' . $per[$plan['per']] . ($note !== '' ? "\n\n" . $note : '');
+        $t = array('id' => new_id(), 'uid' => $u['id'], 'subject' => 'Order: ' . $line, 'status' => 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
+        $to = db_update(function (&$db) use ($t, $u) { $db['tickets'][] = $t; log_act($db, $u, 'order', $t['subject']); return meta_get($db, 'contactEmail', ''); });
+        if ($to && function_exists('mail')) { @mail($to, '=?UTF-8?B?' . base64_encode($t['subject']) . '?=', $u['name'] . ' <' . $u['email'] . ">\n\n" . $text, "Content-Type: text/plain; charset=UTF-8\r\nReply-To: " . $u['email']); }
+        out(array('ticket' => $t), 201);
+
     case 'auth/logout':
         require_post();
         $_SESSION = array();
@@ -392,7 +459,7 @@ switch ($r) {
         $db = db_read();
         $o = array();
         foreach (array_keys($SCHEMA) as $res) {
-            if ($res === 'purchases') { continue; }
+            if (res_unowned($res)) { continue; }
             // Our cost and supplier are never shown to clients.
             $o[$res] = array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref']); return $it; }, mine($db, $res, $u['id']));
         }
@@ -646,7 +713,7 @@ switch ($r) {
         need_admin();
         $db = db_read();
         $o = array('users' => array_map('public_user', $db['users']), 'items' => array(), 'tickets' => array());
-        foreach (array_keys($SCHEMA) as $res) { if ($res !== 'purchases') { $o['items'][$res] = items_of($db, $res); } }
+        foreach (array_keys($SCHEMA) as $res) { if (!res_unowned($res)) { $o['items'][$res] = items_of($db, $res); } }
         foreach ($db['tickets'] as $t) { $o['tickets'][] = array('id' => $t['id'], 'uid' => $t['uid'], 'subject' => $t['subject'], 'status' => $t['status'], 'updated' => isset($t['updated']) ? $t['updated'] : ''); }
         out($o);
 
@@ -661,9 +728,9 @@ switch ($r) {
         if ($clean === null) { fail($err, 422); }
         $uid = isset($in['uid']) ? (string) $in['uid'] : '';
         $id = isset($in['id']) ? (string) $in['id'] : '';
-        if ($res === 'purchases') { $uid = ''; }
+        if (res_unowned($res)) { $uid = ''; }
         $saved = db_update(function (&$db) use ($res, $clean, $uid, $id, $me) {
-            if ($res !== 'purchases' && find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            if (!res_unowned($res) && find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
             if (!isset($db['items'][$res]) || !is_array($db['items'][$res])) { $db['items'][$res] = array(); }
             $i = $id === '' ? -1 : find_by($db['items'][$res], 'id', $id);
             if ($id !== '' && $i < 0) { return array('err' => 'item not found'); }
@@ -675,6 +742,7 @@ switch ($r) {
                 $item = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c')), $clean);
                 if ($res === 'domains') { $item['dns'] = array(); }
                 if ($res === 'servers') { $item['snapshots'] = 0; }
+                if ($res === 'plans' && !isset($item['sort'])) { $item['sort'] = count($db['items']['plans']) + 1; }
                 if ($res === 'purchases') {
                     $seq = (int) meta_get($db, 'purchaseSeq', 0) + 1;
                     $db['meta']['purchaseSeq'] = $seq;
@@ -688,7 +756,7 @@ switch ($r) {
                     if ($item['date'] === '') { $item['date'] = gmdate('Y-m-d'); }
                 }
                 $db['items'][$res][] = $item;
-                log_act($db, $me, $res . '-create', $uid === '' ? 'provider bill' : user_name($db, $uid));
+                log_act($db, $me, $res . '-create', $uid === '' ? ($res === 'plans' ? 'plan ' . $clean['nameAr'] : 'provider bill') : user_name($db, $uid));
             }
             return array('item' => $item);
         });
@@ -761,7 +829,8 @@ switch ($r) {
         $me = need_admin();
         $db = db_read();
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            out(array('site' => meta_get($db, 'site', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', true), 'currency' => meta_get($db, 'currency', ''), 'version' => meta_get($db, 'version', '')));
+            out(array('site' => meta_get($db, 'site', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'version' => NC_VERSION,
+                'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true)));
         }
         require_post();
         $b = body();
@@ -770,8 +839,10 @@ switch ($r) {
         if ($ce !== '' && !filter_var($ce, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         $cur = clean_text(isset($b['currency']) ? $b['currency'] : '', 8);
         $ph = !empty($b['placeholder']);
-        db_update(function (&$db) use ($site, $ce, $cur, $ph, $me) {
+        $extra = array('phone' => clean_text(isset($b['phone']) ? $b['phone'] : '', 30), 'whatsapp' => preg_replace('/[^0-9+]/', '', (string) (isset($b['whatsapp']) ? $b['whatsapp'] : '')), 'address' => clean_text(isset($b['address']) ? $b['address'] : '', 200), 'allowRegistration' => !isset($b['allowRegistration']) || !empty($b['allowRegistration']));
+        db_update(function (&$db) use ($site, $ce, $cur, $ph, $me, $extra) {
             $db['meta']['site'] = $site; $db['meta']['contactEmail'] = $ce; $db['meta']['currency'] = $cur; $db['meta']['placeholder'] = $ph;
+            foreach ($extra as $k => $v) { $db['meta'][$k] = $v; }
             log_act($db, $me, 'settings', 'updated site settings');
         });
         out(array('ok' => true));

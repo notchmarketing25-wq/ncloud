@@ -6,16 +6,20 @@ import './brand/tokens.css';
 import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
-import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
-import { AdminDomainDetail, AdminHostingDetail, AdminUpdates, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
+import { AdminAccount, AdminLayout, AdminOverview } from './admin/Admin';
+import { AdminUsers } from './admin/Customers';
+import { AdminUpdates } from './admin/Updates';
+import { AdminPlans } from './admin/Plans';
+import { AdminDomainDetail, AdminHostingDetail, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchases } from './admin/Providers';
 import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
 import { SiteProvider } from './site/settings';
+import { CatalogProvider } from './site/catalog';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
-import { Login, Overview, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport, PortalWebsites } from './portal/Portal';
+import { Login, OrderPlan, Overview, Register, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport, PortalWebsites } from './portal/Portal';
 
 const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashRouter;
 
@@ -24,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
     <I18nProvider>
       <AuthProvider>
       <SiteProvider>
+      <CatalogProvider>
       <Router>
         <Routes>
           <Route element={<Layout />}>
@@ -39,12 +44,14 @@ createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="portal/login" element={<Login />} />
+          <Route path="portal/register" element={<Register />} />
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="domains" element={<AdminDomains />} />
             <Route path="domains/:id" element={<AdminDomainDetail />} />
             <Route path="websites" element={<AdminWebsites />} />
+            <Route path="plans" element={<AdminPlans />} />
             <Route path="websites/:id" element={<AdminWebsiteDetail />} />
             <Route path="hosting/:id" element={<AdminHostingDetail />} />
             <Route path="users/:id" element={<AdminUserDetail />} />
@@ -67,6 +74,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="domains" element={<PortalDomains />} />
             <Route path="domains/:id" element={<PortalDomainDetail />} />
             <Route path="websites" element={<PortalWebsites />} />
+            <Route path="order/:id" element={<OrderPlan />} />
             <Route path="email" element={<PortalEmail />} />
             <Route path="hosting" element={<PortalHosting />} />
             <Route path="servers" element={<PortalServers />} />
@@ -75,6 +83,7 @@ createRoot(document.getElementById('root')!).render(
           </Route>
         </Routes>
       </Router>
+      </CatalogProvider>
       </SiteProvider>
       </AuthProvider>
     </I18nProvider>

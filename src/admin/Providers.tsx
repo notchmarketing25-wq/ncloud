@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
 import { useCurrency } from '../site/settings';
@@ -35,17 +36,31 @@ export function AdminApps() {
       <Notice err={err} ok={ok} />
       <div className="app-grid">
         {list.map((p) => (
-          <div className="card app-card" key={p.id}>
-            <div className="app-head"><h3>{p.name}</h3><span className={`tag ${p.connected ? (p.test && !p.test.ok ? 'bad' : 'ok') : ''}`}>{p.connected ? (p.test ? (p.test.ok ? t('متصل', 'Connected') : t('فيه مشكلة', 'Problem')) : t('محفوظ', 'Saved')) : t('غير متصل', 'Not connected')}</span></div>
-            <p className="muted">{p.caps.map(capLabel).join(' · ')}</p>
-            {p.test && !p.test.ok && <div className="form-error">{p.test.message}</div>}
-            <div className="row-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => setOpen({ id: p.id, tab: 'connect' })}>{p.connected ? t('الإعدادات', 'Settings') : t('ربط', 'Connect')}</button>
-              {p.connected && p.caps.includes('domains') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'domains' })}>{t('جلب الدومينات', 'Import domains')}</button>}
-              {p.connected && p.caps.includes('hosting') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'hosting' })}>{t('جلب الاستضافات', 'Import hosting')}</button>}
-              {p.connected && p.caps.includes('hosting') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'websites' })}>{t('جلب المواقع', 'Import websites')}</button>}
-            </div>
-          </div>
+          <button type="button" className="app-tile-card" key={p.id} onClick={() => setOpen({ id: p.id, tab: 'connect' })} aria-label={`${p.name} — ${t('عرض التفاصيل', 'View details')}`}>
+            <span className="app-tile-head">
+              <span className={`app-tile ${p.id}`}>{p.name.slice(0, 1)}</span>
+              <span className={`tag ${p.connected ? (p.test && !p.test.ok ? 'bad' : 'ok') : ''}`}>{p.connected ? (p.test ? (p.test.ok ? t('متصل', 'Connected') : t('فيه مشكلة', 'Problem')) : t('محفوظ', 'Saved')) : t('غير متصل', 'Not connected')}</span>
+            </span>
+            <b className="app-tile-name">{p.name}</b>
+            <span className="muted">{t('من', 'By')} {p.name}</span>
+            <span className="app-tile-desc">{p.caps.map(capLabel).join(' · ')}</span>
+            {p.test && !p.test.ok && <span className="form-error">{p.test.message}</span>}
+            <span className="app-tile-more">{t('عرض التفاصيل', 'View details')}</span>
+          </button>
+        ))}
+        {[
+          { to: '/admin/pricing', ar: 'أسعار الدومينات', en: 'TLD pricing', d: t('اختار الامتدادات اللي هتبيعها وحدد نسبة المكسب.', 'Choose the extensions you sell and set your margin.'), k: 'T' },
+          { to: '/admin/plans', ar: 'الباقات والأسعار', en: 'Plans', d: t('أسعار الاستضافة والإيميلات والمواقع اللي بتظهر في الموقع.', 'The hosting, email and website prices shown on the website.'), k: 'P' },
+          { to: '/admin/purchases', ar: 'فواتير الشراء', en: 'Purchases', d: t('اللي مستحق للمزوّدين وتكلفتك الشهرية والسنوية.', 'What you owe the providers and your monthly and yearly cost.'), k: 'B' },
+          { to: '/admin/updates', ar: 'التحديثات', en: 'Updates', d: t('ارفع ملف تحديث وشوف التغييرات والنسخ الاحتياطية.', 'Upload an update file; see the changes and backups.'), k: 'U' },
+        ].map((a) => (
+          <Link key={a.to} to={a.to} className="app-tile-card">
+            <span className="app-tile-head"><span className="app-tile builtin">{a.k}</span><span className="tag ok">{t('مدمج', 'Built in')}</span></span>
+            <b className="app-tile-name">{t(a.ar, a.en)}</b>
+            <span className="muted">{t('من نوتش كلاود', 'By Notch Cloud')}</span>
+            <span className="app-tile-desc">{a.d}</span>
+            <span className="app-tile-more">{t('فتح', 'Open')}</span>
+          </Link>
         ))}
       </div>
       {open && current && (

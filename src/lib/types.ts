@@ -10,4 +10,4 @@ export type TicketMsg = { from: 'client' | 'admin'; name: string; text: string; 
 export type Ticket = { id: string; uid?: string; owner?: string; subject: string; status: 'open' | 'answered' | 'closed'; updated: string; created?: string; messages: TicketMsg[] };
 export type Lead = { id: string; name: string; email: string; phone: string; service: string; message: string; status: 'new' | 'contacted' | 'closed'; at: string };
 export type ClientData = { websites?: Website[]; domains: Domain[]; mailboxes: Mailbox[]; hosting: Hosting[]; servers: Server[]; invoices: Invoice[]; tickets: Ticket[] };
-export type Settings = { site: string; contactEmail: string; placeholder: boolean; currency: string };
+export type Settings = { site: string; contactEmail: string; placeholder: boolean; currency: string; phone?: string; whatsapp?: string; address?: string; allowRegistration?: boolean };

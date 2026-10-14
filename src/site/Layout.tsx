@@ -70,7 +70,7 @@ export default function Layout() {
           <div className="header-actions">
             <LangToggle />
             <Link to={user ? (user.role === 'admin' ? '/admin' : '/portal') : '/portal/login'} className="btn btn-ghost btn-sm hide-sm">{user ? t('لوحتي', 'My panel') : t('دخول العميل', 'Client login')}</Link>
-            <Link to="/contact" className="btn btn-primary btn-sm hide-sm">{t('ابدأ الآن', 'Get started')}</Link>
+            <Link to={user || settings.allowRegistration === false ? '/contact' : '/portal/register'} className="btn btn-primary btn-sm hide-sm">{t('ابدأ الآن', 'Get started')}</Link>
             <button className="burger" onClick={() => setOpen(true)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default function Layout() {
           {nav.map((n) => <NavLink key={n.to} to={n.to} onClick={() => setOpen(false)}>{n.label}</NavLink>)}
           <div className="mobile-nav-foot">
             <Link to="/portal/login" className="btn btn-ghost">{t('دخول العميل', 'Client login')}</Link>
-            <Link to="/contact" className="btn btn-accent">{t('ابدأ الآن', 'Get started')}</Link>
+            <Link to={user || settings.allowRegistration === false ? '/contact' : '/portal/register'} className="btn btn-accent">{t('ابدأ الآن', 'Get started')}</Link>
           </div>
         </div>
       )}
@@ -103,11 +103,11 @@ function Footer() {
           <div>
             <Logo dark />
             <p className="footer-about">{t('دومينات، إيميلات، مواقع، استضافة وكلاود. كل حاجة تحتاجها أونلاين في مكان واحد.', 'Domains, email, websites, hosting and cloud. Everything you need online in one place.')}</p>
-            <p className="status-line"><span className="dot pulse" /> <span className="latin">ALL SYSTEMS OPERATIONAL</span></p>
+            {(settings.phone || settings.contactEmail || settings.address) && <p className="footer-about latin" dir="ltr" style={{ display: 'grid', gap: 4 }}>{settings.contactEmail && <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>}{settings.phone && <a href={`tel:${settings.phone}`}>{settings.phone}</a>}{settings.address && <span>{settings.address}</span>}</p>}
           </div>
           <div><h5>{t('الخدمات', 'Services')}</h5><Link to="/domains">{t('دومينات', 'Domains')}</Link><Link to="/email">{t('إيميلات', 'Email')}</Link><Link to="/websites">{t('مواقع', 'Websites')}</Link><Link to="/hosting">{t('استضافة', 'Hosting')}</Link><Link to="/cloud">{t('كلاود وVPS', 'Cloud & VPS')}</Link></div>
           <div><h5>{t('الشركة', 'Company')}</h5><Link to="/pricing">{t('الأسعار', 'Pricing')}</Link><Link to="/status">{t('حالة الخدمات', 'Status')}</Link><Link to="/contact">{t('تواصل معنا', 'Contact')}</Link></div>
-          <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link></div>
+          <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal/register">{t('إنشاء حساب', 'Create account')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link></div>
         </div>
         <div className="footer-word" aria-hidden>NOTCH</div>
         <div className="footer-bottom latin"><span>© {new Date().getFullYear()} {settings.site ? settings.site.toUpperCase() : 'NOTCH CLOUD SERVICES'}</span>{settings.placeholder && <span>PLACEHOLDER CONTENT</span>}</div>

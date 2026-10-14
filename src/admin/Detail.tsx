@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DnsEditor } from '../dns';
 import { Ltr, useI18n } from '../i18n';
-import { api, apiUrl, post, type User } from '../lib/api';
+import { api, post, type User } from '../lib/api';
 import type { DnsRec } from '../lib/types';
 import { useCurrency } from '../site/settings';
 import { day, Meter, Page, StatusTag, Table } from '../ui';
@@ -150,73 +150,6 @@ export function AdminWebsites() {
           );
         })}
       </Table>
-    </Page>
-  );
-}
-
-/* ───────── Updates: upload a version package instead of reinstalling ───────── */
-type UpdInfo = { version: string; php: string; storage: string; maxUpload: string; history: { from: string; to: string; at: string; by: string; files: number }[] };
-export function AdminUpdates() {
-  const { t } = useI18n();
-  const [info, setInfo] = useState<UpdInfo | null>(null);
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(() => { api<UpdInfo>('admin/update').then(setInfo).catch((e) => setErr(errText(e, t))); }, [t]);
-  useEffect(load, [load]);
-  const verOf = (name: string) => /(\d+)\.(\d+)\.(\d+)/.exec(name)?.slice(1).map(Number) ?? [0, 0, 0];
-  const send = async (file: File) => {
-    const fd = new FormData(); fd.append('pkg', file);
-    const res = await fetch(apiUrl('admin/update'), { method: 'POST', credentials: 'same-origin', headers: { 'X-NC': '1', Accept: 'application/json' }, body: fd });
-    const j = await res.json().catch(() => null) as { error?: string; from?: string; version?: string; files?: number } | null;
-    return { res, j };
-  };
-  /** One or several update files: applied oldest first, so you can drop all the versions you skipped at once. */
-  const upload = async (list: FileList | null) => {
-    if (!list || list.length === 0) return;
-    setErr(''); setOk(''); setBusy(true);
-    const files = [...list].sort((a, b) => { const x = verOf(a.name), y = verOf(b.name); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
-    const done: string[] = [];
-    try {
-      for (const f of files) {
-        const { res, j } = await send(f);
-        if (res.status === 409 && /not newer/.test(j?.error ?? '') && files.length > 1) { done.push(t(`${f.name}: مثبّت قبل كده`, `${f.name}: already installed`)); continue; }
-        if (!res.ok || !j) throw new Error(`${f.name}: ${j?.error ?? `HTTP ${res.status}`}`);
-        done.push(`${j.from} → ${j.version} (${j.files})`);
-      }
-      const applied = done.some((x) => x.includes('→'));
-      setOk((applied ? t('اتحدّث: ', 'Updated: ') : t('النظام محدّث بالفعل: ', 'Already up to date: ')) + done.join(' · ') + (applied ? t('. حدّث الصفحة (Ctrl+F5) عشان تشوف الواجهة الجديدة.', '. Reload the page (Ctrl+F5) to see the new interface.') : ''));
-    } catch (e) {
-      setErr((done.length ? t('اتطبّق: ', 'Applied: ') + done.join(' · ') + ' — ' : '') + (e instanceof Error ? e.message : 'error'));
-    } finally { setBusy(false); load(); }
-  };
-  return (
-    <Page title={t('التحديثات', 'Updates')}>
-      <Notice err={err} ok={ok} />
-      {info && (
-        <div className="card">
-          <dl className="kv">
-            <div><dt>{t('النسخة الحالية', 'Installed version')}</dt><dd className="latin">{info.version}</dd></div>
-            <div><dt>PHP</dt><dd className="latin">{info.php}</dd></div>
-            <div><dt>{t('التخزين', 'Storage')}</dt><dd className="latin">{info.storage}</dd></div>
-            <div><dt>{t('أقصى رفع', 'Max upload')}</dt><dd className="latin">{info.maxUpload}</dd></div>
-          </dl>
-        </div>
-      )}
-      <div className="card" style={{ marginTop: 16 }}>
-        <h3>{t('ارفع ملف تحديث', 'Upload an update file')}</h3>
-        <p className="muted">{t('الملف اسمه ncloud-update-X.Y.Z.json وفيه الملفات اللي اتغيّرت بس. بياخد نسخة احتياطية من الملفات القديمة، ومبيلمسش بياناتك ولا الحسابات.', 'The file is named ncloud-update-X.Y.Z.json and holds only the files that changed. The old files are backed up and your data and accounts are never touched.')}</p>
-        <input type="file" multiple accept=".json,application/json" disabled={busy} onChange={(e) => { void upload(e.target.files); e.target.value = ''; }} />
-        <p className="muted">{t('تقدر تختار أكتر من ملف مرة واحدة (لو فاتك إصدارات): بيتطبقوا من الأقدم للأحدث.', 'You can pick several files at once (if you skipped versions): they are applied oldest first.')}</p>
-      </div>
-      {info && info.history.length > 0 && (
-        <>
-          <h2 className="sub">{t('آخر التحديثات', 'Recent updates')}</h2>
-          <Table head={[t('من', 'From'), t('إلى', 'To'), t('الملفات', 'Files'), t('بواسطة', 'By'), t('التاريخ', 'Date')]}>
-            {info.history.map((h, i) => <tr key={i}><td className="latin">{h.from}</td><td className="latin">{h.to}</td><td className="latin">{h.files}</td><td>{h.by}</td><td><Ltr>{day(h.at)}</Ltr></td></tr>)}
-          </Table>
-        </>
-      )}
     </Page>
   );
 }
@@ -375,6 +308,8 @@ const itemPath = (res: string, it: Item) => (res === 'domains' ? `/admin/domains
 
 export function AdminUserDetail() {
   const { t } = useI18n();
+  const nav = useNavigate();
+  const [pass, setPass] = useState('');
   const cur = useCurrency();
   const { id } = useParams();
   const { all, error, load } = useAll();
@@ -393,18 +328,22 @@ export function AdminUserDetail() {
   };
   const tickets = all.tickets.filter((x) => x.uid === u.id);
   const dueTotal = mine('invoices').filter((i) => i.status === 'due').reduce((s, i) => s + Number(i.amount), 0);
+  const paidTotal = mine('invoices').filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.amount), 0);
+  const services = SECTIONS.filter((x) => x.res !== 'invoices').reduce((n, x) => n + mine(x.res).length, 0);
+  const ux = u as User & { phone?: string; company?: string; source?: string };
+  const act = async (fn: () => Promise<unknown>, done: string, after?: () => void) => { setErr(''); setOk(''); try { await fn(); setOk(done); load(); after?.(); } catch (x) { setErr(errText(x, t)); } };
   return (
-    <Page title={u.name} action={<Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← المستخدمين', '← Users')}</Link>}>
+    <Page title={u.name} action={<Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link>}>
       <Notice err={err || error} ok={ok} />
-      <div className="card"><dl className="kv">
-        <div><dt>{t('الاسم', 'Name')}</dt><dd>{u.name}</dd></div>
-        <div><dt>{t('الإيميل', 'Email')}</dt><dd><Ltr>{u.email}</Ltr></dd></div>
-        <div><dt>{t('النوع', 'Role')}</dt><dd><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : t('عميل', 'Client')}</span></dd></div>
-        <div><dt>{t('تاريخ الإنشاء', 'Created')}</dt><dd><Ltr>{day(String(u.created ?? ''))}</Ltr></dd></div>
-        <div><dt>{t('فواتير مستحقة', 'Invoices due')}</dt><dd className="latin">{dueTotal} {cur}</dd></div>
-        <div><dt>{t('تذاكر', 'Tickets')}</dt><dd className="latin">{tickets.length}</dd></div>
-      </dl></div>
-
+      <div className="stat-strip">
+        <div><span>{t('الخدمات', 'Services')}</span><b className="latin">{services}</b></div>
+        <div><span>{t('مدفوع', 'Paid')}</span><b className="latin">{paidTotal} {cur}</b></div>
+        <div><span>{t('مستحق', 'Due')}</span><b className="latin">{dueTotal} {cur}</b></div>
+        <div><span>{t('عميل من', 'Customer since')}</span><b><Ltr>{day(String(u.created ?? '')) || '-'}</Ltr></b></div>
+        <div><span>{t('تذاكر', 'Tickets')}</span><b className="latin">{tickets.length}</b></div>
+      </div>
+      <div className="cust-layout">
+      <div>
       {SECTIONS.map((sec) => {
         const own = mine(sec.res);
         const others = all.items[sec.res].filter((x) => x.uid !== u.id);
@@ -432,6 +371,28 @@ export function AdminUserDetail() {
       <div className="linked">
         {tickets.map((x) => <div key={x.id}><Link className="link" to="/admin/tickets">{x.subject}</Link><span className="tag">{x.status}</span></div>)}
         {tickets.length === 0 && <p className="muted">{t('مفيش.', 'None.')}</p>}
+      </div>
+      </div>
+      <aside>
+        <div className="side-card"><h3>{t('بيانات التواصل', 'Contact information')}</h3>
+          <a className="link latin" dir="ltr" href={`mailto:${u.email}`}>{u.email}</a>
+          {ux.phone ? <a className="link latin" dir="ltr" href={`tel:${ux.phone}`}>{ux.phone}</a> : <p className="muted">{t('مفيش موبايل مسجّل.', 'No phone on file.')}</p>}
+          {ux.phone && <a className="link" href={`https://wa.me/${ux.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer">WhatsApp</a>}
+          {ux.company && <p><b>{t('الشركة', 'Company')}:</b> {ux.company}</p>}
+        </div>
+        <div className="side-card"><h3>{t('الحساب', 'Account')}</h3>
+          <p><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : t('عميل', 'Client')}</span> {ux.source === 'signup' && <span className="tag">{t('سجّل من الموقع', 'Signed up on the website')}</span>}</p>
+          <p className="muted">{t('تاريخ التسجيل', 'Registered')}: <Ltr>{day(String(u.created ?? '')) || '-'}</Ltr></p>
+          <form className="inline-edit" onSubmit={(e) => { e.preventDefault(); void act(() => post('admin/user-update', { id: u.id, password: pass }), t('تم تغيير كلمة السر.', 'Password changed.'), () => setPass('')); }}>
+            <input className="input latin" type="password" minLength={8} required autoComplete="new-password" placeholder={t('كلمة سر جديدة (8+)', 'New password (8+)')} value={pass} onChange={(e) => setPass(e.target.value)} />
+            <button className="btn btn-ghost btn-sm" type="submit">{t('تغيير', 'Change')}</button>
+          </form>
+          <div className="row-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => void act(() => post('admin/user-update', { id: u.id, role: u.role === 'admin' ? 'client' : 'admin' }), t('تم تغيير النوع.', 'Role changed.'))}>{u.role === 'admin' ? t('خفّض لعميل', 'Make client') : t('اجعله أدمن', 'Make admin')}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف الحساب وكل خدماته وتذاكره؟', 'Delete the account with all its services and tickets?'))) void act(() => post('admin/user-delete', { id: u.id }), t('تم الحذف.', 'Deleted.'), () => nav('/admin/users')); }}>{t('حذف', 'Delete')}</button>
+          </div>
+        </div>
+      </aside>
       </div>
     </Page>
   );

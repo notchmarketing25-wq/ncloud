@@ -3,29 +3,32 @@ import { Link, Navigate, NavLink, Outlet, useNavigate, useParams, useSearchParam
 import { DnsEditor } from '../dns';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { ApiError } from '../lib/api';
+import { ApiError, post } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
+import { useCatalog } from '../site/catalog';
 
 /* ───────── Login (demo only: any input signs in) ───────── */
 export function Login() {
   const { t } = useI18n();
   const nav = useNavigate();
   const { mode, problem, detail, user, login } = useAuth();
+  const [qs] = useSearchParams();
+  const next = qs.get('next') && qs.get('next')!.startsWith('/portal') ? qs.get('next')! : '';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  if (mode !== 'checking' && user) return <Navigate to={user.role === 'admin' ? '/admin' : '/portal'} replace />;
+  if (mode !== 'checking' && user) return <Navigate to={user.role === 'admin' ? '/admin' : (next || '/portal')} replace />;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(''); setBusy(true);
     try {
       const u = await login(email.trim(), password);
-      nav(u.role === 'admin' ? '/admin' : '/portal');
+      nav(u.role === 'admin' ? '/admin' : (next || '/portal'));
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
       setError(status === 429 ? t('محاولات كتير. جرّب بعد 10 دقايق.', 'Too many attempts. Try again in 10 minutes.')
@@ -52,9 +55,92 @@ export function Login() {
         <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" autoComplete="current-password" required={mode === 'server'} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
         {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn btn-primary" type="submit" disabled={busy || mode === 'checking'}>{busy ? '…' : t('دخول', 'Sign in')}</button>
+        {mode === 'server' && <p className="muted">{t('لسه مالكش حساب؟', 'No account yet?')} <Link className="link" to={`/portal/register${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{t('سجّل حساب جديد', 'Create an account')}</Link></p>}
         <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
       </form>
     </div>
+  );
+}
+
+/** New client sign-up: creates the account, signs in and opens the client area. */
+export function Register() {
+  const { t } = useI18n();
+  const nav = useNavigate();
+  const { mode, problem, detail, user, refresh } = useAuth();
+  const [qs] = useSearchParams();
+  const next = qs.get('next') && qs.get('next')!.startsWith('/portal') ? qs.get('next')! : '/portal';
+  const [f, setF] = useState({ name: '', company: '', email: '', phone: '', password: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (mode === 'offline') return <BackendOffline problem={problem} detail={detail} />;
+  if (mode !== 'checking' && user) return <Navigate to={user.role === 'admin' ? '/admin' : next} replace />;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(''); setBusy(true);
+    try { await post('auth/register', { ...f, email: f.email.trim() }); await refresh(); nav(next); }
+    catch (err) {
+      const m = err instanceof ApiError ? err.message : '';
+      setError(m === 'this email is already registered' ? t('الإيميل ده مسجّل قبل كده. سجّل دخول.', 'This email is already registered. Sign in instead.')
+        : m === 'new sign-ups are closed' ? t('التسجيل الجديد مقفول حاليًا. تواصل معنا.', 'New sign-ups are closed right now. Contact us.')
+        : m.includes('too many') ? t('محاولات كتير. جرّب بعد شوية.', 'Too many attempts. Try again later.')
+        : m.includes('password') ? t('كلمة السر لازم تكون 8 حروف على الأقل.', 'The password must be at least 8 characters.')
+        : t('تعذّر إنشاء الحساب. راجع البيانات وحاول تاني.', 'Could not create the account. Check the details and try again.'));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="login-page">
+      <div className="login-side on-dark">
+        <Logo dark />
+        <div><h1>{t('ابدأ مع نوتش كلاود', 'Start with Notch Cloud')}</h1><p>{t('أنشئ حسابك وادير دومينك وإيميلاتك واستضافتك وطلباتك من مكان واحد.', 'Create your account and manage your domains, email, hosting and orders in one place.')}</p></div>
+      </div>
+      <form className="login-form" onSubmit={submit}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle /></div>
+        <h2>{t('إنشاء حساب', 'Create an account')}</h2>
+        {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): التسجيل بيشتغل بس بعد تثبيت الموقع على استضافة PHP.', 'Demo build (no server): sign-up works once the site is installed on a PHP host.')}</p>}
+        <div className="field"><label htmlFor="rn">{t('الاسم', 'Full name')}</label><input id="rn" className="input" required maxLength={80} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div className="field"><label htmlFor="rc">{t('اسم الشركة (اختياري)', 'Company (optional)')}</label><input id="rc" className="input" maxLength={80} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} /></div>
+        <div className="field"><label htmlFor="re">{t('الإيميل', 'Email')}</label><input id="re" className="input latin" type="email" autoComplete="username" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
+        <div className="field"><label htmlFor="rp">{t('الموبايل (اختياري)', 'Phone (optional)')}</label><input id="rp" className="input latin" maxLength={30} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+        <div className="field"><label htmlFor="rw">{t('كلمة السر (8 حروف على الأقل)', 'Password (8+ characters)')}</label><input id="rw" className="input latin" type="password" autoComplete="new-password" minLength={8} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <button className="btn btn-primary" type="submit" disabled={busy || mode !== 'server'}>{busy ? '…' : t('إنشاء الحساب', 'Create account')}</button>
+        <p className="muted">{t('عندك حساب؟', 'Already have an account?')} <Link className="link" to="/portal/login">{t('سجّل دخول', 'Sign in')}</Link></p>
+        <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
+      </form>
+    </div>
+  );
+}
+
+/** Order a plan: logged-in clients send an order request that arrives in the admin as a ticket. */
+export function OrderPlan() {
+  const { t, L } = useI18n();
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { plans } = useCatalog();
+  const { reload } = usePortal();
+  const cur = useCurrency();
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const plan = plans.find((p) => p.id === id);
+  if (!plan) return <Page title={t('الطلب', 'Order')}><Empty>{t('الباقة دي مش موجودة أو مش متاحة حاليًا.', 'This plan does not exist or is not available right now.')}</Empty><Link to="/pricing" className="btn btn-ghost btn-sm">{t('الأسعار', 'Pricing')}</Link></Page>;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(''); setBusy(true);
+    try { await post('orders/create', { planId: plan.id, note }); await reload(); nav('/portal/support'); } catch { setError(t('تعذّر إرسال الطلب، حاول تاني.', 'Could not send the order, please try again.')); } finally { setBusy(false); }
+  };
+  return (
+    <Page title={t('اطلب باقة', 'Order a plan')}>
+      <form className="card form" onSubmit={submit} style={{ maxWidth: 640 }}>
+        <h3>{L(plan.name)}</h3>
+        <p><b className="latin">{plan.price.toLocaleString('en-US')}</b> {cur} <span className="muted">/ {plan.per === 'year' ? t('سنة', 'yr') : plan.per === 'once' ? t('مرة واحدة', 'one-time') : t('شهر', 'mo')}</span></p>
+        <ul className="plan-list">{plan.specs.map((s) => <li key={s.label.en}>{L(s.label)}: {L(s.value)}</li>)}{plan.features.map((f) => <li key={f.en}>{L(f)}</li>)}</ul>
+        <div className="field"><label htmlFor="on">{t('ملاحظات أو دومين عايز تربطه (اختياري)', 'Notes or the domain you want to use (optional)')}</label><textarea id="on" className="textarea" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} /></div>
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <p className="muted">{t('هيوصلنا طلبك ونتواصل معاك لتأكيد التفعيل والدفع.', 'We receive your request and contact you to confirm activation and payment.')}</p>
+        <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('إرسال الطلب', 'Send order request')}</button>
+      </form>
+    </Page>
   );
 }
 
@@ -86,7 +172,7 @@ export function PortalLayout() {
   const { mode, user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   if (mode === 'checking') return null;
-  if (!user) return <Navigate to="/portal/login" replace />;
+  if (!user) return <Navigate to={`/portal/login?next=${encodeURIComponent(window.location.hash.replace(/^#/, '') || window.location.pathname)}`} replace />;
   const items = [
     { to: '/portal', label: t('نظرة عامة', 'Overview'), end: true },
     { to: '/portal/domains', label: t('الدومينات', 'Domains') },
