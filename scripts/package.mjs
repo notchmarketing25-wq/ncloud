@@ -45,8 +45,9 @@ if (prev) {
   const removed = Object.keys(old).filter((k) => !(k in manifest) && /^assets\//.test(k));
   const changelog = existsSync(join(root, 'release', 'notes', `${pkg.version}.json`)) ? JSON.parse(readFileSync(join(root, 'release', 'notes', `${pkg.version}.json`), 'utf8')) : {};
   const pack = { format: 1, version: pkg.version, requires: prev, notes: changelog, files: Object.fromEntries(changed.map((k) => [k, Buffer.from(installFiles[k]).toString('base64')])), delete: removed };
-  writeFileSync(join(root, 'release', `ncloud-update-${pkg.version}.json`), JSON.stringify(pack));
-  updNote = `release/ncloud-update-${pkg.version}.json (from ${prev}: ${changed.length} changed, ${removed.length} removed)`;
+  mkdirSync(join(root, 'release', 'updates'), { recursive: true });
+  writeFileSync(join(root, 'release', 'updates', `ncloud-update-${pkg.version}.json`), JSON.stringify(pack));
+  updNote = `release/updates/ncloud-update-${pkg.version}.json (from ${prev}: ${changed.length} changed, ${removed.length} removed)`;
 }
 console.log(updNote);
 console.log(`release/install.php (${Object.keys(installFiles).length} files, v${pkg.version})`);

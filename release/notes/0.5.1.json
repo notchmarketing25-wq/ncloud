@@ -1,0 +1,8 @@
+{
+ "en": [
+  "Updates page: upload several update files at once (applied oldest first); update files now live in release/updates; npm run release helper"
+ ],
+ "ar": [
+  "صفحة التحديثات: رفع أكتر من ملف تحديث مرة واحدة (بيتطبقوا من الأقدم)؛ ملفات التحديث في release/updates؛ أمر npm run release"
+ ]
+}

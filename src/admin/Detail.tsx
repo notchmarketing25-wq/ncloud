@@ -164,17 +164,31 @@ export function AdminUpdates() {
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => { api<UpdInfo>('admin/update').then(setInfo).catch((e) => setErr(errText(e, t))); }, [t]);
   useEffect(load, [load]);
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
+  const verOf = (name: string) => /(\d+)\.(\d+)\.(\d+)/.exec(name)?.slice(1).map(Number) ?? [0, 0, 0];
+  const send = async (file: File) => {
+    const fd = new FormData(); fd.append('pkg', file);
+    const res = await fetch(apiUrl('admin/update'), { method: 'POST', credentials: 'same-origin', headers: { 'X-NC': '1', Accept: 'application/json' }, body: fd });
+    const j = await res.json().catch(() => null) as { error?: string; from?: string; version?: string; files?: number } | null;
+    return { res, j };
+  };
+  /** One or several update files: applied oldest first, so you can drop all the versions you skipped at once. */
+  const upload = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
     setErr(''); setOk(''); setBusy(true);
+    const files = [...list].sort((a, b) => { const x = verOf(a.name), y = verOf(b.name); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
+    const done: string[] = [];
     try {
-      const fd = new FormData(); fd.append('pkg', file);
-      const res = await fetch(apiUrl('admin/update'), { method: 'POST', credentials: 'same-origin', headers: { 'X-NC': '1', Accept: 'application/json' }, body: fd });
-      const j = await res.json().catch(() => null) as { error?: string; from?: string; version?: string; files?: number } | null;
-      if (!res.ok || !j) throw new Error(j?.error ?? `HTTP ${res.status}`);
-      setOk(t(`اتحدّث من ${j.from} إلى ${j.version} (${j.files} ملف). حدّث الصفحة (Ctrl+F5) عشان تشوف الواجهة الجديدة.`, `Updated ${j.from} → ${j.version} (${j.files} files). Reload the page (Ctrl+F5) to see the new interface.`));
-      load();
-    } catch (e) { setErr(e instanceof Error ? e.message : 'error'); } finally { setBusy(false); }
+      for (const f of files) {
+        const { res, j } = await send(f);
+        if (res.status === 409 && /not newer/.test(j?.error ?? '') && files.length > 1) { done.push(t(`${f.name}: مثبّت قبل كده`, `${f.name}: already installed`)); continue; }
+        if (!res.ok || !j) throw new Error(`${f.name}: ${j?.error ?? `HTTP ${res.status}`}`);
+        done.push(`${j.from} → ${j.version} (${j.files})`);
+      }
+      const applied = done.some((x) => x.includes('→'));
+      setOk((applied ? t('اتحدّث: ', 'Updated: ') : t('النظام محدّث بالفعل: ', 'Already up to date: ')) + done.join(' · ') + (applied ? t('. حدّث الصفحة (Ctrl+F5) عشان تشوف الواجهة الجديدة.', '. Reload the page (Ctrl+F5) to see the new interface.') : ''));
+    } catch (e) {
+      setErr((done.length ? t('اتطبّق: ', 'Applied: ') + done.join(' · ') + ' — ' : '') + (e instanceof Error ? e.message : 'error'));
+    } finally { setBusy(false); load(); }
   };
   return (
     <Page title={t('التحديثات', 'Updates')}>
@@ -192,7 +206,8 @@ export function AdminUpdates() {
       <div className="card" style={{ marginTop: 16 }}>
         <h3>{t('ارفع ملف تحديث', 'Upload an update file')}</h3>
         <p className="muted">{t('الملف اسمه ncloud-update-X.Y.Z.json وفيه الملفات اللي اتغيّرت بس. بياخد نسخة احتياطية من الملفات القديمة، ومبيلمسش بياناتك ولا الحسابات.', 'The file is named ncloud-update-X.Y.Z.json and holds only the files that changed. The old files are backed up and your data and accounts are never touched.')}</p>
-        <input type="file" accept=".json,application/json" disabled={busy} onChange={(e) => void upload(e.target.files?.[0])} />
+        <input type="file" multiple accept=".json,application/json" disabled={busy} onChange={(e) => { void upload(e.target.files); e.target.value = ''; }} />
+        <p className="muted">{t('تقدر تختار أكتر من ملف مرة واحدة (لو فاتك إصدارات): بيتطبقوا من الأقدم للأحدث.', 'You can pick several files at once (if you skipped versions): they are applied oldest first.')}</p>
       </div>
       {info && info.history.length > 0 && (
         <>
