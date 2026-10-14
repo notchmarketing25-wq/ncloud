@@ -7,6 +7,7 @@ import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
 import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
+import { AdminApps, AdminPricing, AdminPurchases } from './admin/Providers';
 import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
 import { SiteProvider } from './site/settings';
 import { AuthProvider } from './auth';
@@ -47,6 +48,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="invoices" element={<AdminInvoices />} />
             <Route path="tickets" element={<AdminTickets />} />
             <Route path="leads" element={<AdminLeads />} />
+            <Route path="apps" element={<AdminApps />} />
+            <Route path="pricing" element={<AdminPricing />} />
+            <Route path="purchases" element={<AdminPurchases />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="activity" element={<AdminActivity />} />
             <Route path="account" element={<AdminAccount />} />

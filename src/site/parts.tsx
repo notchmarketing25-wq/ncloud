@@ -1,4 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { useAuth } from '../auth';
+import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { tlds, type Plan } from '../data/content';
 import { Ltr, useI18n } from '../i18n';
@@ -72,36 +74,57 @@ function mockTaken(name: string, ext: string): boolean {
   return h % 5 === 0;
 }
 
+type Found = { domain: string; tld: string; available: boolean; sell: number; renewSell: number; currency: string };
+
+/** Domain search. Connected to the registrars (cheapest provider per extension, with your margin) when the backend runs; a demo list otherwise. */
 export function DomainSearch({ dark = false, showResults = true }: { dark?: boolean; showResults?: boolean }) {
   const { t } = useI18n();
+  const { mode } = useAuth();
   const [q, setQ] = useState('');
   const [name, setName] = useState('');
-  const submit = (e: FormEvent) => {
+  const [live, setLive] = useState<Found[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const clean = q.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('.')[0].replace(/[^a-z0-9-]/g, '');
-    setName(clean);
+    const raw = q.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[^a-z0-9.-]/g, '');
+    const clean = raw.split('.')[0];
+    setName(clean); setErr(''); setLive(null);
+    if (mode !== 'server' || !clean) return;
+    setBusy(true);
+    try { setLive((await api<{ results: Found[] }>('public/domain-search', undefined, { q: raw })).results); }
+    catch (x) { setErr(x instanceof Error && /409|prices/.test(x.message) ? t('البحث غير متاح حاليًا.', 'Search is not available right now.') : t('تعذّر البحث، حاول تاني.', 'Search failed, please try again.')); }
+    finally { setBusy(false); }
   };
+  const row = (domain: string, taken: boolean, price: ReactNode, key: string) => (
+    <li key={key}>
+      <span className="dot-wrap"><i className={`dot${taken ? ' bad' : ''}`} /> <Ltr>{domain}</Ltr></span>
+      <span className={`tag ${taken ? 'bad' : 'ok'}`}>{taken ? t('محجوز', 'Taken') : t('متاح', 'Available')}</span>
+      <span className="dprice">{taken ? '—' : price}</span>
+      <Link className="btn btn-ghost btn-sm" to={`/portal/support?new=domain&d=${encodeURIComponent(domain)}`} aria-disabled={taken} tabIndex={taken ? -1 : 0} style={taken ? { pointerEvents: 'none', opacity: .4 } : undefined}>{t('سجّل', 'Register')}</Link>
+    </li>
+  );
   return (
     <div className={dark ? 'dsearch on-dark' : 'dsearch'}>
       <form onSubmit={submit} role="search">
         <label className="sr-only" htmlFor="dq">{t('اسم الدومين', 'Domain name')}</label>
         <input id="dq" className="input latin" dir="ltr" value={q} onChange={(e) => setQ(e.target.value)} placeholder="yourbrand.com" autoComplete="off" />
-        <button className="btn btn-accent" type="submit">{t('ابحث', 'Search')}</button>
+        <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('ابحث', 'Search')}</button>
       </form>
       {showResults && name && (
         <ul className="dresults" aria-live="polite">
-          {tlds.slice(0, 6).map((tl) => {
-            const taken = mockTaken(name, tl.ext);
-            return (
-              <li key={tl.ext}>
-                <span className="dot-wrap"><i className={`dot${taken ? ' bad' : ''}`} /> <Ltr>{name}{tl.ext}</Ltr></span>
-                <span className={`tag ${taken ? 'bad' : 'ok'}`}>{taken ? t('محجوز', 'Taken') : t('متاح', 'Available')}</span>
-                <span className="dprice">{taken ? '—' : <><Money value={tl.register} /> <Ph /></>}</span>
-                <Link className="btn btn-ghost btn-sm" to="/portal/login" aria-disabled={taken} tabIndex={taken ? -1 : 0} style={taken ? { pointerEvents: 'none', opacity: .4 } : undefined}>{t('سجّل', 'Register')}</Link>
-              </li>
-            );
-          })}
-          <li className="dnote">{t('نتائج تجريبية لعرض التصميم فقط، مش ربط حقيقي بالـ registrar.', 'Demo results to show the design only, not a live registrar lookup.')}</li>
+          {mode === 'server' ? (
+            <>
+              {live && live.map((r) => row(r.domain, !r.available, <><b className="latin">{r.sell.toLocaleString('en-US')}</b> <small>{r.currency}</small> <small className="muted">/ {t('سنة', 'yr')}</small></>, r.domain))}
+              {live && live.length === 0 && <li className="dnote">{t('مفيش نتائج للامتدادات دي.', 'No results for these extensions.')}</li>}
+              {err && <li className="dnote">{err}</li>}
+            </>
+          ) : (
+            <>
+              {tlds.slice(0, 6).map((tl) => row(`${name}${tl.ext}`, mockTaken(name, tl.ext), <><Money value={tl.register} /> <Ph /></>, tl.ext))}
+              <li className="dnote">{t('نتائج تجريبية لعرض التصميم فقط، مش ربط حقيقي بالـ registrar.', 'Demo results to show the design only, not a live registrar lookup.')}</li>
+            </>
+          )}
         </ul>
       )}
     </div>

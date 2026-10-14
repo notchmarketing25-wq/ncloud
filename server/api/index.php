@@ -21,11 +21,13 @@ const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb
 
 /** Resources an admin manages for clients: field => [type, max/options, 'req'?]. Every item also has id, uid (owner), created. */
 $SCHEMA = array(
-    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool')),
+    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num')),
     'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
-    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
+    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num')),
     'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
+    // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
+    'purchases' => array('item' => array('str', 160, 'req'), 'provider' => array('str', 30), 'ref' => array('str', 80), 'service' => array('str', 20), 'client' => array('str', 32), 'amount' => array('num', 'req'), 'period' => array('enum', array('monthly', 'yearly', 'once')), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
 );
 
 function out($data, $code = 200) { http_response_code($code); echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
@@ -278,6 +280,13 @@ if (!is_file(NC_DATA . '/installed.lock')) {
 }
 start_session();
 
+if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0) {
+    require_once __DIR__ . '/providers.php';
+    $me = need_admin();
+    prov_route($r, $me);
+    fail('not found', 404);
+}
+
 switch ($r) {
     /* ── public ── */
     case 'status':
@@ -313,6 +322,19 @@ switch ($r) {
             @mail($res['to'], '=?UTF-8?B?' . base64_encode('New request: ' . $name) . '?=', "Name: $name\nEmail: $email\nPhone: $phone\nService: $service\n\n$msg", "Content-Type: text/plain; charset=UTF-8\r\nReply-To: $email");
         }
         out(array('ok' => true), 201);
+
+    case 'public/domain-search':
+    case 'svc/domain-search':
+        if ($r === 'svc/domain-search') { need_user(); }
+        $ip = client_ip();
+        $blocked = db_update(function (&$db) use ($ip) {
+            if (rate_blocked($db, 'dom:' . $ip, 40, 3600)) { return true; }
+            rate_hit($db, 'dom:' . $ip);
+            return false;
+        });
+        if ($blocked) { fail('too many searches, try later', 429); }
+        require_once __DIR__ . '/providers.php';
+        out(prov_search(db_read(), isset($_GET['q']) ? (string) $_GET['q'] : '', isset($_GET['tlds']) && $_GET['tlds'] !== '' ? explode(',', (string) $_GET['tlds']) : array(), false));
 
     /* ── auth ── */
     case 'auth/me':
@@ -360,7 +382,11 @@ switch ($r) {
         $u = need_user();
         $db = db_read();
         $o = array();
-        foreach (array_keys($SCHEMA) as $res) { $o[$res] = mine($db, $res, $u['id']); }
+        foreach (array_keys($SCHEMA) as $res) {
+            if ($res === 'purchases') { continue; }
+            // Our cost and supplier are never shown to clients.
+            $o[$res] = array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref']); return $it; }, mine($db, $res, $u['id']));
+        }
         $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
         out($o);
 
@@ -616,19 +642,26 @@ switch ($r) {
         if ($clean === null) { fail($err, 422); }
         $uid = isset($in['uid']) ? (string) $in['uid'] : '';
         $id = isset($in['id']) ? (string) $in['id'] : '';
+        if ($res === 'purchases') { $uid = ''; }
         $saved = db_update(function (&$db) use ($res, $clean, $uid, $id, $me) {
-            if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            if ($res !== 'purchases' && find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
             if (!isset($db['items'][$res]) || !is_array($db['items'][$res])) { $db['items'][$res] = array(); }
             $i = $id === '' ? -1 : find_by($db['items'][$res], 'id', $id);
             if ($id !== '' && $i < 0) { return array('err' => 'item not found'); }
             if ($i >= 0) {
                 $item = array_merge($db['items'][$res][$i], $clean, array('uid' => $uid));
                 $db['items'][$res][$i] = $item;
-                log_act($db, $me, $res . '-update', user_name($db, $uid));
+                log_act($db, $me, $res . '-update', $uid === '' ? $id : user_name($db, $uid));
             } else {
                 $item = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c')), $clean);
                 if ($res === 'domains') { $item['dns'] = array(); }
                 if ($res === 'servers') { $item['snapshots'] = 0; }
+                if ($res === 'purchases') {
+                    $seq = (int) meta_get($db, 'purchaseSeq', 0) + 1;
+                    $db['meta']['purchaseSeq'] = $seq;
+                    $item['number'] = 'PUR-' . $seq;
+                    if ($item['date'] === '') { $item['date'] = gmdate('Y-m-d'); }
+                }
                 if ($res === 'invoices') {
                     $seq = (int) meta_get($db, 'invoiceSeq', 1000) + 1;
                     $db['meta']['invoiceSeq'] = $seq;
@@ -636,7 +669,7 @@ switch ($r) {
                     if ($item['date'] === '') { $item['date'] = gmdate('Y-m-d'); }
                 }
                 $db['items'][$res][] = $item;
-                log_act($db, $me, $res . '-create', user_name($db, $uid));
+                log_act($db, $me, $res . '-create', $uid === '' ? 'provider bill' : user_name($db, $uid));
             }
             return array('item' => $item);
         });

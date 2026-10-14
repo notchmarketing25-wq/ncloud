@@ -4,7 +4,7 @@ import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { ApiError } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
-import { Ph } from '../site/parts';
+import { DomainSearch, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
@@ -182,6 +182,7 @@ export function PortalDomains() {
   };
   return (
     <Page title={t('الدومينات', 'Domains')} action={<Link to="/portal/support?new=domain" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
+      <div className="card" style={{ marginBottom: 16 }}><h3>{t('ابحث عن دومين جديد', 'Find a new domain')}</h3><DomainSearch /></div>
       {data.domains.length === 0 ? <Empty>{t('مفيش دومينات لسه. اطلب دومين من الدعم.', 'No domains yet. Request one from support.')}</Empty> : (
         <>
           <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
@@ -343,7 +344,7 @@ export function PortalSupport() {
   };
   const [creating, setCreating] = useState(Boolean(topic));
   const [subject, setSubject] = useState(topic && topics[topic] ? t(topics[topic][0], topics[topic][1]) : '');
-  const [text, setText] = useState('');
+  const [text, setText] = useState(params.get('d') ? `${t('الدومين المطلوب', 'Requested domain')}: ${params.get('d')}` : '');
   const [open, setOpen] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [err, setErr] = useState('');

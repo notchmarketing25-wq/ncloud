@@ -123,19 +123,33 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
 
 const statusOpts: Opt[] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['stopped', 'متوقف', 'Stopped']];
 const num = (v: unknown) => Number(v ?? 0);
+const providerOpts: Opt[] = [['', 'بدون', 'None'], ['hostinger', 'Hostinger', 'Hostinger'], ['namecheap', 'Namecheap', 'Namecheap'], ['resellerclub', 'ResellerClub', 'ResellerClub']];
+
+/** Provider, what it costs us and what the client pays, with the margin between them. */
+function CostCell({ it }: { it: Item }) {
+  const cur = useCurrency();
+  const cost = num(it.cost), price = num(it.price);
+  if (!it.provider && !cost && !price) return <>-</>;
+  const margin = cost > 0 && price > 0 ? Math.round(((price - cost) / cost) * 100) : null;
+  return <span className="latin">{String(it.provider || '-')} · {cost} → {price} {cur}{margin !== null ? ` (${margin}%)` : ''}{it.billing ? ` / ${it.billing === 'yearly' ? 'yr' : 'mo'}` : ''}</span>;
+}
 const status = (it: Item) => <StatusTag s={it.status as 'active'} />;
 
 export const AdminDomains = () => (
-  <ResourcePage res="domains" title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true }}
+  <ResourcePage res="domains" title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
     fields={[
       { key: 'name', label: ['الدومين', 'Domain'], type: 'text', latin: true, req: true },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [...statusOpts.slice(0, 2), ['expiring', 'قرب ينتهي', 'Expiring'], statusOpts[2]] },
       { key: 'expires', label: ['ينتهي في', 'Expires'], type: 'date' },
       { key: 'autoRenew', label: ['تجديد تلقائي', 'Auto-renew'], type: 'bool' },
+      { key: 'provider', label: ['المزوّد', 'Provider'], type: 'select', options: providerOpts },
+      { key: 'cost', label: ['تكلفتك (سنة)', 'Your cost (per year)'], type: 'number' },
+      { key: 'price', label: ['سعر البيع للعميل (سنة)', 'Client price (per year)'], type: 'number' },
     ]}
     columns={[
       { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.name)}</Ltr> }, { label: ['الحالة', 'Status'], render: status },
       { label: ['ينتهي', 'Expires'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> }, { label: ['سجلات DNS', 'DNS'], render: (it) => <span className="latin">{((it.dns as unknown[]) ?? []).length}</span> },
+      { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
     ]} />
 );
 
@@ -153,15 +167,22 @@ export const AdminMailboxes = () => (
 );
 
 export const AdminHosting = () => (
-  <ResourcePage res="hosting" title={['الاستضافة', 'Hosting']} newLabel={['+ خطة استضافة', '+ Hosting plan']} defaults={{ plan: 'Business', domain: '', diskGb: 50, usedGb: 0, status: 'active' }}
+  <ResourcePage res="hosting" title={['الاستضافة', 'Hosting']} newLabel={['+ خطة استضافة', '+ Hosting plan']} defaults={{ plan: 'Business', domain: '', diskGb: 50, usedGb: 0, status: 'active', provider: '', cost: 0, billing: 'monthly', expires: '', price: 0 }}
     fields={[
       { key: 'plan', label: ['الخطة', 'Plan'], type: 'text', req: true }, { key: 'domain', label: ['الدومين', 'Domain'], type: 'text', latin: true },
       { key: 'diskGb', label: ['المساحة (GB)', 'Disk (GB)'], type: 'number' }, { key: 'usedGb', label: ['المستخدم (GB)', 'Used (GB)'], type: 'number' },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: statusOpts },
+      { key: 'provider', label: ['المزوّد', 'Provider'], type: 'select', options: providerOpts },
+      { key: 'billing', label: ['دورة الدفع للمزوّد', 'Provider billing'], type: 'select', options: [['monthly', 'شهري', 'Monthly'], ['yearly', 'سنوي', 'Yearly']] },
+      { key: 'cost', label: ['تكلفتك (لكل دورة)', 'Your cost (per cycle)'], type: 'number' },
+      { key: 'price', label: ['سعر البيع للعميل (لكل دورة)', 'Client price (per cycle)'], type: 'number' },
+      { key: 'expires', label: ['التجديد القادم', 'Next renewal'], type: 'date' },
     ]}
     columns={[
       { label: ['الخطة', 'Plan'], render: (it) => String(it.plan) }, { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.domain || '-')}</Ltr> },
       { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
+      { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
+      { label: ['التجديد', 'Renews'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> },
     ]} />
 );
 
