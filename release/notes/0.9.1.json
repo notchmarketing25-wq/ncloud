@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-14",
+ "en": [
+  "Lists show 20 rows per page with a selectable page size (10/20/50/100) across activity log, customers, tickets, leads, websites, purchases, plans and TLD pricing. Domain search now queries providers in parallel with failover and a 90s cache, so it is fast. Fixed mobile overflow in the client area."
+ ],
+ "ar": [
+  "كل القوائم بتعرض 20 صف في الصفحة مع اختيار عدد الصفوف (10/20/50/100): سجل النشاط، العملاء، التذاكر، العملاء المحتملين، المواقع، فواتير الشراء، الباقات وأسعار الدومينات. البحث عن دومين بقى بيسأل الموردين بالتوازي مع تحويل تلقائي لو مورد فشل وكاش 90 ثانية، فبقى سريع. إصلاح خروج الصفحة عن العرض في الموبايل."
+ ]
+}

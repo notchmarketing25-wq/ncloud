@@ -200,7 +200,7 @@ function clean_name($n) { return clean_text(preg_replace('/\s+/u', ' ', (string)
 function meta_get($db, $k, $default) { return isset($db['meta'][$k]) ? $db['meta'][$k] : $default; }
 function log_act(&$db, $actor, $action, $detail) {
     $db['log'][] = array('at' => gmdate('c'), 'by' => $actor ? $actor['name'] : '-', 'action' => $action, 'detail' => clean_text($detail, 200));
-    if (count($db['log']) > 300) { array_splice($db['log'], 0, count($db['log']) - 300); }
+    if (count($db['log']) > 1000) { array_splice($db['log'], 0, count($db['log']) - 1000); }
 }
 function body() {
     if (isset($_SERVER['CONTENT_LENGTH']) && (int) $_SERVER['CONTENT_LENGTH'] > 200000) { fail('request too large', 413); }
@@ -902,7 +902,7 @@ switch ($r) {
     case 'admin/activity':
         need_admin();
         $db = db_read();
-        out(array('log' => array_slice(array_reverse($db['log']), 0, 100)));
+        out(array('log' => array_slice(array_reverse($db['log']), 0, 1000)));
 
     default:
         fail('not found', 404);

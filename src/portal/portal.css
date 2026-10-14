@@ -1,5 +1,5 @@
 /* Client area: black sidebar with a Volt active indicator, Paper surfaces, white cards, black primary buttons. */
-.portal { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; background: var(--nt-black); }
+.portal { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; background: var(--nt-black); }
 .side { background: var(--nt-black); color: #e3e3e3; padding: 20px 14px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; }
 .side nav { display: grid; gap: 2px; }
 .side nav a { position: relative; padding: 10px 14px; border-radius: 12px; color: #b5b5b5; font-weight: 600; font-size: 14.5px; }
@@ -15,7 +15,7 @@
 .portal-main { background: var(--nt-paper); min-width: 0; margin-block-start: 8px; border-start-start-radius: 20px; min-height: calc(100vh - 8px); }
 .portal-top { display: flex; align-items: center; gap: 10px; padding: 14px clamp(16px, 3vw, 32px); border-bottom: 1px solid var(--nt-fog); }
 .portal-top .burger { display: none; }
-.portal-body { padding: clamp(16px, 3vw, 32px); display: grid; gap: 0; align-content: start; }
+.portal-body { padding: clamp(16px, 3vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-content: start; }
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .page-head h1 { font-size: clamp(22px, 2.4vw, 30px); }
 .portal .card { background: #fff; }
@@ -59,7 +59,7 @@
 .back { margin-top: 6px; }
 
 @media (max-width: 900px) {
-  .portal { grid-template-columns: 1fr; }
+  .portal { grid-template-columns: minmax(0, 1fr); }
   .side { position: fixed; inset-block: 0; inset-inline-start: 0; width: 260px; z-index: 50; transform: translateX(-105%); transition: transform .2s; }
   [dir='rtl'] .side { transform: translateX(105%); }
   .side.is-open { transform: none; }
@@ -227,3 +227,6 @@
   .no-print { display: none !important; }
   @page { size: A4; margin: 14mm; }
 }
+
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 4px; }
+.portal-main { min-width: 0; }

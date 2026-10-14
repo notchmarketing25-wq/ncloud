@@ -5,6 +5,7 @@ import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
 import { day, Modal, Page } from '../ui';
 import { errText } from './errors';
+import { usePaged } from './pager';
 
 type Item = { id: string; uid: string; [k: string]: unknown };
 type All = { users: (User & { phone?: string; company?: string; source?: string })[]; items: Record<string, Item[]>; tickets: { uid: string }[] };
@@ -43,6 +44,7 @@ export function AdminUsers() {
     .filter((r) => !q.trim() || `${r.u.name} ${r.u.email} ${r.u.phone ?? ''} ${r.u.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => (asc ? a.at - b.at : b.at - a.at));
 
+  const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}|${asc}`);
   const create = async (e: FormEvent) => {
     e.preventDefault(); setErr(''); setOk('');
     try { await post('admin/users', form); setOk(t('تم إنشاء المستخدم.', 'User created.')); setForm({ name: '', email: '', role: 'client', password: '' }); setAdding(false); load(); } catch (x) { setErr(errText(x, t)); }
@@ -71,7 +73,7 @@ export function AdminUsers() {
           <table className="tbl">
             <thead><tr><th>{t('الاسم', 'Name')}</th><th>{t('التسجيل', 'Registered')}</th><th>{t('النوع', 'Role')}</th><th>{t('الموبايل', 'Phone')}</th><th>{t('الشركة', 'Company')}</th><th>{t('الخدمات', 'Services')}</th><th>{t('الإيميل', 'Email')}</th></tr></thead>
             <tbody>
-              {shown.map(({ u, services, at }) => (
+              {pageRows.map(({ u, services, at }) => (
                 <tr key={u.id} className="row-link" onClick={() => nav(`/admin/users/${u.id}`)}>
                   <td><Link className="link" to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()}>{u.name}</Link>{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}{now - at < WEEK && u.role === 'client' && <> <span className="tag volt">{t('جديد', 'New')}</span></>}</td>
                   <td><Ltr>{day(u.created ?? '') || '-'}</Ltr></td>
@@ -83,6 +85,7 @@ export function AdminUsers() {
             </tbody>
           </table>
         </div>
+        <div style={{ padding: '0 16px' }}>{pager}</div>
       </div>
       {adding && (
         <Modal title={t('إضافة عميل', 'Add customer')} onClose={() => setAdding(false)}>

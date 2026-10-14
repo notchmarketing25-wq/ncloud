@@ -7,6 +7,7 @@ import type { DnsRec } from '../lib/types';
 import { useCurrency } from '../site/settings';
 import { day, Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
+import { usePaged } from './pager';
 import { ClientLine, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, Strip, Tabs, under, useAll, type Item } from './kit';
 
 export { AdminUpdates } from './Updates';
@@ -154,6 +155,7 @@ export function AdminWebsites() {
   const sites = all?.items.websites ?? [];
   const shown = sites.filter((w) => (tab === 'all' || w.status === tab) && (!q.trim() || `${w.name} ${w.url}`.toLowerCase().includes(q.trim().toLowerCase())));
   const owner = (uid: string) => all?.users.find((u) => u.id === uid)?.name ?? '-';
+  const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}`);
   const totalUsed = sites.reduce((n, w) => n + num(w.usedGb), 0);
   const count = (s: string) => sites.filter((w) => s === 'all' || w.status === s).length;
   const blank = { uid: all?.users.find((u) => u.role === 'client')?.id ?? '', name: '', url: '', status: 'active', domainId: '', hostingId: '', diskGb: 0, usedGb: 0, notes: '' };
@@ -171,7 +173,7 @@ export function AdminWebsites() {
           <table className="tbl">
             <thead><tr><th>{t('الموقع', 'Website')}</th><th>{t('الحالة', 'Status')}</th><th>{t('الدومين', 'Domain')}</th><th>{t('الاستضافة', 'Hosting')}</th><th>{t('المساحة', 'Disk')}</th><th>{t('العميل', 'Client')}</th></tr></thead>
             <tbody>
-              {shown.map((w) => {
+              {pageRows.map((w) => {
                 const dom = all?.items.domains.find((x) => x.id === w.domainId); const host = all?.items.hosting.find((x) => x.id === w.hostingId);
                 return (
                   <tr key={w.id} className="row-link" onClick={() => nav(`/admin/websites/${w.id}`)}>
@@ -185,6 +187,7 @@ export function AdminWebsites() {
             </tbody>
           </table>
         </div>
+        <div style={{ padding: '0 16px' }}>{pager}</div>
       </div>
       {form && all && (
         <Modal title={t('إضافة موقع', 'Add a website')} wide onClose={() => setForm(null)}>

@@ -7,6 +7,7 @@ import { assetUrl, useCurrency } from '../site/settings';
 import { day, Modal, Page, Table } from '../ui';
 import { errText } from './errors';
 import { useAll } from './kit';
+import { usePaged } from './pager';
 
 type Field = { key: string; label: string; secret: boolean; value: string; set: boolean };
 type Provider = { id: string; name: string; caps: string[]; help: [string, string]; fields: Field[]; sandbox: boolean; useSandbox: boolean; baseUrl: string; connected: boolean; test: { ok: boolean; message: string; at: string } | null };
@@ -248,7 +249,6 @@ export function AdminPricing() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('');
   const [only, setOnly] = useState(false);
-  const [limit, setLimit] = useState(60);
   const [margin, setMargin] = useState('30');
   const [rounding, setRounding] = useState('5');
   const [usd, setUsd] = useState('50');
@@ -259,6 +259,7 @@ export function AdminPricing() {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [searchErr, setSearchErr] = useState<Record<string, string>>({});
+  const [ms, setMs] = useState<number | null>(null);
   const apply = (r: PricingResp) => {
     setD(r); setMargin(String(r.pricing.marginPct)); setRounding(String(r.pricing.rounding)); setUsd(String(r.pricing.rates.USD ?? 50)); setEur(String(r.pricing.rates.EUR ?? 55));
     setSel(new Set(r.pricing.selected));
@@ -285,11 +286,11 @@ export function AdminPricing() {
   };
   const search = async (e: FormEvent) => {
     e.preventDefault(); setErr(''); setHits(null);
-    try { const r = await api<{ results: Hit[]; errors: Record<string, string> }>('admin/pricing/search', undefined, { q }); setHits(r.results); setSearchErr(r.errors); } catch (x) { setErr(errText(x, t)); }
+    try { const r = await api<{ results: Hit[]; errors: Record<string, string>; ms?: number }>('admin/pricing/search', undefined, { q }); setHits(r.results); setSearchErr(r.errors); setMs(r.ms ?? null); } catch (x) { setErr(errText(x, t)); }
   };
   const f = filter.toLowerCase().replace(/^\./, '');
   const shown = (d?.tlds ?? []).filter((x) => (!f || x.tld.includes(f)) && (!only || sel.has(x.tld)));
-  const page = shown.slice(0, limit);
+  const { rows: page, pager: tldPager } = usePaged(shown, `${filter}|${only}`);
   const cur = d?.currency ?? '';
   const toggle = (tld: string, on: boolean) => setSel((s) => { const n = new Set(s); if (on) n.add(tld); else n.delete(tld); return n; });
   // A live preview of the price for a row, using what is typed now (before saving).
@@ -327,6 +328,7 @@ export function AdminPricing() {
           ))}
         </Table>
       )}
+      {hits && ms !== null && <p className="muted latin">{ms} ms</p>}
       {Object.entries(searchErr).map(([id, m]) => <div className="form-error" key={id}>{id}: {m}</div>)}
 
       {d && d.tlds.length > 0 && (
@@ -336,7 +338,7 @@ export function AdminPricing() {
             {sel.size === 0 && <div className="form-error" style={{ marginBottom: 8 }}>{t('لسه ما اخترتش امتدادات: البحث في الموقع شغّال حاليًا على الامتدادات الشائعة (com, net, org...) لحد ما تختار وتحفظ.', 'No extensions chosen yet: the website search uses the popular ones (com, net, org…) until you choose and save.')}</div>}
             <p className="muted">{t('الامتدادات اللي مش متعلّم عليها مش بتظهر للعملاء ومش بتتبحث. لكل امتداد تقدر تحط نسبة مكسب % أو مكسب ثابت بالجنيه (الثابت بيغلب النسبة).', 'Extensions you do not tick are never shown to clients or searched. For each one you can set a margin % or a fixed profit amount (the fixed amount wins).')}</p>
             <div className="row-actions" style={{ alignItems: 'center' }}>
-              <input className="input latin" style={{ maxWidth: 200, height: 40 }} value={filter} onChange={(e) => { setFilter(e.target.value); setLimit(60); }} placeholder={t('ابحث: .com', 'Filter: .com')} aria-label={t('فلتر الامتداد', 'Filter extension')} />
+              <input className="input latin" style={{ maxWidth: 200, height: 40 }} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('ابحث: .com', 'Filter: .com')} aria-label={t('فلتر الامتداد', 'Filter extension')} />
               <label className="check"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} /> {t('المختارة بس', 'Selected only')}</label>
               <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => new Set([...s, ...shown.map((x) => x.tld)]))}>{t(`تحديد الظاهر (${shown.length})`, `Select shown (${shown.length})`)}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => { const n = new Set(s); shown.forEach((x) => n.delete(x.tld)); return n; })}>{t('إلغاء تحديد الظاهر', 'Clear shown')}</button>
@@ -362,7 +364,7 @@ export function AdminPricing() {
               );
             })}
           </Table>
-          {shown.length > page.length && <div className="row-actions"><button className="btn btn-ghost btn-sm" onClick={() => setLimit(limit + 100)}>{t(`عرض المزيد (${shown.length - page.length})`, `Show more (${shown.length - page.length})`)}</button></div>}
+          {tldPager}
         </>
       )}
     </Page>
@@ -382,6 +384,7 @@ export function AdminPurchases() {
   const load = useCallback(() => { api<{ items: Bill[] }>('admin/items', undefined, { res: 'purchases' }).then((r) => setItems([...r.items].reverse())).catch((e) => setErr(errText(e, t))); }, [t]);
   useEffect(load, [load]);
   const run = async (fn: () => Promise<unknown>, done: string) => { setErr(''); setOk(''); try { await fn(); setOk(done); load(); return true; } catch (e) { setErr(errText(e, t)); return false; } };
+  const { rows: billRows, pager: billPager } = usePaged(items);
   const live = items.filter((b) => b.status !== 'void');
   const monthly = live.reduce((s, b) => s + (b.period === 'monthly' ? b.amount : b.period === 'yearly' ? b.amount / 12 : 0), 0);
   const due = items.filter((b) => b.status === 'due').reduce((s, b) => s + b.amount, 0);
@@ -405,7 +408,7 @@ export function AdminPurchases() {
         </form>
       )}
       <Table head={[t('الرقم', 'No.'), t('البند', 'Item'), t('المزوّد', 'Provider'), t('المبلغ', 'Amount'), t('الدورة', 'Billing'), t('التاريخ', 'Date'), t('الحالة', 'Status'), '']} empty={items.length === 0 ? t('مفيش فواتير شراء لسه. بتتعمل تلقائي لما تجلب استضافة أو دومين من التطبيقات.', 'No purchase bills yet. They are created when you import hosting or domains from Apps.') : undefined}>
-        {items.map((b) => (
+        {billRows.map((b) => (
           <tr key={b.id}>
             <td><Link className="link" to={`/admin/purchases/${b.id}`}><Ltr>{b.number}</Ltr></Link></td><td>{b.item}</td><td>{b.provider}</td><td className="latin"><b>{money(b.amount)}</b> {cur}</td>
             <td>{b.period === 'monthly' ? t('شهري', 'Monthly') : b.period === 'yearly' ? t('سنوي', 'Yearly') : t('مرة', 'One-off')}</td><td><Ltr>{day(b.date)}</Ltr></td>
@@ -417,6 +420,7 @@ export function AdminPurchases() {
           </tr>
         ))}
       </Table>
+      {billPager}
     </Page>
   );
 }

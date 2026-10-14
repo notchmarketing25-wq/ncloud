@@ -6,6 +6,7 @@ import { api, post, type User } from '../lib/api';
 import type { DnsRec, Lead, Ticket } from '../lib/types';
 import { day, InvoiceTag, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
+import { usePaged } from './pager';
 
 type Item = { id: string; uid: string; [k: string]: unknown };
 type Opt = [string, string, string]; // value, ar, en
@@ -86,6 +87,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
   const shown = items.filter((i) => (tab === 'all' || i.status === tab) && (!q.trim() || JSON.stringify(Object.values(i).filter((v) => typeof v === 'string' || typeof v === 'number')).toLowerCase().includes(q.trim().toLowerCase()) || owner(i.uid).toLowerCase().includes(q.trim().toLowerCase())));
   const stLabel = (s: string) => ({ active: t('نشط', 'Active'), pending: t('قيد التفعيل', 'Pending'), expiring: t('قرب ينتهي', 'Expiring'), stopped: t('متوقف', 'Stopped'), due: t('مستحقة', 'Due'), paid: t('مدفوعة', 'Paid'), void: t('ملغاة', 'Void') } as Record<string, string>)[s] ?? s;
   const open = (it: Item) => { setOk(''); setForm({ ...it }); };
+  const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}`);
 
   return (
     <Page title={t(title[0], title[1])} action={<button className="btn btn-accent btn-sm" onClick={() => setForm({ uid: users.find((u) => u.role === 'client')?.id ?? users[0]?.id ?? '', ...defaults })}>{t(newLabel[0], newLabel[1])}</button>}>
@@ -104,7 +106,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
           <table className="tbl">
             <thead><tr>{[...columns.map((c) => t(c.label[0], c.label[1])), t('العميل', 'Client'), ''].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
             <tbody>
-              {shown.map((it) => (
+              {pageRows.map((it) => (
                 <tr key={it.id} className={detail ? 'row-link' : ''} onClick={detail ? () => nav(detail(it)) : undefined}>
                   {columns.map((c, i) => <td key={i}>{c.render(it, owner(it.uid))}</td>)}
                   <td>{owner(it.uid)}</td>
@@ -119,6 +121,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
             </tbody>
           </table>
         </div>
+        <div style={{ padding: '0 16px' }}>{pager}</div>
       </div>
       {form && (
         <Modal title={form.id ? t('تعديل', 'Edit') : t(newLabel[0], newLabel[1])} wide onClose={() => setForm(null)}>
@@ -259,18 +262,20 @@ export function AdminTickets() {
   const run = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); load(); return true; } catch (e) { setErr(errText(e, t)); return false; } };
   const shown = tickets.filter((k) => filter === 'all' || k.status === filter);
   const cur = tickets.find((k) => k.id === open);
+  const { rows: ticketRows, pager: ticketPager } = usePaged(shown, filter);
   return (
     <Page title={t('تذاكر الدعم', 'Support tickets')} action={<select className="select" style={{ width: 'auto', height: 38 }} aria-label="filter" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
       <option value="all">{t('الكل', 'All')}</option><option value="open">{t('مفتوحة', 'Open')}</option><option value="answered">{t('تم الرد', 'Answered')}</option><option value="closed">{t('مغلقة', 'Closed')}</option></select>}>
       {err && <div className="form-error" role="alert">{err}</div>}
       <Table head={[t('الموضوع', 'Subject'), t('العميل', 'Client'), t('آخر تحديث', 'Updated'), t('الحالة', 'Status'), '']} empty={shown.length === 0 ? t('مفيش تذاكر.', 'No tickets.') : undefined}>
-        {shown.map((k) => (
+        {ticketRows.map((k) => (
           <tr key={k.id} className={k.id === open ? 'is-sel' : ''}>
             <td>{k.subject}</td><td>{k.owner}</td><td><Ltr>{day(k.updated)}</Ltr></td><td><TicketTag s={k.status} /></td>
             <td><button className="btn btn-ghost btn-sm" onClick={() => setOpen(open === k.id ? null : k.id)}>{t('فتح', 'Open')}</button></td>
           </tr>
         ))}
       </Table>
+      {ticketPager}
       {cur && (
         <div className="card thread">
           <h3>{cur.subject} <small className="muted">· {cur.owner}</small></h3>
@@ -298,12 +303,13 @@ export function AdminLeads() {
   const load = useCallback(() => { api<{ leads: Lead[] }>('admin/leads').then((r) => setLeads(r.leads)).catch((e) => setErr(errText(e, t))); }, [t]);
   useEffect(load, [load]);
   const run = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); load(); } catch (e) { setErr(errText(e, t)); } };
+  const { rows: leadRows, pager: leadPager } = usePaged(leads);
   const tag = (s: Lead['status']) => <span className={`tag ${s === 'new' ? 'volt' : s === 'contacted' ? 'warn' : ''}`}>{s === 'new' ? t('جديد', 'New') : s === 'contacted' ? t('تم التواصل', 'Contacted') : t('مغلق', 'Closed')}</span>;
   return (
     <Page title={t('طلبات التواصل', 'Leads')}>
       {err && <div className="form-error" role="alert">{err}</div>}
       <Table head={[t('الاسم', 'Name'), t('الإيميل', 'Email'), t('الخدمة', 'Service'), t('التاريخ', 'Date'), t('الحالة', 'Status'), '']} empty={leads.length === 0 ? t('مفيش طلبات لسه.', 'No leads yet.') : undefined}>
-        {leads.map((l) => (
+        {leadRows.map((l) => (
           <Fragment key={l.id}>
             <tr className={l.id === open ? 'is-sel' : ''}>
               <td>{l.name}</td><td><Ltr>{l.email}</Ltr></td><td>{l.service || '-'}</td><td><Ltr>{day(l.at)}</Ltr></td><td>{tag(l.status)}</td>
@@ -325,6 +331,7 @@ export function AdminLeads() {
           </Fragment>
         ))}
       </Table>
+      {leadPager}
     </Page>
   );
 }
@@ -334,13 +341,17 @@ export function AdminActivity() {
   const { t } = useI18n();
   const [log, setLog] = useState<{ at: string; by: string; action: string; detail: string }[]>([]);
   const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
   useEffect(() => { api<{ log: typeof log }>('admin/activity').then((r) => setLog(r.log)).catch((e) => setErr(errText(e, t))); }, [t]);
+  const filtered = log.filter((l) => !q.trim() || `${l.by} ${l.action} ${l.detail}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const { rows, pager } = usePaged(filtered, q);
   return (
-    <Page title={t('سجل النشاط', 'Activity log')}>
+    <Page title={t('سجل النشاط', 'Activity log')} action={<input className="input" style={{ height: 40, width: 220 }} placeholder={t('ابحث', 'Search')} aria-label={t('بحث', 'Search')} value={q} onChange={(e) => setQ(e.target.value)} />}>
       {err && <div className="form-error">{err}</div>}
-      <Table head={[t('الوقت', 'Time'), t('المستخدم', 'By'), t('العملية', 'Action'), t('التفاصيل', 'Detail')]} empty={log.length === 0 ? t('مفيش نشاط لسه.', 'No activity yet.') : undefined}>
-        {log.map((l, i) => <tr key={i}><td><Ltr>{l.at.replace('T', ' ').slice(0, 16)}</Ltr></td><td>{l.by}</td><td><span className="tag latin">{l.action}</span></td><td>{l.detail}</td></tr>)}
+      <Table head={[t('الوقت', 'Time'), t('المستخدم', 'By'), t('العملية', 'Action'), t('التفاصيل', 'Detail')]} empty={filtered.length === 0 ? t('مفيش نشاط لسه.', 'No activity yet.') : undefined}>
+        {rows.map((l, i) => <tr key={i}><td><Ltr>{l.at.replace('T', ' ').slice(0, 16)}</Ltr></td><td>{l.by}</td><td><span className="tag latin">{l.action}</span></td><td>{l.detail}</td></tr>)}
       </Table>
+      {pager}
     </Page>
   );
 }

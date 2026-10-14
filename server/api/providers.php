@@ -74,6 +74,31 @@ function prov_http($method, $url, $headers, $body = null) {
     if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s#', $http_response_header[0], $m)) { $status = (int) $m[1]; }
     return array($status, (string) $raw);
 }
+/** Several requests at once (curl_multi): the slowest one decides the time, not the sum. Returns key => array(status, body, error). */
+function prov_http_multi($reqs, $timeout = 9) {
+    $out = array();
+    if (!function_exists('curl_multi_init') || count($reqs) < 2) {
+        foreach ($reqs as $k => $r) { try { list($st, $b) = prov_http($r[0], $r[1], $r[2], $r[3]); $out[$k] = array($st, $b, ''); } catch (Exception $e) { $out[$k] = array(0, '', $e->getMessage()); } }
+        return $out;
+    }
+    $mh = curl_multi_init(); $hs = array();
+    foreach ($reqs as $k => $r) {
+        $ch = curl_init($r[1]);
+        curl_setopt_array($ch, array(CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_CUSTOMREQUEST => $r[0], CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HTTPHEADER => array_merge(array('Accept: application/json', 'User-Agent: NotchCloud/1.0'), $r[2])));
+        if ($r[3] !== null) { curl_setopt($ch, CURLOPT_POSTFIELDS, $r[3]); }
+        curl_multi_add_handle($mh, $ch); $hs[$k] = $ch;
+    }
+    do { $st = curl_multi_exec($mh, $running); if ($running) { curl_multi_select($mh, 0.2); } } while ($running && $st === CURLM_OK);
+    foreach ($hs as $k => $ch) {
+        $body = curl_multi_getcontent($ch);
+        $err = curl_error($ch);
+        $out[$k] = array((int) curl_getinfo($ch, CURLINFO_HTTP_CODE), (string) $body, $err !== '' ? 'could not reach the provider (' . preg_replace('#https?://\S+#', '', $err) . ')' : '');
+        curl_multi_remove_handle($mh, $ch); curl_close($ch);
+    }
+    curl_multi_close($mh);
+    return $out;
+}
 function prov_json($status, $raw, $what) {
     $j = json_decode($raw, true);
     if ($status === 401 || $status === 403) { throw new Exception($what . ': the key was rejected (HTTP ' . $status . ') — check the key and any IP whitelist'); }
@@ -133,10 +158,12 @@ function hostinger_tlds($cfg) {
     }
     return $o;
 }
-function hostinger_check($cfg, $name, $tlds) {
+function hostinger_check_req($cfg, $name, $tlds) {
+    return array('POST', prov_base('hostinger', $cfg) . '/api/domains/v1/availability', array('Authorization: Bearer ' . $cfg['token'], 'Content-Type: application/json'), json_encode(array('domain' => $name, 'tlds' => array_values($tlds), 'with_alternatives' => false)));
+}
+function hostinger_check_parse($st, $raw, $name, $tlds) {
     $o = array();
-    $j = hostinger_call($cfg, 'POST', '/api/domains/v1/availability', array('domain' => $name, 'tlds' => array_values($tlds), 'with_alternatives' => false));
-    foreach (prov_rows($j) as $r) {
+    foreach (prov_rows(prov_json($st, $raw, 'Hostinger')) as $r) {
         if (!is_array($r) || empty($r['domain'])) { continue; }
         $o[] = array('domain' => strtolower($r['domain']), 'available' => !empty($r['is_available']));
     }
@@ -166,10 +193,17 @@ function hostinger_hosting($cfg) {
 }
 
 /* ───────── Namecheap (XML) ───────── */
-function namecheap_call($cfg, $command, $params = array()) {
-    if (!function_exists('simplexml_load_string')) { throw new Exception('Namecheap: the PHP SimpleXML extension is required'); }
+function namecheap_req($cfg, $command, $params = array()) {
     $q = http_build_query(array_merge(array('ApiUser' => $cfg['apiUser'], 'ApiKey' => $cfg['apiKey'], 'UserName' => !empty($cfg['username']) ? $cfg['username'] : $cfg['apiUser'], 'ClientIp' => $cfg['clientIp'], 'Command' => $command), $params));
-    list($st, $raw) = prov_http('GET', prov_base('namecheap', $cfg) . '/xml.response?' . $q, array('Accept: application/xml'));
+    return array('GET', prov_base('namecheap', $cfg) . '/xml.response?' . $q, array('Accept: application/xml'), null);
+}
+function namecheap_call($cfg, $command, $params = array()) {
+    $r = namecheap_req($cfg, $command, $params);
+    list($st, $raw) = prov_http($r[0], $r[1], $r[2], $r[3]);
+    return namecheap_parse($st, $raw);
+}
+function namecheap_parse($st, $raw) {
+    if (!function_exists('simplexml_load_string')) { throw new Exception('Namecheap: the PHP SimpleXML extension is required'); }
     $raw = preg_replace('/ xmlns="[^"]+"/', '', $raw);
     $x = @simplexml_load_string($raw);
     if (!$x) { throw new Exception('Namecheap: unexpected answer (HTTP ' . $st . ')'); }
@@ -211,14 +245,15 @@ function namecheap_tlds($cfg) {
     foreach ($o as $t => $v) { if ($v['register'] === null) { unset($o[$t]); continue; } foreach (array('renew', 'transfer') as $f) { if ($o[$t][$f] === null) { $o[$t][$f] = $v['register']; } } }
     return $o;
 }
-function namecheap_check($cfg, $name, $tlds) {
+function namecheap_check_req($cfg, $name, $tlds) {
     $list = array();
-    foreach ($tlds as $t) { $list[] = $name . '.' . $t; }
+    foreach (array_slice($tlds, 0, 50) as $t) { $list[] = $name . '.' . $t; }
+    return namecheap_req($cfg, 'namecheap.domains.check', array('DomainList' => implode(',', $list)));
+}
+function namecheap_check_parse($st, $raw, $name, $tlds) {
+    $x = namecheap_parse($st, $raw);
     $o = array();
-    foreach (array_chunk($list, 50) as $chunk) {
-        $x = namecheap_call($cfg, 'namecheap.domains.check', array('DomainList' => implode(',', $chunk)));
-        foreach ($x->CommandResponse->DomainCheckResult as $r) { $o[] = array('domain' => strtolower((string) $r['Domain']), 'available' => (string) $r['Available'] === 'true' && (string) $r['IsPremiumName'] !== 'true'); }
-    }
+    foreach ($x->CommandResponse->DomainCheckResult as $r) { $o[] = array('domain' => strtolower((string) $r['Domain']), 'available' => (string) $r['Available'] === 'true' && (string) $r['IsPremiumName'] !== 'true'); }
     return $o;
 }
 
@@ -266,10 +301,16 @@ function resellerclub_tlds($cfg) {
     }
     return $o;
 }
-function resellerclub_check($cfg, $name, $tlds) {
+function resellerclub_check_req($cfg, $name, $tlds) {
     $raw = '';
     foreach ($tlds as $t) { $raw .= '&tlds=' . rawurlencode($t); }
-    $j = resellerclub_call($cfg, 'domains/available.json', array('domain-name' => $name), $raw);
+    $q = http_build_query(array('auth-userid' => $cfg['userId'], 'api-key' => $cfg['apiKey'], 'domain-name' => $name)) . $raw;
+    return array('GET', prov_base('resellerclub', $cfg) . '/api/domains/available.json?' . $q, array(), null);
+}
+function resellerclub_check_parse($st, $raw, $name, $tlds) {
+    $j = json_decode($raw, true);
+    if (is_array($j) && isset($j['status']) && strtolower((string) $j['status']) === 'error') { throw new Exception('ResellerClub: ' . clean_text(isset($j['message']) ? $j['message'] : 'request failed', 180)); }
+    $j = prov_json($st, $raw, 'ResellerClub');
     $o = array();
     foreach ($j as $dom => $r) { if (is_array($r) && isset($r['status'])) { $o[] = array('domain' => strtolower($dom), 'available' => strtolower((string) $r['status']) === 'available'); } }
     return $o;
@@ -482,22 +523,69 @@ function prov_search($db, $q, $tldsWanted, $admin) {
     usort($rest, function ($a, $b) use ($table) { return (isset($table[$a]) ? $table[$a]['sell'] : PHP_INT_MAX) <=> (isset($table[$b]) ? $table[$b]['sell'] : PHP_INT_MAX); });
     foreach ($rest as $t) { $t = strtolower(trim($t)); if ($t !== '' && !in_array($t, $want, true)) { $want[] = $t; } }
     $want = array_slice($want, 0, 30);
-    $byProv = array();
-    foreach ($want as $t) { if (isset($table[$t])) { $byProv[$table[$t]['best']][] = $t; } }
-    $results = array(); $errors = array();
-    foreach ($byProv as $pid => $tlds) {
-        try {
-            foreach (prov_run($pid, 'check', $db, $name, array_slice($tlds, 0, 25)) as $r) {
-                $tld = substr($r['domain'], strlen($name) + 1);
-                if (!isset($table[$tld])) { continue; }
-                $row = array('domain' => $r['domain'], 'tld' => $tld, 'available' => $r['available'], 'sell' => $table[$tld]['sell'], 'renewSell' => $table[$tld]['renewSell'], 'currency' => $table[$tld]['currency']);
-                if ($admin) { $row += array('provider' => $pid, 'cost' => $table[$tld]['cost'], 'profit' => $table[$tld]['profit'], 'marginPct' => $table[$tld]['marginPct']); }
-                $results[] = $row;
+    $t0 = microtime(true);
+    $results = array(); $errors = array(); $got = array();
+    $cached = prov_check_cache_get($name, $want);
+    foreach ($cached as $tld => $avail) { $got[$tld] = $avail; }
+    $todo = array_values(array_diff($want, array_keys($got)));
+    $failed = array();
+    // Round 1: every provider at once, each asked about the extensions it sells cheapest. Round 2: whatever failed goes to the next provider.
+    for ($round = 0; $round < 2 && $todo; $round++) {
+        $byProv = array();
+        foreach ($todo as $t) {
+            if (!isset($table[$t])) { continue; }
+            foreach ($table[$t]['offers'] as $o) {
+                $pid = $o['provider'];
+                if (isset($failed[$pid]) || !prov_has_keys($pid, prov_cfg($db, $pid)) || !function_exists($pid . '_check_req')) { continue; }
+                $byProv[$pid][] = $t; break;
             }
-        } catch (Exception $e) { $errors[$pid] = $admin ? $e->getMessage() : 'unavailable'; }
+        }
+        if (!$byProv) { break; }
+        $reqs = array();
+        foreach ($byProv as $pid => $tlds) { $reqs[$pid] = call_user_func($pid . '_check_req', prov_cfg($db, $pid), $name, array_slice($tlds, 0, 50)); }
+        $answers = prov_http_multi($reqs);
+        $todo = array();
+        foreach ($byProv as $pid => $tlds) {
+            try {
+                list($st, $body, $err) = $answers[$pid];
+                if ($err !== '') { throw new Exception($err); }
+                foreach (call_user_func($pid . '_check_parse', $st, $body, $name, $tlds) as $r) { $tld = substr($r['domain'], strlen($name) + 1); $got[$tld] = array('a' => $r['available'], 'p' => $pid); }
+                foreach ($tlds as $t) { if (!isset($got[$t])) { $todo[] = $t; $failed[$pid] = $failed[$pid] ?? true; } }
+            } catch (Exception $e) { $errors[$pid] = $admin ? $e->getMessage() : 'unavailable'; $failed[$pid] = true; foreach ($tlds as $t) { $todo[] = $t; } }
+        }
+        $todo = array_values(array_unique($todo));
+    }
+    $fresh = array(); foreach ($got as $tld => $v) { if (is_array($v)) { $fresh[$tld] = $v['a']; } }
+    prov_check_cache_put($name, $fresh);
+    foreach ($want as $tld) {
+        if (!isset($got[$tld]) || !isset($table[$tld])) { continue; }
+        $v = $got[$tld]; $avail = is_array($v) ? $v['a'] : $v; $pid = is_array($v) ? $v['p'] : $table[$tld]['best'];
+        $row = array('domain' => $name . '.' . $tld, 'tld' => $tld, 'available' => (bool) $avail, 'sell' => $table[$tld]['sell'], 'renewSell' => $table[$tld]['renewSell'], 'currency' => $table[$tld]['currency']);
+        if ($admin) { $row += array('provider' => $pid, 'cost' => $table[$tld]['cost'], 'profit' => $table[$tld]['profit'], 'marginPct' => $table[$tld]['marginPct']); }
+        $results[] = $row;
     }
     usort($results, function ($a, $b) use ($want) { return array_search($a['tld'], $want) <=> array_search($b['tld'], $want); });
-    return array('query' => $name, 'results' => $results, 'errors' => $errors);
+    $ms = (int) round((microtime(true) - $t0) * 1000);
+    return array('query' => $name, 'results' => $results, 'errors' => $errors, 'ms' => $ms, 'cached' => count($cached));
+}
+
+/** Availability answers are remembered for 90 seconds so repeated searches are instant. */
+function prov_check_cache_get($name, $tlds) {
+    $f = NC_DATA . '/cache-check.json';
+    $j = is_file($f) ? json_decode(file_get_contents($f), true) : null;
+    $o = array();
+    if (!is_array($j)) { return $o; }
+    foreach ($tlds as $t) { $k = $name . '.' . $t; if (isset($j[$k]) && $j[$k][0] > time() - 90) { $o[$t] = (bool) $j[$k][1]; } }
+    return $o;
+}
+function prov_check_cache_put($name, $avail) {
+    $f = NC_DATA . '/cache-check.json';
+    $j = is_file($f) ? json_decode(file_get_contents($f), true) : null;
+    if (!is_array($j)) { $j = array(); }
+    foreach ($j as $k => $v) { if ($v[0] < time() - 90) { unset($j[$k]); } }
+    foreach ($avail as $t => $a) { $j[$name . '.' . $t] = array(time(), (bool) $a); }
+    if (count($j) > 600) { $j = array_slice($j, -600, null, true); }
+    @file_put_contents($f, json_encode($j), LOCK_EX);
 }
 
 /** Cost of a domain/hosting in the store currency. */

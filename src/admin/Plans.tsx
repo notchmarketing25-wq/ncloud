@@ -5,6 +5,7 @@ import { api, post } from '../lib/api';
 import { useCurrency } from '../site/settings';
 import { Page, Table } from '../ui';
 import { errText } from './errors';
+import { usePaged } from './pager';
 
 type P = { id?: string; category: string; nameAr: string; nameEn: string; price: number | ''; per: string; featured: boolean; active: boolean; sort: number | ''; specs: string; features: string };
 const CATS: [string, string, string][] = [['hosting', 'استضافة', 'Hosting'], ['email', 'إيميلات', 'Email'], ['vps', 'VPS', 'VPS'], ['site', 'تصميم مواقع', 'Web design'], ['bundle', 'باقة كاملة', 'Bundle']];
@@ -33,6 +34,7 @@ export function AdminPlans() {
   const catLabel = (c: string) => { const x = CATS.find((k) => k[0] === c); return x ? t(x[1], x[2]) : c; };
   const set = (k: keyof P, v: unknown) => setForm({ ...(form as P), [k]: v });
   const sorted = [...items].sort((a, b) => CATS.findIndex((c) => c[0] === a.category) - CATS.findIndex((c) => c[0] === b.category) || Number(a.sort) - Number(b.sort));
+  const { rows: planRows, pager: planPager } = usePaged(sorted);
   return (
     <Page title={t('الباقات والأسعار', 'Plans')} action={<div className="row-actions">
       {items.length === 0 && <button className="btn btn-ghost btn-sm" onClick={() => void run(async () => { for (const p of starter()) await save(p); }, t('اتضافت باقات مبدئية (غير مفعّلة). عدّل الأسعار وفعّلها.', 'Starter plans added (inactive). Edit the prices and activate them.'))}>{t('أضف باقات مبدئية', 'Add starter plans')}</button>}
@@ -58,7 +60,7 @@ export function AdminPlans() {
         </form>
       )}
       <Table head={[t('القسم', 'Category'), t('الباقة', 'Plan'), t('السعر', 'Price'), t('الحالة', 'Status'), '']} empty={items.length === 0 ? t('مفيش باقات لسه. أضف باقات مبدئية أو واحدة جديدة.', 'No plans yet. Add the starter plans or a new one.') : undefined}>
-        {sorted.map((p) => (
+        {planRows.map((p) => (
           <tr key={p.id}>
             <td>{catLabel(p.category)}</td>
             <td><b>{p.nameAr}</b>{p.nameEn && <> <Ltr>{p.nameEn}</Ltr></>} {p.featured && <span className="tag volt">{t('الأكثر طلبًا', 'Popular')}</span>}</td>
@@ -72,6 +74,7 @@ export function AdminPlans() {
           </tr>
         ))}
       </Table>
+      {planPager}
     </Page>
   );
 }
