@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { api, apiUrl, post } from '../lib/api';
-import type { Brand, Business, Settings } from '../lib/types';
+import type { Brand, Business, PayMethod, Settings } from '../lib/types';
 import { assetUrl, useSite } from '../site/settings';
 import { Page } from '../ui';
 import { errText } from './errors';
 
+const PAY_TYPES: [string, string, string][] = [['bank', 'تحويل بنكي', 'Bank transfer'], ['wallet', 'محفظة / إنستا باي', 'Wallet / InstaPay'], ['card', 'بطاقة / رابط دفع', 'Card / payment link'], ['cash', 'كاش', 'Cash'], ['other', 'أخرى', 'Other']];
 type Full = Settings & { version?: string };
 const GOVS = ['Cairo', 'Giza', 'Alexandria', 'Qalyubia', 'Sharqia', 'Dakahlia', 'Gharbia', 'Monufia', 'Beheira', 'Kafr El-Sheikh', 'Damietta', 'Port Said', 'Ismailia', 'Suez', 'North Sinai', 'South Sinai', 'Fayoum', 'Beni Suef', 'Minya', 'Asyut', 'Sohag', 'Qena', 'Luxor', 'Aswan', 'Red Sea', 'New Valley', 'Matrouh'];
 
@@ -26,7 +27,7 @@ export function AdminSettings() {
 
   const groups = useMemo<{ title: string; items: { id: string; label: string; to?: string }[] }[]>(() => [
     { title: t('الشركة', 'Company'), items: [{ id: 'general', label: t('عام', 'General') }, { id: 'branding', label: t('الهوية البصرية', 'Branding') }, { id: 'accounts', label: t('حسابات العملاء', 'Customer accounts') }] },
-    { title: t('المبيعات', 'Sales'), items: [{ id: 'plans', label: t('الباقات والأسعار', 'Plans & prices'), to: '/admin/plans' }, { id: 'tld', label: t('أسعار الدومينات', 'TLD pricing'), to: '/admin/pricing' }, { id: 'purchases', label: t('فواتير الشراء', 'Purchases'), to: '/admin/purchases' }] },
+    { title: t('المبيعات', 'Sales'), items: [{ id: 'plans', label: t('الباقات والأسعار', 'Plans & prices'), to: '/admin/plans' }, { id: 'orders', label: t('الطلبات', 'Orders'), to: '/admin/orders' }, { id: 'payments', label: t('وسائل الدفع', 'Payment methods') }, { id: 'tld', label: t('أسعار الدومينات', 'TLD pricing'), to: '/admin/pricing' }, { id: 'purchases', label: t('فواتير الشراء', 'Purchases'), to: '/admin/purchases' }] },
     { title: t('التطبيقات', 'Apps & tools'), items: [{ id: 'apps', label: t('التطبيقات', 'Apps'), to: '/admin/apps' }, { id: 'updates', label: t('التحديثات', 'Updates'), to: '/admin/updates' }, { id: 'activity', label: t('سجل النشاط', 'Activity'), to: '/admin/activity' }] },
     { title: t('الحساب', 'Account'), items: [{ id: 'account', label: t('حسابي', 'My account'), to: '/admin/account' }] },
   ], [t]);
@@ -37,6 +38,8 @@ export function AdminSettings() {
   const setBiz = (patch: Partial<Business>) => set({ business: { ...biz, ...patch } });
   const brand = s.brand ?? {};
   const setBrand = (patch: Partial<Brand>) => set({ brand: { ...brand, ...patch } });
+  const pays = s.payments ?? [];
+  const setPay = (i: number, patch: Partial<PayMethod>) => set({ payments: pays.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
   const save = async (e?: FormEvent) => {
     e?.preventDefault(); setErr(''); setOk(''); setBusy(true);
     try { await post('admin/settings', s); setSaved(s); setOk(t('تم الحفظ.', 'Saved.')); await refresh(); } catch (x) { setErr(errText(x, t)); } finally { setBusy(false); }
@@ -140,6 +143,29 @@ export function AdminSettings() {
               </>)}
               {card(t('عرض الموقع', 'Website display'), null, <>
                 <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.placeholder} onChange={(e) => set({ placeholder: e.target.checked })} /> {t('اعرض علامة "تجريبي" على الأسعار والأرقام', 'Show the "placeholder" marks on prices and numbers')}</label>
+              </>)}
+            </>
+          )}
+
+          {section === 'payments' && (
+            <>
+              {card(t('وسائل الدفع', 'Payment methods'), t('الوسائل اللي بتظهر للعميل في الـ checkout. بيانات الحساب (رقم بنك، محفظة، رابط دفع) بتظهر له بعد تأكيد الطلب فقط.', 'Shown to the customer at checkout. The account details (bank number, wallet, payment link) are shown to them only after they place the order.'), <>
+                {pays.map((m, i) => (
+                  <div key={m.id || i} className="set-row3" style={{ gridTemplateColumns: '1fr', border: '1px solid var(--nt-fog)', borderRadius: 14, padding: 14 }}>
+                    <div className="set-fields">
+                      {field(`pm-ar${i}`, t('الاسم (عربي)', 'Name (Arabic)'), <input id={`pm-ar${i}`} className="input" maxLength={80} value={m.nameAr} onChange={(e) => setPay(i, { nameAr: e.target.value })} />, undefined, false)}
+                      {field(`pm-en${i}`, t('الاسم (إنجليزي)', 'Name (English)'), <input id={`pm-en${i}`} className="input latin" maxLength={80} value={m.nameEn} onChange={(e) => setPay(i, { nameEn: e.target.value })} />, undefined, false)}
+                      {field(`pm-t${i}`, t('النوع', 'Type'), <select id={`pm-t${i}`} className="select" value={m.type} onChange={(e) => setPay(i, { type: e.target.value as PayMethod['type'] })}>{PAY_TYPES.map(([k, ar, en]) => <option key={k} value={k}>{t(ar, en)}</option>)}</select>, undefined, false)}
+                      <label className="check"><input type="checkbox" checked={!!m.active} onChange={(e) => setPay(i, { active: e.target.checked })} /> {t('مفعّلة', 'Active')}</label>
+                      {field(`pm-d${i}`, t('تفاصيل الدفع (تظهر للعميل بعد الطلب)', 'Payment details (shown after the order)'), <textarea id={`pm-d${i}`} className="textarea" maxLength={600} value={m.details ?? ''} placeholder={t('مثال: بنك مصر، حساب 1234…، باسم نوتش\nأو رابط الدفع https://…', 'e.g. Bank, account 1234…, in the name of Notch\nor a payment link https://…')} onChange={(e) => setPay(i, { details: e.target.value })} />)}
+                    </div>
+                    <div><button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ payments: pays.filter((_, j) => j !== i) })}>{t('حذف', 'Remove')}</button></div>
+                  </div>
+                ))}
+                <div style={{ gridColumn: '1 / -1' }}><button type="button" className="btn btn-ghost btn-sm" disabled={pays.length >= 12} onClick={() => set({ payments: [...pays, { id: '', type: 'bank', nameAr: '', nameEn: '', details: '', active: true }] })}>{t('+ وسيلة دفع', '+ Payment method')}</button></div>
+              </>)}
+              {card(t('Webmail', 'Webmail'), t('الرابط اللي بيفتحه زر "افتح الإيميل" للعميل والأدمن.', 'The link opened by the "Open mailbox" button for clients and admins.'), <>
+                {field('wm', t('رابط الويب ميل', 'Webmail URL'), <input id="wm" className="input latin" dir="ltr" value={s.webmailUrl ?? ''} placeholder="https://mail.hostinger.com" onChange={(e) => set({ webmailUrl: e.target.value })} />)}
               </>)}
             </>
           )}

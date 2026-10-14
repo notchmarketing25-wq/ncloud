@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-14",
+ "en": [
+  "Cart and checkout: add plans and domains to a cart, pick the term, choose a payment method (bank, wallet, card link, cash — set in Settings → Payment methods), place the order and get its invoice. Orders: client Orders page with payment details and an 'I have paid' reference; admin Orders page to confirm payment and activate (creates the client's hosting, domain and website records). Client panel: order hosting, email, servers and websites from their plans right inside the portal. Mailboxes: open-mailbox button (webmail) per mailbox for clients and admins, mailboxes listed on the client's domain page, admin can import the Hostinger mailbox list and delete entries. Fixed portal overflow on mobile and the contact-form overflow in Arabic."
+ ],
+ "ar": [
+  "سلة وcheckout: إضافة باقات ودومينات للسلة واختيار المدة ووسيلة الدفع (تحويل بنكي، محفظة، رابط دفع، كاش من الإعدادات ← وسائل الدفع) وإتمام الطلب مع فاتورته. الطلبات: صفحة طلبات للعميل بتفاصيل الدفع وزر دفعت برقم العملية، وصفحة طلبات للأدمن لتأكيد الدفع والتفعيل (بيضيف الاستضافة والدومين والموقع في حساب العميل). في لوحة العميل: طلب استضافة وإيميلات وسيرفرات ومواقع من الباقات مباشرة. الإيميلات: زر افتح الإيميل لكل صندوق للعميل والأدمن، وعرض الصناديق في صفحة الدومين، واستيراد قائمة صناديق Hostinger وحذفها للأدمن. إصلاح خروج لوحة العميل عن العرض في الموبايل وخروج فورم التواصل عن العرض بالعربي."
+ ]
+}

@@ -9,7 +9,7 @@ import { Page } from '../ui';
 import { errText } from './errors';
 
 type Overview = {
-  users: number; admins: number; clients: number; paid: number; due: number; activeServices: number; openTickets: number; newLeads: number;
+  users: number; admins: number; clients: number; paid: number; due: number; activeServices: number; openTickets: number; newLeads: number; pendingOrders?: number;
   expiring: { id: string; name: string; expires: string; owner: string }[]; recent: { at: string; by: string; action: string; detail: string }[];
 };
 
@@ -19,10 +19,10 @@ export function AdminLayout() {
   const { mode, user, logout } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
-  const [badges, setBadges] = useState({ tickets: 0, leads: 0 });
+  const [badges, setBadges] = useState({ tickets: 0, leads: 0, orders: 0 });
   useEffect(() => {
     if (mode !== 'server' || user?.role !== 'admin') return;
-    api<Overview>('admin/overview').then((o) => setBadges({ tickets: o.openTickets, leads: o.newLeads })).catch(() => undefined);
+    api<Overview>('admin/overview').then((o) => setBadges({ tickets: o.openTickets, leads: o.newLeads, orders: o.pendingOrders ?? 0 })).catch(() => undefined);
   }, [mode, user, pathname]);
   if (mode === 'checking') return null;
   if (!user) return <Navigate to="/portal/login" replace />;
@@ -36,6 +36,7 @@ export function AdminLayout() {
     { to: '/admin/hosting', label: t('الاستضافة', 'Hosting') },
     { to: '/admin/websites', label: t('المواقع', 'Websites') },
     { to: '/admin/servers', label: t('السيرفرات', 'Servers') },
+    { to: '/admin/orders', label: t('الطلبات', 'Orders'), badge: badges.orders },
     { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
     { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
     { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },

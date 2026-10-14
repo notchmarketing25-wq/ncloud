@@ -31,12 +31,15 @@ $SCHEMA = array(
     'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num')),
     // Public price list shown on the website (edited in Admin → Plans). Not owned by a client.
     'plans' => array('category' => array('enum', array('hosting', 'email', 'vps', 'site', 'bundle')), 'nameAr' => array('str', 80, 'req'), 'nameEn' => array('str', 80), 'price' => array('num', 'req'), 'per' => array('enum', array('month', 'year', 'once')), 'featured' => array('bool'), 'active' => array('bool'), 'sort' => array('num'), 'specs' => array('str', 700), 'features' => array('str', 900)),
+    // Orders placed from the cart. Lines, number and totals are set by the server; admin edits status / payment fields only.
+    'orders' => array('status' => array('enum', array('pending', 'paid', 'active', 'cancelled')), 'method' => array('str', 40), 'payRef' => array('str', 160), 'adminNote' => array('str', 1000)),
     // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
     'purchases' => array('item' => array('str', 160, 'req'), 'provider' => array('str', 30), 'ref' => array('str', 80), 'service' => array('str', 20), 'client' => array('str', 32), 'amount' => array('num', 'req'), 'period' => array('enum', array('monthly', 'yearly', 'once')), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
 );
 
 function out($data, $code = 200) { http_response_code($code); echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 function fail($msg, $code = 400) { out(array('error' => $msg), $code); }
+function nc_substr($s, $n) { return function_exists('mb_substr') ? mb_substr($s, 0, $n, 'UTF-8') : substr($s, 0, $n); }
 function nc_len($s) { return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s); }
 function nc_cut($s, $n) { return function_exists('mb_substr') ? mb_substr($s, 0, $n, 'UTF-8') : substr($s, 0, $n); }
 
@@ -277,6 +280,17 @@ function res_name() { global $SCHEMA; $r = isset($_GET['res']) ? (string) $_GET[
 /** Records that belong to the company, not to a client (purchase bills, the public plans). */
 /** A DNS value in a comparable form: no case, no trailing dot, single spaces. */
 function dns_norm($v) { return rtrim(strtolower(trim(preg_replace('/\s+/', ' ', (string) $v))), '.'); }
+/** Payment methods set in Admin → Settings → Payments. Details (account numbers…) are only sent to signed-in clients. */
+function pay_methods($db, $withDetails) {
+    $o = array();
+    foreach ((array) meta_get($db, 'payments', array()) as $m) {
+        if (empty($m['active'])) { continue; }
+        $x = array('id' => $m['id'], 'type' => $m['type'], 'nameAr' => $m['nameAr'], 'nameEn' => $m['nameEn']);
+        if ($withDetails) { $x['details'] = $m['details']; }
+        $o[] = $x;
+    }
+    return $o;
+}
 function res_unowned($res) { return $res === 'purchases' || $res === 'plans'; }
 function items_of($db, $res) { return isset($db['items'][$res]) && is_array($db['items'][$res]) ? $db['items'][$res] : array(); }
 function mine($db, $res, $uid) { return array_values(array_filter(items_of($db, $res), function ($i) use ($uid) { return $i['uid'] === $uid; })); }
@@ -312,7 +326,7 @@ switch ($r) {
         $db = db_read();
         out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''),
             'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
-            'brand' => meta_get($db, 'brand', new stdClass())));
+            'brand' => meta_get($db, 'brand', new stdClass()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com')));
 
     case 'public/catalog':
         // What the website sells: the active plans (Admin → Plans) and the domain extensions chosen in TLD pricing. No costs, no providers.
@@ -324,7 +338,7 @@ switch ($r) {
             require_once __DIR__ . '/providers.php';
             foreach (prov_tld_table($db, prov_cache_read()) as $r) { if ($r['selected']) { $tlds[] = array('ext' => '.' . $r['tld'], 'register' => $r['sell'], 'renew' => $r['renewSell']); } }
         }
-        out(array('plans' => array_map(function ($p) { unset($p['uid'], $p['created']); return $p; }, $plans), 'tlds' => $tlds, 'currency' => meta_get($db, 'currency', '')));
+        out(array('plans' => array_map(function ($p) { unset($p['uid'], $p['created']); return $p; }, $plans), 'tlds' => $tlds, 'currency' => meta_get($db, 'currency', ''), 'payments' => pay_methods($db, false)));
 
     case 'public/lead':
         require_post();
@@ -422,23 +436,91 @@ switch ($r) {
         out(array('user' => public_user($user)), 201);
 
     case 'orders/create':
+        // The cart: plans (with a number of periods) and domain registrations. Prices are always computed here from the live catalog.
         $u = need_user();
         require_post();
         $b = body();
-        $planId = isset($b['planId']) ? (string) $b['planId'] : '';
+        $in = isset($b['items']) && is_array($b['items']) ? $b['items'] : (isset($b['planId']) ? array(array('kind' => 'plan', 'id' => $b['planId'], 'qty' => 1)) : array());
+        if (count($in) < 1 || count($in) > 20) { fail('cart is empty', 422); }
         $note = clean_text(isset($b['note']) ? $b['note'] : '', 2000);
+        $domain = strtolower(clean_text(isset($b['domain']) ? $b['domain'] : '', 253));
         $db0 = db_read();
-        $pi = find_by(items_of($db0, 'plans'), 'id', $planId);
-        if ($pi < 0) { fail('plan not found', 404); }
-        $plan = $db0['items']['plans'][$pi];
+        $cur = meta_get($db0, 'currency', '') ?: 'EGP';
+        $methods = pay_methods($db0, true);
+        $method = isset($b['method']) ? (string) $b['method'] : '';
+        $mi = -1; foreach ($methods as $k => $m) { if ($m['id'] === $method) { $mi = $k; } }
+        if (count($methods) > 0 && $mi < 0) { fail('choose a payment method', 422); }
+        $lines = array(); $total = 0;
+        $tldRows = null;
+        foreach ($in as $it) {
+            if (!is_array($it)) { continue; }
+            $kind = isset($it['kind']) ? $it['kind'] : 'plan';
+            if ($kind === 'domain') {
+                $name = strtolower(trim(isset($it['name']) ? (string) $it['name'] : ''));
+                if (!preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $name)) { fail('invalid domain name', 422); }
+                $years = max(1, min(10, (int) (isset($it['qty']) ? $it['qty'] : 1)));
+                require_once __DIR__ . '/providers.php';
+                if ($tldRows === null) { $tldRows = prov_tld_table($db0, prov_cache_read()); }
+                $best = null;
+                foreach ($tldRows as $row) { if ($row['selected'] && substr($name, -strlen('.' . $row['tld'])) === '.' . $row['tld'] && ($best === null || strlen($row['tld']) > strlen($best['tld']))) { $best = $row; } }
+                if ($best === null) { fail('this extension is not for sale', 422); }
+                $chk = prov_search($db0, $name, array($best['tld']), false);
+                foreach ((isset($chk['results']) ? $chk['results'] : array()) as $rr) { if ($rr['domain'] === $name && empty($rr['available'])) { fail('domain is no longer available: ' . $name, 409); } }
+                $price = round($best['sell'] + ($years - 1) * $best['renewSell'], 2);
+                $lines[] = array('kind' => 'domain', 'ref' => $name, 'nameAr' => 'تسجيل دومين ' . $name, 'nameEn' => 'Domain registration ' . $name, 'qty' => $years, 'unit' => 'year', 'price' => $price);
+                $total += $price;
+            } else {
+                $pi = find_by(items_of($db0, 'plans'), 'id', isset($it['id']) ? (string) $it['id'] : '');
+                if ($pi < 0 || empty($db0['items']['plans'][$pi]['active'])) { fail('plan not found', 404); }
+                $plan = $db0['items']['plans'][$pi];
+                $qty = max(1, (int) (isset($it['qty']) ? $it['qty'] : 1));
+                $qty = $plan['per'] === 'once' ? 1 : min($qty, $plan['per'] === 'year' ? 5 : 36);
+                $price = round($plan['price'] * $qty, 2);
+                $lines[] = array('kind' => 'plan', 'ref' => $plan['id'], 'category' => $plan['category'], 'nameAr' => $plan['nameAr'], 'nameEn' => $plan['nameEn'] !== '' ? $plan['nameEn'] : $plan['nameAr'], 'qty' => $qty, 'unit' => $plan['per'], 'price' => $price);
+                $total += $price;
+            }
+        }
+        if (!$lines) { fail('cart is empty', 422); }
+        $total = round($total, 2);
         $now = gmdate('c');
-        $line = $plan['nameEn'] !== '' ? $plan['nameEn'] : $plan['nameAr'];
-        $per = array('month' => '/ month', 'year' => '/ year', 'once' => 'one-time');
-        $text = 'New order request: ' . $line . ' — ' . $plan['price'] . ' ' . (meta_get($db0, 'currency', '') ?: 'EGP') . ' ' . $per[$plan['per']] . ($note !== '' ? "\n\n" . $note : '');
-        $t = array('id' => new_id(), 'uid' => $u['id'], 'subject' => 'Order: ' . $line, 'status' => 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
-        $to = db_update(function (&$db) use ($t, $u) { $db['tickets'][] = $t; log_act($db, $u, 'order', $t['subject']); return meta_get($db, 'contactEmail', ''); });
-        if ($to && function_exists('mail')) { @mail($to, '=?UTF-8?B?' . base64_encode($t['subject']) . '?=', $u['name'] . ' <' . $u['email'] . ">\n\n" . $text, "Content-Type: text/plain; charset=UTF-8\r\nReply-To: " . $u['email']); }
-        out(array('ticket' => $t), 201);
+        $mname = $mi >= 0 ? ($methods[$mi]['nameEn'] !== '' ? $methods[$mi]['nameEn'] : $methods[$mi]['nameAr']) : '';
+        $made = db_update(function (&$db) use ($lines, $total, $u, $note, $domain, $method, $mname, $now, $cur) {
+            $seq = (int) meta_get($db, 'orderSeq', 1000) + 1; $db['meta']['orderSeq'] = $seq;
+            $iseq = (int) meta_get($db, 'invoiceSeq', 1000) + 1; $db['meta']['invoiceSeq'] = $iseq;
+            $summary = implode(' + ', array_map(function ($l) { return $l['nameEn']; }, $lines));
+            $order = array('id' => new_id(), 'uid' => $u['id'], 'created' => $now, 'number' => 'ORD-' . $seq, 'status' => 'pending', 'method' => $method, 'methodName' => $mname, 'payRef' => '', 'adminNote' => '', 'lines' => $lines, 'total' => $total, 'currency' => $cur, 'domain' => $domain, 'note' => $note, 'summary' => nc_substr($summary, 160), 'provisioned' => false);
+            $inv = array('id' => new_id(), 'uid' => $u['id'], 'created' => $now, 'number' => 'INV-' . $iseq, 'item' => nc_substr('Order ' . $order['number'] . ': ' . $summary, 160), 'amount' => $total, 'date' => gmdate('Y-m-d'), 'status' => 'due', 'orderId' => $order['id']);
+            $order['invoiceId'] = $inv['id'];
+            $db['items']['orders'][] = $order;
+            $db['items']['invoices'][] = $inv;
+            $text = 'New order ' . $order['number'] . ' — ' . $total . ' ' . $cur . "\n" . implode("\n", array_map(function ($l) { return '• ' . $l['nameEn'] . ' × ' . $l['qty'] . ' = ' . $l['price']; }, $lines)) . ($domain !== '' ? "\nDomain: " . $domain : '') . ($note !== '' ? "\n\n" . $note : '');
+            $db['tickets'][] = array('id' => new_id(), 'uid' => $u['id'], 'subject' => 'Order ' . $order['number'], 'status' => 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
+            log_act($db, $u, 'order', $order['number'] . ' ' . $total);
+            return array('order' => $order, 'invoice' => $inv, 'to' => meta_get($db, 'contactEmail', ''), 'text' => $text);
+        });
+        if ($made['to'] && function_exists('mail')) { @mail($made['to'], '=?UTF-8?B?' . base64_encode('Order ' . $made['order']['number']) . '?=', $u['name'] . ' <' . $u['email'] . ">\n\n" . $made['text'], "Content-Type: text/plain; charset=UTF-8\r\nReply-To: " . $u['email']); }
+        out(array('order' => $made['order'], 'invoice' => $made['invoice'], 'payment' => $mi >= 0 ? $methods[$mi] : null), 201);
+
+    case 'orders/pay':
+        // The client reports how/when they paid; the admin confirms it.
+        $u = need_user();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $ref = clean_text(isset($b['ref']) ? $b['ref'] : '', 160);
+        $method = isset($b['method']) ? (string) $b['method'] : '';
+        if ($ref === '') { fail('enter the payment reference', 422); }
+        $ok = db_update(function (&$db) use ($id, $ref, $method, $u) {
+            $i = find_by(items_of($db, 'orders'), 'id', $id);
+            if ($i < 0 || $db['items']['orders'][$i]['uid'] !== $u['id'] || $db['items']['orders'][$i]['status'] !== 'pending') { return false; }
+            $db['items']['orders'][$i]['payRef'] = $ref;
+            if ($method !== '') { $db['items']['orders'][$i]['method'] = $method; }
+            $db['items']['orders'][$i]['paidClaim'] = gmdate('c');
+            log_act($db, $u, 'order-paid-claim', $db['items']['orders'][$i]['number']);
+            return true;
+        });
+        if (!$ok) { fail('order not found or already processed', 404); }
+        out(array('ok' => true));
 
     case 'auth/logout':
         require_post();
@@ -464,9 +546,11 @@ switch ($r) {
         foreach (array_keys($SCHEMA) as $res) {
             if (res_unowned($res)) { continue; }
             // Our cost and supplier are never shown to clients.
-            $o[$res] = array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref']); return $it; }, mine($db, $res, $u['id']));
+            $o[$res] = array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote']); return $it; }, mine($db, $res, $u['id']));
         }
         $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        $o['payments'] = pay_methods($db, true);
+        $o['webmail'] = meta_get($db, 'webmailUrl', 'https://mail.hostinger.com');
         out($o);
 
     case 'svc/dns-save':
@@ -622,11 +706,12 @@ switch ($r) {
         foreach (array_keys($SCHEMA) as $res) {
             $list = items_of($db, $res);
             $counts[$res] = count($list);
-            if ($res !== 'invoices') { foreach ($list as $it) { if ($it['status'] === 'active') { $active++; } } }
+            if ($res !== 'invoices' && $res !== 'orders') { foreach ($list as $it) { if ($it['status'] === 'active') { $active++; } } }
         }
         $paid = 0; $due = 0;
         foreach (items_of($db, 'invoices') as $inv) { if ($inv['status'] === 'paid') { $paid += $inv['amount']; } elseif ($inv['status'] === 'due') { $due += $inv['amount']; } }
         $open = 0; foreach ($db['tickets'] as $t) { if ($t['status'] === 'open') { $open++; } } // open = waiting for an admin reply
+        $pendingOrders = 0; foreach (items_of($db, 'orders') as $od) { if ($od['status'] === 'pending') { $pendingOrders++; } }
         $newLeads = 0; foreach ($db['leads'] as $l) { if ($l['status'] === 'new') { $newLeads++; } }
         $soon = date('Y-m-d', time() + 30 * 86400);
         $expiring = array();
@@ -634,7 +719,7 @@ switch ($r) {
             if ($d['status'] === 'expiring' || ($d['expires'] !== '' && $d['expires'] <= $soon)) { $expiring[] = array('id' => $d['id'], 'name' => $d['name'], 'expires' => $d['expires'], 'owner' => user_name($db, $d['uid'])); }
         }
         out(array('users' => count($db['users']), 'admins' => $admins, 'clients' => count($db['users']) - $admins, 'site' => meta_get($db, 'site', ''),
-            'counts' => $counts, 'activeServices' => $active, 'paid' => $paid, 'due' => $due, 'openTickets' => $open, 'newLeads' => $newLeads,
+            'counts' => $counts, 'activeServices' => $active, 'paid' => $paid, 'due' => $due, 'openTickets' => $open, 'newLeads' => $newLeads, 'pendingOrders' => $pendingOrders,
             'expiring' => array_slice($expiring, 0, 6), 'recent' => array_slice(array_reverse($db['log']), 0, 8)));
 
     /* ── admin: users ── */
@@ -778,6 +863,73 @@ switch ($r) {
         if (isset($saved['err'])) { fail($saved['err'], 422); }
         out($saved);
 
+    case 'admin/order-status':
+        // Move an order along: paid → invoice paid; active → also creates the client's hosting / domain / website records (once); cancelled → invoice void.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $st = isset($b['status']) ? (string) $b['status'] : '';
+        if (!in_array($st, array('pending', 'paid', 'active', 'cancelled'), true)) { fail('invalid status', 422); }
+        $res = db_update(function (&$db) use ($id, $st, $me, $SCHEMA) {
+            $i = find_by(items_of($db, 'orders'), 'id', $id);
+            if ($i < 0) { return array('err' => 'order not found'); }
+            $o = $db['items']['orders'][$i];
+            $o['status'] = $st;
+            $ii = find_by(items_of($db, 'invoices'), 'id', isset($o['invoiceId']) ? $o['invoiceId'] : '');
+            if ($ii >= 0) { $db['items']['invoices'][$ii]['status'] = $st === 'cancelled' ? 'void' : ($st === 'pending' ? 'due' : 'paid'); }
+            if ($st === 'active' && empty($o['provisioned'])) {
+                $made = array();
+                foreach ($o['lines'] as $l) {
+                    $now = gmdate('c'); $uid = $o['uid'];
+                    if ($l['kind'] === 'domain') {
+                        $d = clean_fields($SCHEMA['domains'], array('name' => $l['ref'], 'status' => 'pending', 'autoRenew' => true, 'notes' => 'Order ' . $o['number']), $e);
+                        $db['items']['domains'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => $now, 'dns' => array()), $d); $made[] = 'domain ' . $l['ref'];
+                    } elseif ($l['category'] === 'hosting') {
+                        $d = clean_fields($SCHEMA['hosting'], array('plan' => $l['nameEn'], 'domain' => $o['domain'], 'status' => 'active', 'billing' => $l['unit'] === 'year' ? 'yearly' : 'monthly', 'notes' => 'Order ' . $o['number']), $e);
+                        $db['items']['hosting'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => $now), $d); $made[] = 'hosting ' . $l['nameEn'];
+                    } elseif ($l['category'] === 'site') {
+                        $d = clean_fields($SCHEMA['websites'], array('name' => $l['nameEn'], 'url' => $o['domain'], 'status' => 'pending', 'notes' => 'Order ' . $o['number']), $e);
+                        $db['items']['websites'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => $now), $d); $made[] = 'website ' . $l['nameEn'];
+                    }
+                }
+                $o['provisioned'] = true;
+                log_act($db, $me, 'order-provision', $o['number'] . ': ' . implode(', ', $made));
+            }
+            $db['items']['orders'][$i] = $o;
+            log_act($db, $me, 'order-' . $st, $o['number']);
+            return array('order' => $o);
+        });
+        if (isset($res['err'])) { fail($res['err'], 404); }
+        out($res);
+
+    case 'admin/mailbox-import':
+        // Paste the mailboxes that exist at Hostinger (one address per line) so they show up for the client.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $uid = isset($b['uid']) ? (string) $b['uid'] : '';
+        $dom = strtolower(trim(isset($b['domain']) ? (string) $b['domain'] : ''));
+        $lines = preg_split('/[\r\n,;]+/', (string) (isset($b['list']) ? $b['list'] : ''));
+        $res = db_update(function (&$db) use ($uid, $dom, $lines, $me, $SCHEMA) {
+            if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            $have = array(); foreach (items_of($db, 'mailboxes') as $m) { $have[strtolower($m['address'])] = true; }
+            $added = 0; $skipped = 0;
+            foreach ($lines as $a) {
+                $a = strtolower(trim($a));
+                if ($a === '') { continue; }
+                if (strpos($a, '@') === false && $dom !== '') { $a .= '@' . $dom; }
+                if (!filter_var($a, FILTER_VALIDATE_EMAIL) || ($dom !== '' && substr($a, -strlen('@' . $dom)) !== '@' . $dom) || isset($have[$a])) { $skipped++; continue; }
+                $d = clean_fields($SCHEMA['mailboxes'], array('address' => $a, 'quotaGb' => 5, 'usedGb' => 0, 'status' => 'active'), $e);
+                $db['items']['mailboxes'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c')), $d);
+                $have[$a] = true; $added++;
+            }
+            log_act($db, $me, 'mailbox-import', $dom . ' +' . $added);
+            return array('added' => $added, 'skipped' => $skipped);
+        });
+        if (isset($res['err'])) { fail($res['err'], 422); }
+        out($res);
+
     case 'admin/item-delete':
         $me = need_admin();
         require_post();
@@ -866,7 +1018,8 @@ switch ($r) {
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             out(array('site' => meta_get($db, 'site', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'version' => NC_VERSION,
                 'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
-                'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass())));
+                'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass()),
+                'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com')));
         }
         require_post();
         $b = body();
@@ -876,6 +1029,24 @@ switch ($r) {
         $cur = clean_text(isset($b['currency']) ? $b['currency'] : '', 8);
         $ph = !empty($b['placeholder']);
         $extra = array('phone' => clean_text(isset($b['phone']) ? $b['phone'] : '', 30), 'whatsapp' => preg_replace('/[^0-9+]/', '', (string) (isset($b['whatsapp']) ? $b['whatsapp'] : '')), 'address' => clean_text(isset($b['address']) ? $b['address'] : '', 200), 'allowRegistration' => !isset($b['allowRegistration']) || !empty($b['allowRegistration']));
+        if (isset($b['payments']) && is_array($b['payments'])) {
+            $pm = array();
+            foreach (array_slice($b['payments'], 0, 12) as $m) {
+                if (!is_array($m)) { continue; }
+                $type = isset($m['type']) && in_array($m['type'], array('bank', 'wallet', 'card', 'cash', 'other'), true) ? $m['type'] : 'other';
+                $nameAr = clean_text(isset($m['nameAr']) ? $m['nameAr'] : '', 80);
+                $nameEn = clean_text(isset($m['nameEn']) ? $m['nameEn'] : '', 80);
+                if ($nameAr === '' && $nameEn === '') { continue; }
+                $id = isset($m['id']) && preg_match('/^[a-z0-9]{4,20}$/', (string) $m['id']) ? $m['id'] : new_id();
+                $pm[] = array('id' => $id, 'type' => $type, 'nameAr' => $nameAr, 'nameEn' => $nameEn, 'details' => clean_text(isset($m['details']) ? $m['details'] : '', 600), 'active' => !empty($m['active']));
+            }
+            $extra['payments'] = $pm;
+        }
+        if (isset($b['webmailUrl'])) {
+            $wu = trim((string) $b['webmailUrl']);
+            if ($wu !== '' && !preg_match('#^https?://[^\s<>"\']+$#i', $wu)) { fail('invalid webmail url', 422); }
+            $extra['webmailUrl'] = $wu;
+        }
         if (isset($b['business']) && is_array($b['business'])) {
             $bz = array(); foreach (array('legalName', 'country', 'address', 'address2', 'city', 'governorate', 'postalCode', 'taxId') as $k) { $bz[$k] = clean_text(isset($b['business'][$k]) ? $b['business'][$k] : '', 160); }
             $extra['business'] = $bz;

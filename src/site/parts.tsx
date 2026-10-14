@@ -1,7 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from '../auth';
 import { api } from '../lib/api';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useCart } from './cart';
 import { tlds } from '../data/content';
 import type { CPlan } from './catalog';
 import { Ltr, useI18n } from '../i18n';
@@ -31,6 +32,8 @@ export function Money({ value }: { value: number }) {
 
 export function PlanCard({ plan, ctaLabel }: { plan: CPlan; ctaLabel?: string }) {
   const { L, t } = useI18n();
+  const { addPlan } = useCart();
+  const nav = useNavigate();
   const per = plan.per === 'year' ? t('سنة', 'yr') : plan.per === 'once' ? t('مرة واحدة', 'one-time') : t('شهر', 'mo');
   return (
     <article className={`plan${plan.featured ? ' is-featured on-dark' : ''}`}>
@@ -47,7 +50,7 @@ export function PlanCard({ plan, ctaLabel }: { plan: CPlan; ctaLabel?: string })
         ))}
       </dl>
       <ul className="plan-list">{plan.features.map((f) => <li key={f.en}>{L(f)}</li>)}</ul>
-      <div className="plan-cta"><Link to={`/portal/order/${plan.id}`} className={`btn ${plan.featured ? 'btn-accent' : 'btn-ghost'}`}>{ctaLabel ?? t('اطلب الخطة', 'Choose plan')}</Link></div>
+      <div className="plan-cta"><button type="button" onClick={() => { addPlan(plan.id); nav('/cart'); }} className={`btn ${plan.featured ? 'btn-accent' : 'btn-ghost'}`}>{ctaLabel ?? t('أضف للسلة', 'Add to cart')}</button></div>
     </article>
   );
 }
@@ -82,6 +85,8 @@ type Found = { domain: string; tld: string; available: boolean; sell: number; re
 export function DomainSearch({ dark = false, showResults = true }: { dark?: boolean; showResults?: boolean }) {
   const { t } = useI18n();
   const { mode } = useAuth();
+  const { addDomain } = useCart();
+  const nav = useNavigate();
   const [q, setQ] = useState('');
   const [name, setName] = useState('');
   const [live, setLive] = useState<Found[] | null>(null);
@@ -103,7 +108,7 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
       <span className="dot-wrap"><i className={`dot${taken ? ' bad' : ''}`} /> <Ltr>{domain}</Ltr></span>
       <span className={`tag ${taken ? 'bad' : 'ok'}`}>{taken ? t('محجوز', 'Taken') : t('متاح', 'Available')}</span>
       <span className="dprice">{taken ? '—' : price}</span>
-      <Link className="btn btn-ghost btn-sm" to={`/portal/support?new=domain&d=${encodeURIComponent(domain)}`} aria-disabled={taken} tabIndex={taken ? -1 : 0} style={taken ? { pointerEvents: 'none', opacity: .4 } : undefined}>{t('سجّل', 'Register')}</Link>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={taken} onClick={() => { if (mode === 'server') { addDomain(domain); nav('/cart'); } else nav(`/portal/support?new=domain&d=${encodeURIComponent(domain)}`); }}>{t('أضف للسلة', 'Add to cart')}</button>
     </li>
   );
   return (

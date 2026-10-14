@@ -4,7 +4,7 @@ import { DnsEditor } from '../dns';
 import { Ltr, useI18n } from '../i18n';
 import { post } from '../lib/api';
 import type { DnsRec } from '../lib/types';
-import { useCurrency } from '../site/settings';
+import { useCurrency, useSite } from '../site/settings';
 import { day, Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
@@ -35,6 +35,9 @@ export function AdminDomainDetail() {
   const [tab, setTab] = useState<'overview' | 'dns' | 'subs' | 'hosting' | 'email'>('overview');
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const [mailForm, setMailForm] = useState<{ local: string; quota: number } | null>(null);
+  const [importList, setImportList] = useState<string | null>(null);
+  const { settings } = useSite();
+  const webmail = settings.webmailUrl || 'https://mail.hostinger.com';
   const [dnsErr, setDnsErr] = useState('');
   const d = all?.items.domains.find((x) => x.id === id);
   if (!all || !d) return <Page title={t('الدومين', 'Domain')}><Notice err={error} ok="" /><Link to="/admin/domains" className="btn btn-ghost btn-sm">{t('← الدومينات', '← Domains')}</Link></Page>;
@@ -98,12 +101,13 @@ export function AdminDomainDetail() {
                 <p className="muted">{d.mail === 'hostinger' ? t('الدومين متظبط على Hostinger Email (سجلات MX وSPF موجودة). بتدير الصناديق نفسها من لوحة Hostinger.', 'This domain is set up for Hostinger Email (MX and SPF records are in place). You manage the mailboxes themselves in Hostinger.') : t('اربط الدومين بـ Hostinger Email: بنضيف سجلات MX وSPF المطلوبة في DNS.', 'Connect the domain to Hostinger Email: we add the required MX and SPF records to DNS.')}</p>
                 <div className="row-actions">
                   <button className="btn btn-accent btn-sm" onClick={connectMail}>{d.mail === 'hostinger' ? t('أعد ضبط سجلات الإيميل', 'Re-apply the email records') : t('اربط بـ Hostinger Email', 'Connect Hostinger Email')}</button>
-                  <a className="btn btn-ghost btn-sm" href="https://mail.hostinger.com" target="_blank" rel="noreferrer">Webmail</a>
+                  <a className="btn btn-ghost btn-sm" href={webmail} target="_blank" rel="noreferrer">Webmail</a>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setImportList('')}>{t('استيراد قائمة', 'Import list')}</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setMailForm({ local: '', quota: 5 })}>{t('+ إيميل', '+ Mailbox')}</button>
                 </div>
               </div>
-              <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status')]} empty={mails.length === 0 ? t('مفيش إيميلات لسه على الدومين ده.', 'No mailboxes on this domain yet.') : undefined}>
-                {mails.map((x) => <tr key={x.id}><td><Ltr>{x.address}</Ltr></td><td className="latin">{num(x.usedGb)} / {num(x.quotaGb)} GB</td><td><StatusTag s={x.status as 'active'} /></td></tr>)}
+              <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']} empty={mails.length === 0 ? t('مفيش إيميلات لسه على الدومين ده.', 'No mailboxes on this domain yet.') : undefined}>
+                {mails.map((x) => <tr key={x.id}><td><Ltr>{x.address}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td><td><StatusTag s={x.status as 'active'} /></td><td><div className="row-actions"><a className="btn btn-ghost btn-sm" href={webmail} target="_blank" rel="noreferrer" onClick={() => { void navigator.clipboard?.writeText(x.address).catch(() => undefined); }}>{t('افتح الإيميل', 'Open mailbox')}</a><button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف الإيميل من القائمة؟ (مش بيتحذف من Hostinger)', 'Remove it from the list? (It is not deleted at Hostinger.)'))) void run(() => post('admin/item-delete', { id: x.id }, { res: 'mailboxes' }), t('اتحذف.', 'Removed.')); }}>{t('حذف', 'Delete')}</button></div></td></tr>)}
               </Table>
             </>
           )}
@@ -126,6 +130,15 @@ export function AdminDomainDetail() {
             <label className="check"><input type="checkbox" checked={Boolean(edit.autoRenew)} onChange={(e) => setEdit({ ...edit, autoRenew: e.target.checked })} /> {t('تجديد تلقائي', 'Auto-renew')}</label>
             <Field id="ed-nt" label={t('ملاحظات', 'Notes')} wide><input id="ed-nt" className="input" value={String(edit.notes ?? '')} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
             <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
+          </form>
+        </Modal>
+      )}
+      {importList !== null && (
+        <Modal title={t('استيراد الإيميلات من Hostinger', 'Import mailboxes from Hostinger')} onClose={() => setImportList(null)}>
+          <form className="form" onSubmit={(e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await post<{ added: number; skipped: number }>('admin/mailbox-import', { uid: d.uid, domain: name, list: importList }); setOk(t(`اتضافت ${r.added} إيميل (اتخطّى ${r.skipped}).`, `Added ${r.added} mailboxes (${r.skipped} skipped).`)); setImportList(null); }, ''); }}>
+            <p className="muted">{t('Hostinger مبيدّيش API للصناديق، فانسخ العناوين من لوحة Hostinger هنا (واحد في كل سطر، أو الاسم قبل @ بس) وهتظهر للعميل.', 'Hostinger has no mailbox API, so paste the addresses from your Hostinger panel here (one per line, or just the part before @) and they show up for the client.')}</p>
+            <Field id="mi" label={t('العناوين', 'Addresses')}><textarea id="mi" className="textarea latin" dir="ltr" rows={6} value={importList} onChange={(e) => setImportList(e.target.value)} placeholder={`info@${name}\nsales@${name}`} /></Field>
+            <button className="btn btn-accent" type="submit" disabled={!importList.trim()}>{t('استيراد', 'Import')}</button>
           </form>
         </Modal>
       )}
@@ -314,7 +327,7 @@ export function AdminHostingDetail() {
             </>
           )}
           {tab === 'domains' && <div className="linked">{doms.map((d) => <div key={d.id}><Link className="link" to={`/admin/domains/${d.id}`}><Ltr>{String(d.name)}</Ltr></Link><StatusTag s={d.status as 'active'} /></div>)}{doms.length === 0 && <p className="muted">{t('مفيش دومينات مرتبطة.', 'No domains linked.')}</p>}</div>}
-          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومينات الاستضافة.', 'No mailboxes on this hosting’s domains.') : undefined}>{mails.map((x) => <tr key={x.id}><td><Ltr>{String(x.address)}</Ltr></td><td className="latin">{num(x.usedGb)} / {num(x.quotaGb)} GB</td></tr>)}</Table>}
+          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومينات الاستضافة.', 'No mailboxes on this hosting’s domains.') : undefined}>{mails.map((x) => <tr key={x.id}><td><Ltr>{String(x.address)}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td></tr>)}</Table>}
           {tab === 'billing' && <div className="card"><Kv rows={[[t('المزوّد', 'Provider'), String(h.provider || '-')], [t('دورة الدفع', 'Billing'), h.billing === 'yearly' ? t('سنوي', 'Yearly') : t('شهري', 'Monthly')], [t('تكلفتك', 'Your cost'), <span className="latin">{num(h.cost)} {cur}</span>], [t('سعر العميل', 'Client price'), <span className="latin">{num(h.price)} {cur}</span>], [t('المكسب', 'Margin'), m !== null ? `${m}%` : '-'], [t('التجديد القادم', 'Next renewal'), <Ltr>{String(h.expires || '-')}</Ltr>]]} />
             <p className="muted" style={{ marginTop: 12 }}><Link className="link" to="/admin/purchases">{t('فواتير الشراء', 'Purchase bills')}</Link></p></div>}
         </div>

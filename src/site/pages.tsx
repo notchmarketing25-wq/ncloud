@@ -356,7 +356,7 @@ export function Contact() {
             <div className="field"><label htmlFor="s">{t('الخدمة', 'Service')}</label>
               <select id="s" name="service" className="select">{services.map((x) => <option key={x.key} value={x.title.en}>{x.title[lang]}</option>)}</select></div>
             <div className="field"><label htmlFor="m">{t('رسالتك', 'Message')}</label><textarea id="m" name="message" className="textarea" required minLength={5} maxLength={3000} /></div>
-            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0 }} />
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none', clipPath: 'inset(50%)' }} />
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('إرسال', 'Send')}</button>
           </form>

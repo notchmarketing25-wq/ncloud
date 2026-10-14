@@ -7,9 +7,9 @@ import { ApiError, post } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
+import { OrderButton } from '../site/CartPages';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
-import { useCatalog } from '../site/catalog';
 
 /* ───────── Login (demo only: any input signs in) ───────── */
 export function Login() {
@@ -111,39 +111,6 @@ export function Register() {
   );
 }
 
-/** Order a plan: logged-in clients send an order request that arrives in the admin as a ticket. */
-export function OrderPlan() {
-  const { t, L } = useI18n();
-  const { id } = useParams();
-  const nav = useNavigate();
-  const { plans } = useCatalog();
-  const { reload } = usePortal();
-  const cur = useCurrency();
-  const [note, setNote] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const plan = plans.find((p) => p.id === id);
-  if (!plan) return <Page title={t('الطلب', 'Order')}><Empty>{t('الباقة دي مش موجودة أو مش متاحة حاليًا.', 'This plan does not exist or is not available right now.')}</Empty><Link to="/pricing" className="btn btn-ghost btn-sm">{t('الأسعار', 'Pricing')}</Link></Page>;
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(''); setBusy(true);
-    try { await post('orders/create', { planId: plan.id, note }); await reload(); nav('/portal/support'); } catch { setError(t('تعذّر إرسال الطلب، حاول تاني.', 'Could not send the order, please try again.')); } finally { setBusy(false); }
-  };
-  return (
-    <Page title={t('اطلب باقة', 'Order a plan')}>
-      <form className="card form" onSubmit={submit} style={{ maxWidth: 640 }}>
-        <h3>{L(plan.name)}</h3>
-        <p><b className="latin">{plan.price.toLocaleString('en-US')}</b> {cur} <span className="muted">/ {plan.per === 'year' ? t('سنة', 'yr') : plan.per === 'once' ? t('مرة واحدة', 'one-time') : t('شهر', 'mo')}</span></p>
-        <ul className="plan-list">{plan.specs.map((s) => <li key={s.label.en}>{L(s.label)}: {L(s.value)}</li>)}{plan.features.map((f) => <li key={f.en}>{L(f)}</li>)}</ul>
-        <div className="field"><label htmlFor="on">{t('ملاحظات أو دومين عايز تربطه (اختياري)', 'Notes or the domain you want to use (optional)')}</label><textarea id="on" className="textarea" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} /></div>
-        {error && <div className="form-error" role="alert">{error}</div>}
-        <p className="muted">{t('هيوصلنا طلبك ونتواصل معاك لتأكيد التفعيل والدفع.', 'We receive your request and contact you to confirm activation and payment.')}</p>
-        <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('إرسال الطلب', 'Send order request')}</button>
-      </form>
-    </Page>
-  );
-}
-
 /** Shown instead of a fake sign-in when the site is live but its PHP backend does not answer. */
 function BackendOffline({ problem, detail }: { problem: 'no-api' | 'not-installed' | 'error' | null; detail: string }) {
   const { t } = useI18n();
@@ -180,6 +147,7 @@ export function PortalLayout() {
     { to: '/portal/hosting', label: t('الاستضافة', 'Hosting') },
     { to: '/portal/websites', label: t('المواقع', 'Websites') },
     { to: '/portal/servers', label: t('السيرفرات', 'Servers') },
+    { to: '/portal/orders', label: t('الطلبات', 'Orders') },
     { to: '/portal/billing', label: t('الفواتير', 'Billing') },
     { to: '/portal/support', label: t('الدعم', 'Support') },
   ];
@@ -256,11 +224,12 @@ export function Overview() {
 
 export function PortalDomains() {
   const { t } = useI18n();
+  const { mode } = useAuth();
   const { data } = usePortal();
   const nav = useNavigate();
   if (!data) return <Loading />;
   return (
-    <Page title={t('الدومينات', 'Domains')} action={<Link to="/portal/support?new=domain" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
+    <Page title={t('الدومينات', 'Domains')} action={<Link to={mode === 'server' ? '/domains' : '/portal/support?new=domain'} className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
       <div className="card" style={{ marginBottom: 16 }}><h3>{t('ابحث عن دومين جديد', 'Find a new domain')}</h3><DomainSearch /></div>
       {data.domains.length === 0 ? <Empty>{t('مفيش دومينات لسه. اطلب دومين من الدعم.', 'No domains yet. Request one from support.')}</Empty> : (
         <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
@@ -275,6 +244,12 @@ export function PortalDomains() {
       )}
     </Page>
   );
+}
+
+/** Opens the webmail in a new tab and copies the address so it can be pasted into the sign-in form. */
+function MailOpen({ address, url }: { address: string; url?: string }) {
+  const { t } = useI18n();
+  return <a className="btn btn-accent btn-sm" href={url || 'https://mail.hostinger.com'} target="_blank" rel="noreferrer" onClick={() => { void navigator.clipboard?.writeText(address).catch(() => undefined); }} title={t('بيتنسخ العنوان تلقائيًا', 'The address is copied for you')}>{t('افتح الإيميل', 'Open mailbox')}</a>;
 }
 
 /** One domain: its details, DNS records, and everything linked to it (hosting, websites, mailboxes). */
@@ -302,6 +277,10 @@ export function PortalDomainDetail() {
       <DnsEditor records={d.dns} err={err}
         onAdd={async (r) => { setErr(''); try { await addDns(d.id, r); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }}
         onDelete={async (rid) => { setErr(''); try { await delDns(d.id, rid); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }} />
+      <h2 className="sub">{t('الإيميلات', 'Mailboxes')}</h2>
+      {mails.length === 0 ? <p className="muted">{t('مفيش إيميلات على الدومين ده لسه.', 'No mailboxes on this domain yet.')} <Link className="link" to="/portal/support?new=mailbox">{t('اطلب صندوق', 'Request a mailbox')}</Link></p> : (
+        <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), '']}>{mails.map((m) => <tr key={m.id}><td><Ltr>{m.address}</Ltr></td><td><Ltr>{m.usedGb} / {m.quotaGb} GB</Ltr></td><td><MailOpen address={m.address} url={data.webmail} /></td></tr>)}</Table>
+      )}
       <h2 className="sub">{t('المرتبط بالدومين', 'Linked to this domain')}</h2>
       <div className="linked">
         {sites.map((w) => <div key={w.id}><span>{t('موقع', 'Website')}: <Ltr>{w.name}</Ltr></span><StatusTag s={w.status} /></div>)}
@@ -321,7 +300,7 @@ export function PortalWebsites() {
   const dom = (id: string) => data.domains.find((d) => d.id === id);
   const host = (id: string) => data.hosting.find((h) => h.id === id);
   return (
-    <Page title={t('المواقع', 'Websites')} action={<Link to="/portal/support?new=website" className="btn btn-primary btn-sm">{t('+ اطلب موقع', '+ Request a website')}</Link>}>
+    <Page title={t('المواقع', 'Websites')} action={<OrderButton category="site" fallback="/portal/support?new=website" label={t('+ اطلب موقع', '+ Request a website')} />}>
       {sites.length === 0 ? <Empty>{t('مفيش مواقع لسه.', 'No websites yet.')}</Empty> : (
         <Table head={[t('الموقع', 'Website'), t('الحالة', 'Status'), t('الدومين', 'Domain'), t('الاستضافة', 'Hosting')]}>
           {sites.map((w) => (
@@ -349,7 +328,7 @@ export function PortalEmail() {
   return (
     <Page title={t('الإيميلات', 'Email')} action={demo
       ? <button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>{adding ? t('إلغاء', 'Cancel') : t('+ صندوق جديد', '+ New mailbox')}</button>
-      : <Link to="/portal/support?new=mailbox" className="btn btn-primary btn-sm">{t('+ اطلب صندوق جديد', '+ Request mailbox')}</Link>}>
+      : <div className="row-actions"><OrderButton category="email" fallback="/portal/support?new=mailbox" label={t('+ اطلب إيميلات', '+ Order email')} /><Link to="/portal/support?new=mailbox" className="btn btn-ghost btn-sm">{t('صندوق إضافي', 'Extra mailbox')}</Link></div>}>
       {adding && demo && (
         <form className="card inline-form" onSubmit={create} style={{ gridTemplateColumns: '1fr 120px auto' }}>
           <div className="field"><label htmlFor="ml">{t('الاسم', 'Name')}</label><input id="ml" className="input latin" value={local} onChange={(e) => setLocal(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))} placeholder="support" required /></div>
@@ -364,7 +343,7 @@ export function PortalEmail() {
               <td><Ltr>{m.address}</Ltr></td>
               <td className="usage"><Meter value={pct(m.usedGb, m.quotaGb)} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
               <td><StatusTag s={m.status} /></td>
-              <td>{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</td>
+              <td><div className="row-actions"><MailOpen address={m.address} url={data.webmail} />{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</div></td>
             </tr>
           ))}
         </Table>
@@ -383,7 +362,7 @@ export function PortalHosting() {
   const sites = data.websites ?? [];
   const used = data.hosting.reduce((n, h) => n + (h.usedGb || 0), 0), total = data.hosting.reduce((n, h) => n + (h.diskGb || 0), 0);
   return (
-    <Page title={t('الاستضافة', 'Hosting')} action={<Link to="/portal/support?new=hosting" className="btn btn-primary btn-sm">{t('+ اطلب استضافة', '+ Request hosting')}</Link>}>
+    <Page title={t('الاستضافة', 'Hosting')} action={<OrderButton category="hosting" fallback="/portal/support?new=hosting" label={t('+ اطلب استضافة', '+ Order hosting')} />}>
       {data.hosting.length === 0 ? <Empty>{t('مفيش خطط استضافة لسه.', 'No hosting plans yet.')}</Empty> : (
         <>
           <div className="stat-strip">
@@ -478,7 +457,7 @@ export function PortalServers() {
   return (
     <Page title={t('السيرفرات', 'Servers')} action={demo
       ? <button className="btn btn-primary btn-sm" onClick={demo.addServer}>{t('+ سيرفر جديد', '+ New server')}</button>
-      : <Link to="/portal/support?new=server" className="btn btn-primary btn-sm">{t('+ اطلب سيرفر', '+ Request server')}</Link>}>
+      : <OrderButton category="vps" fallback="/portal/support?new=server" label={t('+ اطلب سيرفر', '+ Order server')} />}>
       {data.servers.length === 0 ? <Empty>{t('مفيش سيرفرات لسه.', 'No servers yet.')}</Empty> : (
         <div className="grid g3">
           {data.servers.map((s) => (
