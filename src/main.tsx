@@ -11,15 +11,16 @@ import { AdminUsers } from './admin/Customers';
 import { AdminUpdates } from './admin/Updates';
 import { AdminPlans } from './admin/Plans';
 import { AdminDomainDetail, AdminHostingDetail, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
-import { AdminApps, AdminPricing, AdminPurchases } from './admin/Providers';
-import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
+import { AdminApps, AdminPricing, AdminPurchaseDetail, AdminPurchases } from './admin/Providers';
+import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminTickets } from './admin/Manage';
+import { AdminSettings } from './admin/Settings';
 import { SiteProvider } from './site/settings';
 import { CatalogProvider } from './site/catalog';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
-import { Login, OrderPlan, Overview, Register, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport, PortalWebsites } from './portal/Portal';
+import { Login, OrderPlan, Overview, Register, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalHostingDetail, PortalLayout, PortalServers, PortalSupport, PortalWebsiteDetail, PortalWebsites } from './portal/Portal';
 
 const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashRouter;
 
@@ -65,7 +66,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="apps" element={<AdminApps />} />
             <Route path="pricing" element={<AdminPricing />} />
             <Route path="purchases" element={<AdminPurchases />} />
+            <Route path="purchases/:id" element={<AdminPurchaseDetail />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="settings/:section" element={<AdminSettings />} />
             <Route path="activity" element={<AdminActivity />} />
             <Route path="account" element={<AdminAccount />} />
           </Route>
@@ -74,6 +77,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="domains" element={<PortalDomains />} />
             <Route path="domains/:id" element={<PortalDomainDetail />} />
             <Route path="websites" element={<PortalWebsites />} />
+            <Route path="websites/:id" element={<PortalWebsiteDetail />} />
+            <Route path="hosting/:id" element={<PortalHostingDetail />} />
             <Route path="order/:id" element={<OrderPlan />} />
             <Route path="email" element={<PortalEmail />} />
             <Route path="hosting" element={<PortalHosting />} />

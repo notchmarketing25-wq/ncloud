@@ -169,3 +169,6 @@ html[lang='ar'] .footer h5 { text-transform: none; letter-spacing: 0; font-famil
 .footer-word { font: 500 clamp(80px, 21vw, 300px)/0.9 var(--nt-font-display); letter-spacing: -0.04em; color: rgba(255, 255, 255, .06); margin-top: 48px; direction: ltr; text-align: center; user-select: none; }
 .footer-bottom { display: flex; justify-content: space-between; gap: 12px; padding-block: 22px; font-size: 11.5px; letter-spacing: var(--nt-mono-ls); color: rgba(255, 255, 255, .45); border-top: 1px solid rgba(255, 255, 255, .12); }
 @media (max-width: 800px) { .footer-grid { grid-template-columns: 1fr 1fr; } .footer-grid > div:first-child { grid-column: 1 / -1; } }
+
+.logo-img img { display: block; height: 34px; width: auto; max-width: 180px; object-fit: contain; }
+.side .logo-img img { height: 38px; }

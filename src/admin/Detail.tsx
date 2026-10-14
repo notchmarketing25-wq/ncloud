@@ -267,6 +267,7 @@ export function AdminHostingDetail() {
   const [tab, setTab] = useState<'overview' | 'websites' | 'domains' | 'email' | 'billing'>('overview');
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const [link, setLink] = useState('');
+  const [usage, setUsage] = useState<Record<string, { diskGb: string; usedGb: string }> | null>(null);
   const h = all?.items.hosting.find((x) => x.id === id);
   if (!all || !h) return <Page title={t('الاستضافة', 'Hosting')}><Notice err={error} ok="" /><Link to="/admin/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link></Page>;
   const sites = all.items.websites.filter((w) => w.hostingId === h.id);
@@ -292,7 +293,11 @@ export function AdminHostingDetail() {
               <h3 style={{ marginTop: 18 }}>{t('توزيع المساحة على المواقع', 'Space across the websites')}</h3>
               <p className="muted latin">{t('مخصص', 'Allotted')}: {gb(allotted)} · {t('مستخدم', 'In use')}: {gb(inSites)} · {t('متاح للتوزيع', 'Left to allot')}: {gb(Math.max(0, num(h.diskGb) - allotted))}</p>
               <div className="linked">{sites.map((w) => <div key={w.id}><Link className="link" to={`/admin/websites/${w.id}`}><Ltr>{String(w.name)}</Ltr></Link><span style={{ minWidth: 200 }}><span className="latin muted">{gb(w.usedGb)} / {gb(w.diskGb)}</span><Meter value={pctUsed(w)} tone={pctUsed(w) > 85 ? 'warn' : undefined} /></span></div>)}{sites.length === 0 && <p className="muted">{t('مفيش مواقع مربوطة.', 'No websites linked.')}</p>}</div>
-              <div className="row-actions" style={{ marginTop: 12 }}><button className="btn btn-ghost btn-sm" disabled={h.provider !== 'hostinger'} onClick={sync}>{t('تحديث الاستخدام من المزوّد', 'Refresh usage from the provider')}</button></div>
+              <div className="row-actions" style={{ marginTop: 12 }}>
+                <button className="btn btn-primary btn-sm" onClick={() => setUsage(Object.fromEntries(sites.map((w) => [w.id, { diskGb: String(num(w.diskGb)), usedGb: String(num(w.usedGb)) }])))}>{t('تحديث المساحة والاستخدام', 'Update space & usage')}</button>
+                <button className="btn btn-ghost btn-sm" disabled={h.provider !== 'hostinger'} onClick={sync}>{t('جلب من المزوّد', 'Fetch from the provider')}</button>
+              </div>
+              <p className="muted" style={{ marginTop: 8 }}>{t('Hostinger API ما بيرجّعش المساحة المستخدمة لكل موقع، فبنحدّثها هنا (نافذة واحدة لكل مواقع الاستضافة). لو المزوّد رجّعها بتتجلب تلقائيًا.', 'The Hostinger API does not return the disk used per website, so you update it here (one window for every site on this hosting). If the provider returns it, it is fetched automatically.')}</p>
             </div>
           )}
           {tab === 'websites' && (
@@ -315,6 +320,24 @@ export function AdminHostingDetail() {
           <SideCard title={t('الدومين', 'Domain')}>{h.domain ? <Ltr>{String(h.domain)}</Ltr> : <span className="muted">-</span>}</SideCard>
         </aside>
       </div>
+      {usage && (
+        <Modal title={t('المساحة والاستخدام', 'Space & usage')} wide onClose={() => setUsage(null)}>
+          <p className="muted">{t('المساحة المخصصة والمستخدمة (GB) لكل موقع على الاستضافة دي.', 'The allotted and used space (GB) of every website on this hosting.')}</p>
+          <Table head={[t('الموقع', 'Website'), t('المخصص (GB)', 'Allotted (GB)'), t('المستخدم (GB)', 'Used (GB)')]} empty={sites.length === 0 ? t('مفيش مواقع مربوطة.', 'No websites linked.') : undefined}>
+            {sites.map((w) => (
+              <tr key={w.id}><td><Ltr>{String(w.name)}</Ltr></td>
+                <td><input className="input latin" type="number" min={0} step="any" aria-label={`${w.name} allotted`} style={{ height: 38, width: 110 }} value={usage[w.id]?.diskGb ?? ''} onChange={(e) => setUsage({ ...usage, [w.id]: { ...usage[w.id], diskGb: e.target.value } })} /></td>
+                <td><input className="input latin" type="number" min={0} step="any" aria-label={`${w.name} used`} style={{ height: 38, width: 110 }} value={usage[w.id]?.usedGb ?? ''} onChange={(e) => setUsage({ ...usage, [w.id]: { ...usage[w.id], usedGb: e.target.value } })} /></td></tr>
+            ))}
+          </Table>
+          <div className="field"><label htmlFor="hu-used">{t('المستخدم من الاستضافة كلها (GB)', 'Used on the whole hosting (GB)')}</label><input id="hu-used" className="input latin" type="number" min={0} step="any" style={{ maxWidth: 200 }} value={String(h.usedGb ?? '')} readOnly /><small className="muted">{t('بيتحسب من مجموع المواقع عند الحفظ.', 'Calculated from the sum of the sites when you save.')}</small></div>
+          <button className="btn btn-accent" onClick={() => void run(async () => {
+            let total = 0;
+            for (const w of sites) { const u = usage[w.id]; const used = Number(u?.usedGb) || 0; total += used; await post('admin/item-save', { item: { ...w, diskGb: Number(u?.diskGb) || 0, usedGb: used } }, { res: 'websites' }); }
+            if (sites.length) await post('admin/item-save', { item: { ...h, usedGb: Math.round(total * 100) / 100 } }, { res: 'hosting' });
+          }, t('اتحدّثت المساحة.', 'Space updated.')).then((r) => { if (r) setUsage(null); })}>{t('حفظ', 'Save')}</button>
+        </Modal>
+      )}
       {edit && (
         <Modal title={t('تعديل الاستضافة', 'Edit hosting')} wide onClose={() => setEdit(null)}>
           <form className="admin-form" style={{ marginBlock: 0 }} onSubmit={(e: FormEvent) => { e.preventDefault(); void run(() => post('admin/item-save', { item: edit }, { res: 'hosting' }), t('اتحفظ.', 'Saved.')).then((r) => { if (r) setEdit(null); }); }}>

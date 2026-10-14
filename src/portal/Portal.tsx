@@ -326,7 +326,7 @@ export function PortalWebsites() {
         <Table head={[t('الموقع', 'Website'), t('الحالة', 'Status'), t('الدومين', 'Domain'), t('الاستضافة', 'Hosting')]}>
           {sites.map((w) => (
             <tr key={w.id}>
-              <td><Ltr>{w.name}</Ltr></td><td><StatusTag s={w.status} /></td>
+              <td><Link className="link" to={`/portal/websites/${w.id}`}><Ltr>{w.name}</Ltr></Link></td><td><StatusTag s={w.status} /></td>
               <td>{dom(w.domainId) ? <Link to={`/portal/domains/${w.domainId}`}><Ltr>{dom(w.domainId)!.name}</Ltr></Link> : '-'}</td>
               <td>{host(w.hostingId)?.plan ?? '-'}</td>
             </tr>
@@ -373,23 +373,100 @@ export function PortalEmail() {
   );
 }
 
+const underHost = (host: string, name: string) => { const h = (host || '').toLowerCase(), n = (name || '').toLowerCase(); return n !== '' && (h === n || h.endsWith('.' + n)); };
+
 export function PortalHosting() {
   const { t } = useI18n();
+  const nav = useNavigate();
   const { data } = usePortal();
   if (!data) return <Loading />;
+  const sites = data.websites ?? [];
+  const used = data.hosting.reduce((n, h) => n + (h.usedGb || 0), 0), total = data.hosting.reduce((n, h) => n + (h.diskGb || 0), 0);
   return (
     <Page title={t('الاستضافة', 'Hosting')} action={<Link to="/portal/support?new=hosting" className="btn btn-primary btn-sm">{t('+ اطلب استضافة', '+ Request hosting')}</Link>}>
       {data.hosting.length === 0 ? <Empty>{t('مفيش خطط استضافة لسه.', 'No hosting plans yet.')}</Empty> : (
-        <Table head={[t('الخطة', 'Plan'), t('الدومين', 'Domain'), t('المساحة', 'Disk'), t('الحالة', 'Status')]}>
-          {data.hosting.map((h) => (
-            <tr key={h.id}>
-              <td>{h.plan}</td><td><Ltr>{h.domain || '-'}</Ltr></td>
-              <td className="usage"><Meter value={pct(h.usedGb, h.diskGb)} /><span className="latin">{h.usedGb} / {h.diskGb} GB</span></td>
-              <td><StatusTag s={h.status} /></td>
-            </tr>
-          ))}
-        </Table>
+        <>
+          <div className="stat-strip">
+            <div><span>{t('الخطط', 'Plans')}</span><b className="latin">{data.hosting.length}</b></div>
+            <div><span>{t('المواقع', 'Websites')}</span><b className="latin">{sites.length}</b></div>
+            <div><span>{t('المساحة', 'Disk')}</span><b className="latin">{used} / {total} GB</b></div>
+          </div>
+          <Table head={[t('الخطة', 'Plan'), t('الدومين', 'Domain'), t('المواقع', 'Websites'), t('المساحة', 'Disk'), t('الحالة', 'Status')]}>
+            {data.hosting.map((h) => (
+              <tr key={h.id} className="row-link" onClick={() => nav(`/portal/hosting/${h.id}`)}>
+                <td><Link className="link" to={`/portal/hosting/${h.id}`} onClick={(e) => e.stopPropagation()}>{h.plan}</Link></td><td><Ltr>{h.domain || '-'}</Ltr></td>
+                <td className="latin">{sites.filter((w) => w.hostingId === h.id).length}</td>
+                <td className="usage"><Meter value={pct(h.usedGb, h.diskGb)} /><span className="latin">{h.usedGb} / {h.diskGb} GB</span></td>
+                <td><StatusTag s={h.status} /></td>
+              </tr>
+            ))}
+          </Table>
+        </>
       )}
+    </Page>
+  );
+}
+
+/** One hosting plan: size, the websites on it, their domains and mailboxes. */
+export function PortalHostingDetail() {
+  const { t } = useI18n();
+  const { id } = useParams();
+  const { data } = usePortal();
+  const [tab, setTab] = useState<'overview' | 'websites' | 'domains' | 'email'>('overview');
+  if (!data) return <Loading />;
+  const h = data.hosting.find((x) => x.id === id);
+  if (!h) return <Page title={t('الاستضافة', 'Hosting')}><Empty>{t('الاستضافة دي مش موجودة.', 'Hosting not found.')}</Empty><Link to="/portal/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link></Page>;
+  const sites = (data.websites ?? []).filter((w) => w.hostingId === h.id);
+  const doms = data.domains.filter((d) => underHost(h.domain, d.name) || sites.some((w) => w.domainId === d.id));
+  const mails = data.mailboxes.filter((m) => doms.some((d) => m.address.toLowerCase().endsWith('@' + d.name.toLowerCase())));
+  const p = pct(h.usedGb, h.diskGb);
+  const tabs: [typeof tab, string, number?][] = [['overview', t('نظرة عامة', 'Overview')], ['websites', t('المواقع', 'Websites'), sites.length], ['domains', t('الدومينات', 'Domains'), doms.length], ['email', t('الإيميلات', 'Email'), mails.length]];
+  return (
+    <Page title={h.plan} action={<Link to="/portal/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link>}>
+      <div className="stat-strip">
+        <div><span>{t('الحالة', 'Status')}</span><b><StatusTag s={h.status} /></b></div>
+        <div><span>{t('المساحة', 'Disk')}</span><b className="latin">{h.usedGb} / {h.diskGb} GB</b></div>
+        <div><span>{t('المواقع', 'Websites')}</span><b className="latin">{sites.length}</b></div>
+        <div><span>{t('الدومين', 'Domain')}</span><b><Ltr>{h.domain || '-'}</Ltr></b></div>
+        {h.expires && <div><span>{t('التجديد', 'Renews')}</span><b><Ltr>{h.expires}</Ltr></b></div>}
+      </div>
+      <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
+      {tab === 'overview' && <div className="card"><h3>{t('حجم الاستضافة', 'Hosting size')}</h3><p className="muted latin">{h.usedGb} / {h.diskGb} GB · {Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} />
+        <h3 style={{ marginTop: 18 }}>{t('المساحة لكل موقع', 'Space per website')}</h3>
+        <div className="linked">{sites.map((w) => <div key={w.id}><Link className="link" to={`/portal/websites/${w.id}`}><Ltr>{w.name}</Ltr></Link><span style={{ minWidth: 200 }}><span className="latin muted">{w.usedGb ?? 0} / {w.diskGb ?? 0} GB</span><Meter value={pct(w.usedGb ?? 0, w.diskGb ?? 0)} /></span></div>)}{sites.length === 0 && <p className="muted">{t('مفيش مواقع على الاستضافة دي.', 'No websites on this hosting.')}</p>}</div></div>}
+      {tab === 'websites' && <div className="linked">{sites.map((w) => <div key={w.id}><Link className="link" to={`/portal/websites/${w.id}`}><Ltr>{w.name}</Ltr></Link><StatusTag s={w.status} /></div>)}{sites.length === 0 && <p className="muted">{t('مفيش مواقع.', 'No websites.')}</p>}</div>}
+      {tab === 'domains' && <div className="linked">{doms.map((d) => <div key={d.id}><Link className="link" to={`/portal/domains/${d.id}`}><Ltr>{d.name}</Ltr></Link><StatusTag s={d.status} /></div>)}{doms.length === 0 && <p className="muted">{t('مفيش دومينات.', 'No domains.')}</p>}</div>}
+      {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات.', 'No mailboxes.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{m.address}</Ltr></td><td className="latin">{m.usedGb} / {m.quotaGb} GB</td></tr>)}</Table>}
+    </Page>
+  );
+}
+
+/** One website: its domain, hosting, space and mailboxes. */
+export function PortalWebsiteDetail() {
+  const { t } = useI18n();
+  const { id } = useParams();
+  const { data } = usePortal();
+  const [tab, setTab] = useState<'overview' | 'hosting' | 'email'>('overview');
+  if (!data) return <Loading />;
+  const w = (data.websites ?? []).find((x) => x.id === id);
+  if (!w) return <Page title={t('الموقع', 'Website')}><Empty>{t('الموقع ده مش موجود.', 'Website not found.')}</Empty><Link to="/portal/websites" className="btn btn-ghost btn-sm">{t('← المواقع', '← Websites')}</Link></Page>;
+  const dom = data.domains.find((d) => d.id === w.domainId) ?? data.domains.find((d) => underHost(w.url || w.name, d.name));
+  const host = data.hosting.find((x) => x.id === w.hostingId);
+  const mails = dom ? data.mailboxes.filter((m) => m.address.toLowerCase().endsWith('@' + dom.name.toLowerCase())) : [];
+  const p = pct(w.usedGb ?? 0, w.diskGb ?? 0);
+  const tabs: [typeof tab, string, number?][] = [['overview', t('نظرة عامة', 'Overview')], ['hosting', t('الاستضافة', 'Hosting')], ['email', t('الإيميلات', 'Email'), mails.length]];
+  return (
+    <Page title={w.name} action={<Link to="/portal/websites" className="btn btn-ghost btn-sm">{t('← المواقع', '← Websites')}</Link>}>
+      <div className="stat-strip">
+        <div><span>{t('الحالة', 'Status')}</span><b><StatusTag s={w.status} /></b></div>
+        <div><span>{t('الدومين', 'Domain')}</span><b>{dom ? <Link className="link" to={`/portal/domains/${dom.id}`}><Ltr>{dom.name}</Ltr></Link> : '-'}</b></div>
+        <div><span>{t('الاستضافة', 'Hosting')}</span><b>{host ? <Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link> : '-'}</b></div>
+        <div><span>{t('المساحة', 'Disk')}</span><b className="latin">{w.usedGb ?? 0} / {w.diskGb ?? 0} GB</b></div>
+      </div>
+      <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
+      {tab === 'overview' && <div className="card"><dl className="kv"><div><dt>{t('الرابط', 'URL')}</dt><dd><Ltr>{w.url || w.name}</Ltr></dd></div><div><dt>{t('ملاحظات', 'Notes')}</dt><dd>{w.notes || '-'}</dd></div></dl>{(w.diskGb ?? 0) > 0 && <><h3 style={{ marginTop: 16 }}>{t('المساحة', 'Disk')}</h3><p className="muted latin">{Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} /></>}</div>}
+      {tab === 'hosting' && (host ? <div className="card"><h3><Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link></h3><p className="muted latin">{host.usedGb} / {host.diskGb} GB</p><Meter value={pct(host.usedGb, host.diskGb)} /></div> : <p className="muted">{t('مفيش استضافة مربوطة.', 'No hosting linked.')}</p>)}
+      {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومين الموقع.', 'No mailboxes on the website’s domain.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{m.address}</Ltr></td><td className="latin">{m.usedGb} / {m.quotaGb} GB</td></tr>)}</Table>}
     </Page>
   );
 }

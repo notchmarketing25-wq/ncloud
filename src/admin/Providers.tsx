@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
-import { useCurrency } from '../site/settings';
+import type { Business, Settings } from '../lib/types';
+import { assetUrl, useCurrency } from '../site/settings';
 import { day, Modal, Page, Table } from '../ui';
 import { errText } from './errors';
+import { useAll } from './kit';
 
 type Field = { key: string; label: string; secret: boolean; value: string; set: boolean };
 type Provider = { id: string; name: string; caps: string[]; help: [string, string]; fields: Field[]; sandbox: boolean; useSandbox: boolean; baseUrl: string; connected: boolean; test: { ok: boolean; message: string; at: string } | null };
@@ -24,6 +26,7 @@ export function AdminApps() {
   const { t } = useI18n();
   const [list, setList] = useState<Provider[]>([]);
   const [open, setOpen] = useState<{ id: string; tab: Tab } | null>(null);
+  const [mail, setMail] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const load = useCallback(() => { api<{ providers: Provider[] }>('admin/providers').then((r) => setList(r.providers)).catch((e) => setErr(errText(e, t))); }, [t]);
@@ -48,6 +51,13 @@ export function AdminApps() {
             <span className="app-tile-more">{t('عرض التفاصيل', 'View details')}</span>
           </button>
         ))}
+        <button type="button" className="app-tile-card" onClick={() => setMail(true)} aria-label={`Hostinger Email — ${t('عرض التفاصيل', 'View details')}`}>
+          <span className="app-tile-head"><span className="app-tile hostinger">✉</span><span className="tag ok">{t('مدمج', 'Built in')}</span></span>
+          <b className="app-tile-name">Hostinger Email</b>
+          <span className="muted">{t('من نوتش كلاود', 'By Notch Cloud')}</span>
+          <span className="app-tile-desc">{t('اربط دومينات العملاء بإيميل Hostinger: بنضيف سجلات MX وSPF تلقائيًا.', 'Connect clients’ domains to Hostinger Email: the MX and SPF records are added for you.')}</span>
+          <span className="app-tile-more">{t('عرض التفاصيل', 'View details')}</span>
+        </button>
         {[
           { to: '/admin/pricing', ar: 'أسعار الدومينات', en: 'TLD pricing', d: t('اختار الامتدادات اللي هتبيعها وحدد نسبة المكسب.', 'Choose the extensions you sell and set your margin.'), k: 'T' },
           { to: '/admin/plans', ar: 'الباقات والأسعار', en: 'Plans', d: t('أسعار الاستضافة والإيميلات والمواقع اللي بتظهر في الموقع.', 'The hosting, email and website prices shown on the website.'), k: 'P' },
@@ -63,6 +73,7 @@ export function AdminApps() {
           </Link>
         ))}
       </div>
+      {mail && <HostingerEmail onClose={() => setMail(false)} />}
       {open && current && (
         <Modal title={current.name} wide onClose={() => setOpen(null)}>
           <div className="tabs" role="tablist">
@@ -175,6 +186,50 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
         <button className="btn btn-accent" onClick={() => void go()} disabled={busy || chosen.length === 0 || !uid}>{t(`جلب (${chosen.length})`, `Import (${chosen.length})`)}</button>
       </div>
     </>
+  );
+}
+
+/** Apps → Hostinger Email: one switch per domain. Connecting adds the MX and SPF records Hostinger needs. */
+function HostingerEmail({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const { all, error, load } = useAll();
+  const [pick, setPick] = useState<Record<string, boolean>>({});
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const domains = all?.items.domains ?? [];
+  const owner = (uid: string) => all?.users.find((u) => u.id === uid)?.name ?? '-';
+  const chosen = domains.filter((d) => pick[d.id]);
+  const connect = async (list: typeof domains) => {
+    setErr(''); setMsg(''); setBusy(true);
+    let added = 0; const warnings: string[] = [];
+    try {
+      for (const d of list) { const r = await post<{ added: number; warning?: string }>('admin/domain-mail', { id: d.id }); added += r.added; if (r.warning) warnings.push(`${d.name}: ${r.warning}`); }
+      setMsg(t(`تم ربط ${list.length} دومين (${added} سجل جديد).`, `Connected ${list.length} domain(s) (${added} new records).`)); setPick({}); load();
+      if (warnings.length) setErr(warnings.join(' · '));
+    } catch (e) { setErr(errText(e, t)); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Hostinger Email" wide onClose={onClose}>
+      <p className="muted">{t('لكل دومين: الربط بيضيف سجلات MX (mx1/mx2.hostinger.com) وSPF. لو الدومين متزامن مع المزوّد بيتبعتوا له تلقائيًا. الصناديق نفسها بتتدار من لوحة Hostinger.', 'For each domain: connecting adds the MX records (mx1/mx2.hostinger.com) and SPF. If the domain is synced with its provider they are sent there automatically. The mailboxes themselves are managed in Hostinger.')}</p>
+      {(err || error) && <div className="form-error" role="alert">{err || error}</div>}
+      {msg && <div className="form-ok" role="status">{msg}</div>}
+      <Table head={['', t('الدومين', 'Domain'), t('العميل', 'Client'), t('الإيميل', 'Email'), '']} empty={all && domains.length === 0 ? t('مفيش دومينات.', 'No domains.') : undefined}>
+        {domains.map((d) => (
+          <tr key={d.id}>
+            <td><input type="checkbox" aria-label={String(d.name)} checked={!!pick[d.id]} onChange={(e) => setPick({ ...pick, [d.id]: e.target.checked })} /></td>
+            <td><Ltr>{String(d.name)}</Ltr></td><td>{owner(d.uid)}</td>
+            <td><span className={`tag ${d.mail === 'hostinger' ? 'ok' : ''}`}>{d.mail === 'hostinger' ? t('متصل', 'Connected') : t('غير متصل', 'Not connected')}</span></td>
+            <td><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void connect([d])}>{d.mail === 'hostinger' ? t('إعادة ضبط', 'Re-apply') : t('ربط', 'Connect')}</button></td>
+          </tr>
+        ))}
+      </Table>
+      <div className="row-actions">
+        <button className="btn btn-ghost btn-sm" onClick={() => setPick(Object.fromEntries(domains.filter((d) => d.mail !== 'hostinger').map((d) => [d.id, true])))}>{t('تحديد غير المتصلة', 'Select not connected')}</button>
+        <button className="btn btn-accent" disabled={busy || chosen.length === 0} onClick={() => void connect(chosen)}>{busy ? '…' : t(`ربط (${chosen.length})`, `Connect (${chosen.length})`)}</button>
+        <a className="btn btn-ghost btn-sm" href="https://mail.hostinger.com" target="_blank" rel="noreferrer">Webmail</a>
+      </div>
+    </Modal>
   );
 }
 
@@ -352,7 +407,7 @@ export function AdminPurchases() {
       <Table head={[t('الرقم', 'No.'), t('البند', 'Item'), t('المزوّد', 'Provider'), t('المبلغ', 'Amount'), t('الدورة', 'Billing'), t('التاريخ', 'Date'), t('الحالة', 'Status'), '']} empty={items.length === 0 ? t('مفيش فواتير شراء لسه. بتتعمل تلقائي لما تجلب استضافة أو دومين من التطبيقات.', 'No purchase bills yet. They are created when you import hosting or domains from Apps.') : undefined}>
         {items.map((b) => (
           <tr key={b.id}>
-            <td><Ltr>{b.number}</Ltr></td><td>{b.item}</td><td>{b.provider}</td><td className="latin"><b>{money(b.amount)}</b> {cur}</td>
+            <td><Link className="link" to={`/admin/purchases/${b.id}`}><Ltr>{b.number}</Ltr></Link></td><td>{b.item}</td><td>{b.provider}</td><td className="latin"><b>{money(b.amount)}</b> {cur}</td>
             <td>{b.period === 'monthly' ? t('شهري', 'Monthly') : b.period === 'yearly' ? t('سنوي', 'Yearly') : t('مرة', 'One-off')}</td><td><Ltr>{day(b.date)}</Ltr></td>
             <td><span className={`tag ${b.status === 'paid' ? 'ok' : b.status === 'void' ? '' : 'warn'}`}>{b.status === 'paid' ? t('مدفوعة', 'Paid') : b.status === 'void' ? t('ملغاة', 'Void') : t('مستحقة', 'Due')}</span></td>
             <td><div className="row-actions">
@@ -363,5 +418,68 @@ export function AdminPurchases() {
         ))}
       </Table>
     </Page>
+  );
+}
+
+/** A purchase bill as a printable sheet: Print → Save as PDF in the browser (Arabic prints correctly). */
+export function AdminPurchaseDetail() {
+  const { t } = useI18n();
+  const cur = useCurrency();
+  const { id } = useParams();
+  const nav = useNavigate();
+  const [bill, setBill] = useState<Bill | null>(null);
+  const [set, setSet] = useState<(Settings & { business?: Business }) | null>(null);
+  const [client, setClient] = useState('');
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  const load = useCallback(() => {
+    api<{ items: Bill[] }>('admin/items', undefined, { res: 'purchases' }).then((r) => setBill(r.items.find((b) => b.id === id) ?? null)).catch((e) => setErr(errText(e, t)));
+  }, [id, t]);
+  useEffect(load, [load]);
+  useEffect(() => { api<Settings & { business?: Business }>('admin/settings').then(setSet).catch(() => undefined); }, []);
+  useEffect(() => {
+    const uid = (bill as (Bill & { client?: string }) | null)?.client;
+    if (!uid) { setClient(''); return; }
+    api<{ users: User[] }>('admin/users').then((r) => { const u = r.users.find((x) => x.id === uid); setClient(u ? `${u.name} · ${u.email}` : ''); }).catch(() => undefined);
+  }, [bill]);
+  if (!bill) return <Page title={t('فاتورة شراء', 'Purchase bill')}>{err ? <div className="form-error">{err}</div> : <p className="muted">…</p>}<Link to="/admin/purchases" className="btn btn-ghost btn-sm">{t('← فواتير الشراء', '← Purchases')}</Link></Page>;
+  const biz = set?.business ?? {};
+  const logo = set?.brand?.logo;
+  const per = bill.period === 'monthly' ? t('شهري', 'Monthly') : bill.period === 'yearly' ? t('سنوي', 'Yearly') : t('مرة واحدة', 'One-off');
+  const status = bill.status === 'paid' ? t('مدفوعة', 'Paid') : bill.status === 'void' ? t('ملغاة', 'Void') : t('مستحقة', 'Due');
+  const patch = async (status: Bill['status']) => { setErr(''); try { await post('admin/item-save', { item: { ...bill, status } }, { res: 'purchases' }); setOk(t('اتحدّثت.', 'Updated.')); load(); } catch (e) { setErr(errText(e, t)); } };
+  return (
+    <>
+      <div className="no-print">
+        <Page title={bill.number} action={<div className="row-actions">
+          <button className="btn btn-accent btn-sm" onClick={() => window.print()}>{t('طباعة / حفظ PDF', 'Print / Save as PDF')}</button>
+          {bill.status === 'due' && <button className="btn btn-ghost btn-sm" onClick={() => void patch('paid')}>{t('تم الدفع', 'Mark paid')}</button>}
+          {bill.status !== 'void' && <button className="btn btn-ghost btn-sm" onClick={() => void patch('void')}>{t('إلغاء الفاتورة', 'Void')}</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => nav('/admin/purchases')}>{t('← فواتير الشراء', '← Purchases')}</button></div>}>
+          {err && <div className="form-error" role="alert">{err}</div>}{ok && <div className="form-ok" role="status">{ok}</div>}
+          <p className="muted">{t('اضغط "طباعة / حفظ PDF" واختار "Save as PDF" من نافذة الطباعة.', 'Press “Print / Save as PDF” and choose “Save as PDF” in the print window.')}</p>
+        </Page>
+      </div>
+      <div className="print-sheet">
+        <div className="ps-head">
+          <div>{logo ? <img className="ps-logo" src={assetUrl(logo)} alt="" /> : <b className="ps-brand">{set?.site || 'Notch Cloud'}</b>}
+            <div className="ps-co">{biz.legalName || set?.site}</div>
+            <div className="muted">{[biz.address, biz.address2, biz.city, biz.governorate, biz.postalCode].filter(Boolean).join('، ')}</div>
+            {biz.taxId && <div className="muted">{t('الرقم الضريبي', 'Tax ID')}: <Ltr>{biz.taxId}</Ltr></div>}</div>
+          <div className="ps-title"><h1>{t('فاتورة شراء', 'Purchase bill')}</h1><div className="latin"><b>{bill.number}</b></div><span className={`tag ${bill.status === 'paid' ? 'ok' : bill.status === 'void' ? '' : 'warn'}`}>{status}</span></div>
+        </div>
+        <dl className="kv ps-kv">
+          <div><dt>{t('التاريخ', 'Date')}</dt><dd><Ltr>{day(bill.date)}</Ltr></dd></div>
+          <div><dt>{t('المزوّد', 'Provider')}</dt><dd>{bill.provider || '-'}</dd></div>
+          <div><dt>{t('المرجع', 'Reference')}</dt><dd><Ltr>{bill.ref || '-'}</Ltr></dd></div>
+          <div><dt>{t('الدورة', 'Billing')}</dt><dd>{per}</dd></div>
+          {client && <div><dt>{t('العميل', 'Client')}</dt><dd>{client}</dd></div>}
+        </dl>
+        <table className="tbl ps-table"><thead><tr><th>{t('البند', 'Item')}</th><th>{t('الدورة', 'Billing')}</th><th>{t('المبلغ', 'Amount')}</th></tr></thead>
+          <tbody><tr><td>{bill.item}</td><td>{per}</td><td className="latin">{money(bill.amount)} {cur}</td></tr></tbody>
+          <tfoot><tr><td colSpan={2}><b>{t('الإجمالي', 'Total')}</b></td><td className="latin"><b>{money(bill.amount)} {cur}</b></td></tr></tfoot></table>
+        <p className="muted ps-foot">{set?.site} · {set?.contactEmail}</p>
+      </div>
+    </>
   );
 }

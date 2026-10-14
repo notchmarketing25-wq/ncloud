@@ -278,9 +278,17 @@ function resellerclub_check($cfg, $name, $tlds) {
 
 /* ───────── DNS: read (all three) and write (Hostinger, Namecheap) ─────────
  * Records are {type, host, value, ttl}. MX values read "10 mail.example.com" (priority first). */
+/** One RRset per host+type (providers reject the same record twice, or one set with two TTLs). Identical values are sent once. */
 function dns_group($records) {
     $g = array();
-    foreach ($records as $r) { $k = $r['host'] . '|' . $r['type'] . '|' . $r['ttl']; $g[$k]['host'] = $r['host']; $g[$k]['type'] = $r['type']; $g[$k]['ttl'] = (int) $r['ttl']; $g[$k]['values'][] = $r['value']; }
+    foreach ($records as $r) {
+        $k = $r['host'] . '|' . $r['type'];
+        if (!isset($g[$k])) { $g[$k] = array('host' => $r['host'], 'type' => $r['type'], 'ttl' => (int) $r['ttl'], 'values' => array(), 'seen' => array()); }
+        $n = dns_norm($r['value']);
+        if (isset($g[$k]['seen'][$n])) { continue; }
+        $g[$k]['seen'][$n] = true; $g[$k]['values'][] = $r['value'];
+    }
+    foreach ($g as $k => $x) { unset($g[$k]['seen']); }
     return array_values($g);
 }
 function hostinger_dns_get($cfg, $domain) {
@@ -354,8 +362,14 @@ function resellerclub_dns_get($cfg, $domain) {
 }
 function dns_can_write($id) { return in_array($id, array('hostinger', 'namecheap'), true); }
 function dns_clean($records) {
-    $o = array();
-    foreach ($records as $r) { $o[] = array('id' => new_id(), 'type' => $r['type'], 'host' => clean_text($r['host'], 253) ?: '@', 'value' => clean_text($r['value'], 500), 'ttl' => in_array((int) $r['ttl'], array(300, 3600, 14400, 86400), true) ? (int) $r['ttl'] : (int) $r['ttl']); }
+    $o = array(); $seen = array();
+    foreach ($records as $r) {
+        $host = clean_text($r['host'], 253) ?: '@';
+        $k = $r['type'] . '|' . $host . '|' . dns_norm($r['value']);
+        if (isset($seen[$k])) { continue; } // the provider listed it twice
+        $seen[$k] = true;
+        $o[] = array('id' => new_id(), 'type' => $r['type'], 'host' => $host, 'value' => clean_text($r['value'], 500), 'ttl' => (int) $r['ttl']);
+    }
     return array_slice($o, 0, 200);
 }
 
@@ -459,9 +473,15 @@ function prov_search($db, $q, $tldsWanted, $admin) {
     foreach ($rowsAll as $r) { if ($useSelected ? $r['selected'] : in_array($r['tld'], $pricingSel['popular'], true)) { $table[$r['tld']] = $r; } }
     if (!$table) { fail('no extensions are enabled for sale yet — choose them in TLD pricing', 409); }
     $pricing = prov_pricing($db);
+    // What to check: the typed extension first, then the popular ones, then the cheapest of the rest (at most 30 in all).
     $want = array();
     if ($forced && isset($table[$forced])) { $want[] = $forced; }
-    foreach ($tldsWanted ?: array_keys($table) as $t) { $t = strtolower(trim($t)); if ($t !== '' && !in_array($t, $want, true)) { $want[] = $t; } }
+    $pool = $tldsWanted ?: array_keys($table);
+    foreach ($pricing['popular'] as $t) { if (in_array($t, $pool, true) && !in_array($t, $want, true)) { $want[] = $t; } }
+    $rest = array_values(array_diff($pool, $want));
+    usort($rest, function ($a, $b) use ($table) { return (isset($table[$a]) ? $table[$a]['sell'] : PHP_INT_MAX) <=> (isset($table[$b]) ? $table[$b]['sell'] : PHP_INT_MAX); });
+    foreach ($rest as $t) { $t = strtolower(trim($t)); if ($t !== '' && !in_array($t, $want, true)) { $want[] = $t; } }
+    $want = array_slice($want, 0, 30);
     $byProv = array();
     foreach ($want as $t) { if (isset($table[$t])) { $byProv[$table[$t]['best']][] = $t; } }
     $results = array(); $errors = array();
@@ -605,7 +625,7 @@ function prov_route($r, $me) {
                 $n = 0;
                 foreach ($want as $w) {
                     $has = false;
-                    foreach ($dns as $r) { if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && strtolower($r['value']) === strtolower($w['value'])) { $has = true; } }
+                    foreach ($dns as $r) { if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && dns_norm($r['value']) === dns_norm($w['value'])) { $has = true; } }
                     if (!$has) { $w['id'] = new_id(); $dns[] = $w; $n++; }
                 }
                 $db['items']['domains'][$k]['dns'] = $dns;
@@ -734,7 +754,7 @@ function prov_route($r, $me) {
                 if (isset($b['selected']) && is_array($b['selected'])) {
                     $p['selected'] = array();
                     foreach ($b['selected'] as $t) { $t = strtolower(preg_replace('/[^A-Za-z0-9.\-]/', '', (string) $t)); if ($t !== '' && !in_array($t, $p['selected'], true)) { $p['selected'][] = $t; } }
-                    $p['selected'] = array_slice($p['selected'], 0, 500);
+                    $p['selected'] = array_slice($p['selected'], 0, 3000);
                 }
                 if (isset($b['tldProfits']) && is_array($b['tldProfits'])) {
                     $p['tldProfits'] = array();

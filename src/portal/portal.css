@@ -183,3 +183,47 @@
 
 /* Detail tabs */
 .tabs-bar { margin: 14px 0; }
+
+/* Settings: menu on the left, cards on the right */
+.set-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .set-layout { grid-template-columns: 1fr; } }
+.set-nav { background: var(--nt-paper, #fff); border: 1px solid var(--nt-fog); border-radius: 20px; padding: 10px; display: grid; gap: 2px; position: sticky; top: 16px; }
+.set-store { display: flex; gap: 10px; align-items: center; padding: 10px 10px 12px; border-bottom: 1px solid var(--nt-fog); margin-bottom: 8px; }
+.set-avatar { width: 44px; height: 44px; border-radius: 12px; background: var(--nt-volt); color: #0a0a0a; display: grid; place-items: center; font-weight: 700; object-fit: cover; flex: none; }
+.set-search { height: 40px; margin: 2px 4px 6px; }
+.set-group { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--nt-slate); padding: 12px 12px 4px; }
+.set-item { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 9px 12px; border: 0; border-radius: 12px; background: none; font: inherit; color: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.set-item:hover { background: #f4f4f2; }
+.set-item.on { background: #ebebe8; font-weight: 600; }
+.set-main { display: grid; gap: 16px; padding-bottom: 80px; }
+.set-title { margin: 0; font-size: 28px; }
+.set-card { background: var(--nt-paper, #fff); border: 1px solid var(--nt-fog); border-radius: 20px; padding: 22px 24px; }
+.set-card h3 { margin: 0 0 4px; font-size: 18px; }
+.set-card > .muted { margin: 0 0 14px; }
+.set-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+@media (max-width: 700px) { .set-fields { grid-template-columns: 1fr; } }
+.set-row3 { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
+@media (max-width: 700px) { .set-row3 { grid-template-columns: 1fr; } }
+.set-img { border: 1px dashed var(--nt-fog); border-radius: 14px; background: #fafaf8; min-height: 84px; display: grid; place-items: center; padding: 12px; }
+.set-img.dark { background: #0a0a0a; }
+.set-img img { max-height: 64px; max-width: 100%; object-fit: contain; }
+.set-save { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; background: var(--nt-paper, #fff); border: 1px solid var(--nt-fog); border-radius: 16px; }
+.set-save.is-dirty { border-color: var(--nt-black); }
+
+/* Printable sheets (purchase bills): only the sheet prints, as a clean A4 page */
+.print-sheet { background: #fff; border: 1px solid var(--nt-fog); border-radius: 20px; padding: 36px; max-width: 820px; display: grid; gap: 20px; }
+.ps-head { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.ps-logo { height: 44px; width: auto; max-width: 220px; object-fit: contain; display: block; }
+.ps-brand { font-size: 22px; }
+.ps-co { font-weight: 600; margin-top: 6px; }
+.ps-title { text-align: end; }
+.ps-title h1 { margin: 0 0 4px; font-size: 26px; }
+.ps-table { width: 100%; }
+.ps-foot { margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .print-sheet, .print-sheet * { visibility: visible; }
+  .print-sheet { position: absolute; inset: 0; margin: 0; border: 0; border-radius: 0; max-width: none; padding: 24px; }
+  .no-print { display: none !important; }
+  @page { size: A4; margin: 14mm; }
+}

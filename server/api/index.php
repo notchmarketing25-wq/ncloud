@@ -275,6 +275,8 @@ function need_admin() { $u = need_user(); if ($u['role'] !== 'admin') { fail('fo
 function can_touch($u, $item) { return $u['role'] === 'admin' || (isset($item['uid']) && $item['uid'] === $u['id']); }
 function res_name() { global $SCHEMA; $r = isset($_GET['res']) ? (string) $_GET['res'] : ''; if (!isset($SCHEMA[$r])) { fail('unknown resource', 404); } return $r; }
 /** Records that belong to the company, not to a client (purchase bills, the public plans). */
+/** A DNS value in a comparable form: no case, no trailing dot, single spaces. */
+function dns_norm($v) { return rtrim(strtolower(trim(preg_replace('/\s+/', ' ', (string) $v))), '.'); }
 function res_unowned($res) { return $res === 'purchases' || $res === 'plans'; }
 function items_of($db, $res) { return isset($db['items'][$res]) && is_array($db['items'][$res]) ? $db['items'][$res] : array(); }
 function mine($db, $res, $uid) { return array_values(array_filter(items_of($db, $res), function ($i) use ($uid) { return $i['uid'] === $uid; })); }
@@ -309,7 +311,8 @@ switch ($r) {
     case 'public/settings':
         $db = db_read();
         out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''),
-            'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true)));
+            'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
+            'brand' => meta_get($db, 'brand', new stdClass())));
 
     case 'public/catalog':
         // What the website sells: the active plans (Admin → Plans) and the domain extensions chosen in TLD pricing. No costs, no providers.
@@ -487,6 +490,7 @@ switch ($r) {
             if (!can_touch($u, $d)) { return 'forbidden'; }
             $dns = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
             if (count($dns) >= 100) { return 'limit'; }
+            foreach ($dns as $x) { if ($x['type'] === $rec['type'] && $x['host'] === $rec['host'] && dns_norm($x['value']) === dns_norm($rec['value'])) { return 'ok'; } }
             $dns[] = $rec;
             $db['items']['domains'][$i]['dns'] = $dns;
             log_act($db, $u, 'dns-add', $d['name'] . ' ' . $rec['type'] . ' ' . $rec['host']);
@@ -836,12 +840,33 @@ switch ($r) {
         out(array('ok' => true));
 
     /* ── admin: settings + activity ── */
+    case 'admin/upload':
+        $me = need_admin();
+        require_post();
+        if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'])) { fail('no file received', 422); }
+        $f = $_FILES['file'];
+        if ($f['size'] > 1500000) { fail('the image is larger than 1.5 MB', 413); }
+        $bytes = file_get_contents($f['tmp_name']);
+        $kinds = array("\x89PNG" => 'png', "\xFF\xD8\xFF" => 'jpg', 'GIF8' => 'gif', 'RIFF' => 'webp', "\x00\x00\x01\x00" => 'ico');
+        $ext = '';
+        foreach ($kinds as $sig => $e) { if (strncmp($bytes, $sig, strlen($sig)) === 0) { $ext = $e; } }
+        if ($ext === 'webp' && substr($bytes, 8, 4) !== 'WEBP') { $ext = ''; }
+        if ($ext === '') { fail('use a PNG, JPG, WebP, GIF or ICO image', 422); }
+        $dir = dirname(__DIR__) . '/uploads';
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true)) { fail('could not create the uploads folder (check permissions)', 500); }
+        $name = 'brand-' . substr(md5($bytes), 0, 12) . '.' . $ext;
+        if (@file_put_contents($dir . '/' . $name, $bytes) === false) { fail('could not save the image', 500); }
+        @file_put_contents($dir . '/index.html', '');
+        db_update(function (&$db) use ($me, $name) { log_act($db, $me, 'upload', $name); });
+        out(array('url' => 'uploads/' . $name));
+
     case 'admin/settings':
         $me = need_admin();
         $db = db_read();
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             out(array('site' => meta_get($db, 'site', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'version' => NC_VERSION,
-                'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true)));
+                'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
+                'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass())));
         }
         require_post();
         $b = body();
@@ -851,6 +876,22 @@ switch ($r) {
         $cur = clean_text(isset($b['currency']) ? $b['currency'] : '', 8);
         $ph = !empty($b['placeholder']);
         $extra = array('phone' => clean_text(isset($b['phone']) ? $b['phone'] : '', 30), 'whatsapp' => preg_replace('/[^0-9+]/', '', (string) (isset($b['whatsapp']) ? $b['whatsapp'] : '')), 'address' => clean_text(isset($b['address']) ? $b['address'] : '', 200), 'allowRegistration' => !isset($b['allowRegistration']) || !empty($b['allowRegistration']));
+        if (isset($b['business']) && is_array($b['business'])) {
+            $bz = array(); foreach (array('legalName', 'country', 'address', 'address2', 'city', 'governorate', 'postalCode', 'taxId') as $k) { $bz[$k] = clean_text(isset($b['business'][$k]) ? $b['business'][$k] : '', 160); }
+            $extra['business'] = $bz;
+        }
+        if (isset($b['brand']) && is_array($b['brand'])) {
+            $br = array();
+            foreach (array('logo', 'logoDark', 'icon') as $k) {
+                $u = isset($b['brand'][$k]) ? trim((string) $b['brand'][$k]) : '';
+                if ($u !== '' && !preg_match('#^uploads/[A-Za-z0-9._\-]+$#', $u)) { fail('invalid image', 422); }
+                $br[$k] = $u;
+            }
+            $ac = isset($b['brand']['accent']) ? trim((string) $b['brand']['accent']) : '';
+            if ($ac !== '' && !preg_match('/^#[0-9a-fA-F]{6}$/', $ac)) { fail('invalid color', 422); }
+            $br['accent'] = $ac;
+            $extra['brand'] = $br;
+        }
         db_update(function (&$db) use ($site, $ce, $cur, $ph, $me, $extra) {
             $db['meta']['site'] = $site; $db['meta']['contactEmail'] = $ce; $db['meta']['currency'] = $cur; $db['meta']['placeholder'] = $ph;
             foreach ($extra as $k => $v) { $db['meta'][$k] = $v; }

@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
-import { useSite } from './settings';
+import { assetUrl, useSite } from './settings';
 
 export function Logo({ dark = false }: { dark?: boolean }) {
+  const { settings } = useSite();
+  const img = dark ? settings.brand?.logoDark || settings.brand?.logo : settings.brand?.logo;
+  if (img) return <Link to="/" className={`logo logo-img${dark ? ' on-dark' : ''}`} aria-label={settings.site || 'Home'}><img src={assetUrl(img)} alt={settings.site || ''} /></Link>;
   return (
     <Link to="/" className={`logo${dark ? ' on-dark' : ''}`} aria-label="Notch Cloud Services">
       <span className="logo-word">Notch</span><i className="dot" />

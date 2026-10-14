@@ -1,7 +1,7 @@
 export type Status = 'active' | 'pending' | 'expiring' | 'stopped';
 export type DnsRec = { id: string; type: string; host: string; value: string; ttl: number };
 export type Domain = { id: string; uid?: string; name: string; status: Status; expires: string; autoRenew: boolean; dns: DnsRec[]; price?: number; notes?: string };
-export type Website = { id: string; uid?: string; name: string; url: string; status: Status; domainId: string; hostingId: string; notes?: string };
+export type Website = { id: string; uid?: string; name: string; url: string; status: Status; domainId: string; hostingId: string; notes?: string; diskGb?: number; usedGb?: number };
 export type Mailbox = { id: string; uid?: string; address: string; quotaGb: number; usedGb: number; status: Status };
 export type Hosting = { id: string; uid?: string; plan: string; domain: string; diskGb: number; usedGb: number; status: Status; billing?: string; expires?: string; price?: number };
 export type Server = { id: string; uid?: string; name: string; ip: string; spec: string; cpu: number; ram: number; status: Status; snapshots: number };
@@ -10,4 +10,6 @@ export type TicketMsg = { from: 'client' | 'admin'; name: string; text: string; 
 export type Ticket = { id: string; uid?: string; owner?: string; subject: string; status: 'open' | 'answered' | 'closed'; updated: string; created?: string; messages: TicketMsg[] };
 export type Lead = { id: string; name: string; email: string; phone: string; service: string; message: string; status: 'new' | 'contacted' | 'closed'; at: string };
 export type ClientData = { websites?: Website[]; domains: Domain[]; mailboxes: Mailbox[]; hosting: Hosting[]; servers: Server[]; invoices: Invoice[]; tickets: Ticket[] };
-export type Settings = { site: string; contactEmail: string; placeholder: boolean; currency: string; phone?: string; whatsapp?: string; address?: string; allowRegistration?: boolean };
+export type Settings = { site: string; contactEmail: string; placeholder: boolean; currency: string; phone?: string; whatsapp?: string; address?: string; allowRegistration?: boolean; brand?: Brand; business?: Business };
+export type Brand = { logo?: string; logoDark?: string; icon?: string; accent?: string };
+export type Business = { legalName?: string; country?: string; address?: string; address2?: string; city?: string; governorate?: string; postalCode?: string; taxId?: string };

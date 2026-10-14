@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useSite, useCurrency } from '../site/settings';
+import { useCurrency } from '../site/settings';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
-import type { DnsRec, Lead, Settings, Ticket } from '../lib/types';
+import type { DnsRec, Lead, Ticket } from '../lib/types';
 import { day, InvoiceTag, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
 
@@ -330,39 +330,6 @@ export function AdminLeads() {
 }
 
 /* ───────── Settings ───────── */
-export function AdminSettings() {
-  const { t } = useI18n();
-  const { refresh } = useSite();
-  const [s, setS] = useState<(Settings & { version?: string }) | null>(null);
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  useEffect(() => { api<Settings & { version?: string }>('admin/settings').then(setS).catch((e) => setErr(errText(e, t))); }, [t]);
-  if (!s) return <Page title={t('الإعدادات', 'Settings')}>{err ? <div className="form-error">{err}</div> : <p className="muted">…</p>}</Page>;
-  const save = async (e: FormEvent) => {
-    e.preventDefault(); setErr(''); setOk('');
-    try { await post('admin/settings', s); setOk(t('تم الحفظ.', 'Saved.')); await refresh(); } catch (x) { setErr(errText(x, t)); }
-  };
-  return (
-    <Page title={t('الإعدادات', 'Settings')}>
-      <form className="card form" onSubmit={save} style={{ maxWidth: 560 }}>
-        <Notice err={err} ok={ok} />
-        <div className="field"><label htmlFor="s-site">{t('اسم الشركة', 'Company name')}</label><input id="s-site" className="input" maxLength={80} value={s.site} onChange={(e) => setS({ ...s, site: e.target.value })} /></div>
-        <div className="field"><label htmlFor="s-mail">{t('إيميل استلام الطلبات', 'Email for new requests')}</label><input id="s-mail" type="email" className="input latin" value={s.contactEmail} onChange={(e) => setS({ ...s, contactEmail: e.target.value })} placeholder="hello@company.com" /><small className="muted">{t('بيوصله إيميل مع كل طلب تواصل جديد (لو الاستضافة بتدعم mail).', 'Gets an email for every new lead (if the host supports mail).')}</small></div>
-        <div className="field"><label htmlFor="s-cur">{t('العملة (تظهر في الأسعار)', 'Currency label (shown on prices)')}</label><input id="s-cur" className="input" maxLength={8} value={s.currency} onChange={(e) => setS({ ...s, currency: e.target.value })} placeholder="EGP" /></div>
-        <div className="field"><label htmlFor="s-ph">{t('تليفون الشركة', 'Company phone')}</label><input id="s-ph" className="input latin" maxLength={30} value={s.phone ?? ''} onChange={(e) => setS({ ...s, phone: e.target.value })} placeholder="+20 100 000 0000" /></div>
-        <div className="field"><label htmlFor="s-wa">WhatsApp</label><input id="s-wa" className="input latin" maxLength={20} value={s.whatsapp ?? ''} onChange={(e) => setS({ ...s, whatsapp: e.target.value })} placeholder="20100000000" /></div>
-        <div className="field"><label htmlFor="s-ad">{t('العنوان', 'Address')}</label><input id="s-ad" className="input" maxLength={200} value={s.address ?? ''} onChange={(e) => setS({ ...s, address: e.target.value })} /></div>
-        <p className="muted">{t('بيانات التواصل دي بتظهر في صفحة "تواصل معنا" وفي أسفل الموقع.', 'These contact details appear on the Contact page and in the site footer.')}</p>
-        <label className="check"><input type="checkbox" checked={s.allowRegistration !== false} onChange={(e) => setS({ ...s, allowRegistration: e.target.checked })} /> {t('اسمح للعملاء الجدد بإنشاء حساب من الموقع', 'Let new clients create an account on the website')}</label>
-        <label className="check"><input type="checkbox" checked={s.placeholder} onChange={(e) => setS({ ...s, placeholder: e.target.checked })} /> {t('اعرض علامة "تجريبي" على الأسعار والأرقام', 'Show the "placeholder" marks on prices and numbers')}</label>
-        <button className="btn btn-primary" type="submit">{t('حفظ', 'Save')}</button>
-        {s.version && <p className="muted latin">v{s.version}</p>}
-      </form>
-    </Page>
-  );
-}
-
-/* ───────── Activity ───────── */
 export function AdminActivity() {
   const { t } = useI18n();
   const [log, setLog] = useState<{ at: string; by: string; action: string; detail: string }[]>([]);
