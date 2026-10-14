@@ -316,6 +316,7 @@ export function Contact() {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     setError('');
+    if (mode === 'offline') { setError(t('الموقع مش متصل بالباك إند حاليًا، فالرسالة ما اتبعتتش.', 'The site is not connected to its backend, so the message was not sent.')); return; }
     if (mode !== 'server') { setSent(true); return; }
     setBusy(true);
     try {

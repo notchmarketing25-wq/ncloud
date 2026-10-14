@@ -7,7 +7,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run typecheck
 npm run build
-npm run package   # release/install.php (installer من ملف واحد) + release/ncloud-site.zip
+npm run package   # release/install.php (installer من ملف واحد)
 ```
 
 **التثبيت على أي استضافة:** شوف [INSTALL.md](INSTALL.md): ارفع `release/install.php` وافتحه، أنشئ حساب الأدمن، وخلاص.

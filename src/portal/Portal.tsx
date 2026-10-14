@@ -13,7 +13,7 @@ import { PortalDataProvider, usePortal } from './PortalData';
 export function Login() {
   const { t } = useI18n();
   const nav = useNavigate();
-  const { mode, user, login } = useAuth();
+  const { mode, problem, detail, user, login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,6 +32,7 @@ export function Login() {
         : t('تعذّر الاتصال بالسيرفر.', 'Could not reach the server.'));
     } finally { setBusy(false); }
   };
+  if (mode === 'offline') return <BackendOffline problem={problem} detail={detail} />;
   return (
     <div className="login-page">
       <div className="login-side on-dark">
@@ -52,6 +53,27 @@ export function Login() {
         <button className="btn btn-primary" type="submit" disabled={busy || mode === 'checking'}>{busy ? '…' : t('دخول', 'Sign in')}</button>
         <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
       </form>
+    </div>
+  );
+}
+
+/** Shown instead of a fake sign-in when the site is live but its PHP backend does not answer. */
+function BackendOffline({ problem, detail }: { problem: 'no-api' | 'not-installed' | 'error' | null; detail: string }) {
+  const { t } = useI18n();
+  const msg = problem === 'not-installed'
+    ? [t('الباك إند موجود لكن التثبيت ما اكتملش (مفيش حساب أدمن).', 'The backend is there but the installation did not finish (no admin account).'), t('افتح install.php من نفس الفولدر وكمّل خطوات التثبيت.', 'Open install.php in this same folder and finish the setup.')]
+    : problem === 'no-api'
+      ? [t('الموقع اترفع لكن مجلد الـ API (باك إند PHP) مش موجود أو مش بيشتغل على الاستضافة دي.', 'The site was uploaded but the API folder (the PHP backend) is missing or not running on this host.'), t('ارفع ملف install.php بس (مش ncloud-site.zip) في الفولدر ده وافتحه من المتصفح: هو اللي بينشئ الـ API وحساب الأدمن.', 'Upload install.php only (not ncloud-site.zip) to this folder and open it in the browser: it creates the API and the admin account.')]
+      : [t('الباك إند موجود لكنه بيرجّع خطأ.', 'The backend is there but returns an error.'), t('تأكد إن إصدار PHP 7.0 أو أحدث، وإن مجلد api/data قابل للكتابة (755).', 'Make sure PHP is 7.0 or newer and the api/data folder is writable (755).')];
+  return (
+    <div className="login-page" style={{ gridTemplateColumns: '1fr' }}>
+      <div className="login-form">
+        <h2>{t('الباك إند مش متصل', 'The backend is not connected')}</h2>
+        <div className="form-error" role="alert">{msg[0]}</div>
+        <p className="muted">{msg[1]}</p>
+        <p className="muted latin" dir="ltr">{t('للتأكد افتح: ', 'To check, open: ')}<a href="./api/index.php?r=status" target="_blank" rel="noreferrer">api/index.php?r=status</a> → {'{"installed":true}'}{detail ? ` (${detail})` : ''}</p>
+        <Link to="/" className="btn btn-primary">{t('رجوع للموقع', 'Back to site')}</Link>
+      </div>
     </div>
   );
 }
