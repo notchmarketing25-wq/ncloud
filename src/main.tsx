@@ -7,6 +7,7 @@ import './brand/base.css';
 import './site/site.css';
 import './portal/portal.css';
 import { AdminAccount, AdminLayout, AdminOverview, AdminUsers } from './admin/Admin';
+import { AdminDomainDetail, AdminUpdates, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchases } from './admin/Providers';
 import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminSettings, AdminTickets } from './admin/Manage';
 import { SiteProvider } from './site/settings';
@@ -14,7 +15,7 @@ import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
-import { Login, Overview, PortalBilling, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport } from './portal/Portal';
+import { Login, Overview, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalLayout, PortalServers, PortalSupport, PortalWebsites } from './portal/Portal';
 
 const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashRouter;
 
@@ -42,6 +43,9 @@ createRoot(document.getElementById('root')!).render(
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="domains" element={<AdminDomains />} />
+            <Route path="domains/:id" element={<AdminDomainDetail />} />
+            <Route path="websites" element={<AdminWebsites />} />
+            <Route path="updates" element={<AdminUpdates />} />
             <Route path="email" element={<AdminMailboxes />} />
             <Route path="hosting" element={<AdminHosting />} />
             <Route path="servers" element={<AdminServers />} />
@@ -58,6 +62,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="portal" element={<PortalLayout />}>
             <Route index element={<Overview />} />
             <Route path="domains" element={<PortalDomains />} />
+            <Route path="domains/:id" element={<PortalDomainDetail />} />
+            <Route path="websites" element={<PortalWebsites />} />
             <Route path="email" element={<PortalEmail />} />
             <Route path="hosting" element={<PortalHosting />} />
             <Route path="servers" element={<PortalServers />} />

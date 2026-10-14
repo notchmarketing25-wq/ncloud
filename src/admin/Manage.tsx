@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useSite, useCurrency } from '../site/settings';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
@@ -147,7 +148,7 @@ export const AdminDomains = () => (
       { key: 'price', label: ['سعر البيع للعميل (سنة)', 'Client price (per year)'], type: 'number' },
     ]}
     columns={[
-      { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.name)}</Ltr> }, { label: ['الحالة', 'Status'], render: status },
+      { label: ['الدومين', 'Domain'], render: (it) => <Link className="link" to={`/admin/domains/${it.id}`}><Ltr>{String(it.name)}</Ltr></Link> }, { label: ['الحالة', 'Status'], render: status },
       { label: ['ينتهي', 'Expires'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> }, { label: ['سجلات DNS', 'DNS'], render: (it) => <span className="latin">{((it.dns as unknown[]) ?? []).length}</span> },
       { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
     ]} />

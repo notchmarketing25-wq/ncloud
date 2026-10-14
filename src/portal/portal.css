@@ -113,3 +113,24 @@
 .app-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .app-panel { border-top: 1px solid var(--nt-fog); margin-top: 6px; padding-top: 12px; display: grid; gap: 8px; }
 .app-import { display: grid; gap: 8px; }
+
+/* Modal */
+.modal-back { position: fixed; inset: 0; background: rgba(10, 10, 10, .55); display: grid; place-items: center; padding: 20px; z-index: 100; overflow-y: auto; }
+.modal { background: var(--nt-paper, #fff); border-radius: 24px; width: min(640px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0, 0, 0, .35); }
+.modal-wide { width: min(980px, 100%); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--nt-fog); }
+.modal-head h2 { margin: 0; font-size: 20px; }
+.modal-x { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--nt-fog); background: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+.modal-body { padding: 20px 24px 24px; overflow-y: auto; display: grid; gap: 14px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs button { height: 38px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--nt-fog); background: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.tabs button.on { background: var(--nt-black, #0a0a0a); color: #fff; border-color: var(--nt-black, #0a0a0a); }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 20px; }
+.kv dt { font-size: 12px; color: var(--nt-slate); letter-spacing: .04em; text-transform: uppercase; margin: 0 0 2px; }
+.kv dd { margin: 0; font-weight: 600; word-break: break-word; }
+.crumb { font-size: 14px; color: var(--nt-slate); }
+.crumb a { text-decoration: underline; text-underline-offset: 3px; }
+.row-link { cursor: pointer; }
+.row-link:hover td { background: #f4f4f2; }
+.linked { display: grid; gap: 6px; }
+.linked > div { display: flex; gap: 10px; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--nt-fog); border-radius: 14px; background: #fff; flex-wrap: wrap; }

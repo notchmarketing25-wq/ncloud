@@ -6,7 +6,7 @@
  * Public : status | public/settings | public/lead
  * Auth   : auth/me | auth/login | auth/logout | auth/password
  * Client : me/data | svc/dns-save | svc/dns-delete | svc/server-power | svc/server-snapshot | tickets/create | tickets/reply | tickets/status
- * Admin  : admin/overview | admin/users | admin/user-update | admin/user-delete | admin/items | admin/item-save | admin/item-delete
+ * Admin  : admin/update | admin/domain | admin/domain-dns | admin/providers* | admin/pricing* | admin/overview | admin/users | admin/user-update | admin/user-delete | admin/items | admin/item-save | admin/item-delete
  *          admin/tickets | admin/leads | admin/lead-update | admin/lead-delete | admin/settings | admin/activity
  */
 ini_set('display_errors', '0');
@@ -14,6 +14,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
+define('NC_VERSION', '__NC_VERSION__'); // replaced by scripts/package.mjs
 define('NC_DATA', __DIR__ . '/data');
 define('NC_DB', NC_DATA . '/db.php');
 const NC_GUARD = "<?php http_response_code(404); exit; ?>\n";
@@ -21,11 +22,13 @@ const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb
 
 /** Resources an admin manages for clients: field => [type, max/options, 'req'?]. Every item also has id, uid (owner), created. */
 $SCHEMA = array(
-    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num')),
+    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500)),
     'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
     'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num')),
     'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
+    // Websites: each one is linked to a hosting plan and a domain (and, through the domain, to its mailboxes).
+    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500)),
     // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
     'purchases' => array('item' => array('str', 160, 'req'), 'provider' => array('str', 30), 'ref' => array('str', 80), 'service' => array('str', 20), 'client' => array('str', 32), 'amount' => array('num', 'req'), 'period' => array('enum', array('monthly', 'yearly', 'once')), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
 );
@@ -280,7 +283,13 @@ if (!is_file(NC_DATA . '/installed.lock')) {
 }
 start_session();
 
-if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0) {
+if ($r === 'admin/update') {
+    require_once __DIR__ . '/update.php';
+    $me = need_admin();
+    upd_route($r, $me);
+    fail('not found', 404);
+}
+if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0 || strpos($r, 'admin/domain') === 0) {
     require_once __DIR__ . '/providers.php';
     $me = need_admin();
     prov_route($r, $me);
@@ -291,7 +300,7 @@ switch ($r) {
     /* ── public ── */
     case 'status':
         $db = db_read();
-        out(array('installed' => true, 'storage' => use_sql() ? 'mysql' : 'file', 'site' => meta_get($db, 'site', '')));
+        out(array('installed' => true, 'version' => NC_VERSION, 'storage' => use_sql() ? 'mysql' : 'file', 'site' => meta_get($db, 'site', '')));
 
     case 'public/settings':
         $db = db_read();
@@ -419,7 +428,8 @@ switch ($r) {
         if ($res === 'missing') { fail('domain not found', 404); }
         if ($res === 'forbidden') { fail('forbidden', 403); }
         if ($res === 'limit') { fail('too many records', 409); }
-        out(array('ok' => true, 'record' => $rec), 201);
+        require_once __DIR__ . '/providers.php';
+        out(array('ok' => true, 'record' => $rec, 'warning' => prov_dns_autopush($id)), 201);
 
     case 'svc/dns-delete':
         $u = need_user();
@@ -439,7 +449,8 @@ switch ($r) {
         });
         if ($res === 'missing') { fail('domain not found', 404); }
         if ($res === 'forbidden') { fail('forbidden', 403); }
-        out(array('ok' => true));
+        require_once __DIR__ . '/providers.php';
+        out(array('ok' => true, 'warning' => prov_dns_autopush($id)));
 
     case 'svc/server-power':
     case 'svc/server-snapshot':

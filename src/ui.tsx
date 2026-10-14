@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useI18n } from './i18n';
 import type { Status } from './lib/types';
 
@@ -44,3 +44,23 @@ export function Meter({ value, tone }: { value: number; tone?: 'warn' }) {
 
 export const day = (iso: string) => (iso || '').slice(0, 10);
 export const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
+
+/** A window over the page: Esc or a click outside closes it. */
+export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', k);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', k); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`modal${wide ? ' modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-head"><h2>{title}</h2><button className="modal-x" onClick={onClose} aria-label={t('إغلاق', 'Close')}>×</button></div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}

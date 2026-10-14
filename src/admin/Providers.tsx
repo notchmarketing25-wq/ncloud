@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
 import { useCurrency } from '../site/settings';
-import { day, Page, Table } from '../ui';
+import { day, Modal, Page, Table } from '../ui';
 import { errText } from './errors';
 
 type Field = { key: string; label: string; secret: boolean; value: string; set: boolean };
@@ -16,15 +16,19 @@ function Notice({ err, ok }: { err: string; ok: string }) {
   return <>{err && <div className="form-error" role="alert">{err}</div>}{ok && <div className="form-ok" role="status">{ok}</div>}</>;
 }
 
-/* ───────── Apps: connect Hostinger / Namecheap / ResellerClub, then pull their domains and hosting ───────── */
+/* ───────── Apps: connect Hostinger / Namecheap / ResellerClub, then pull their domains, hosting and websites ───────── */
+type Tab = 'connect' | 'domains' | 'hosting' | 'websites';
+
 export function AdminApps() {
   const { t } = useI18n();
   const [list, setList] = useState<Provider[]>([]);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<{ id: string; tab: Tab } | null>(null);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const load = useCallback(() => { api<{ providers: Provider[] }>('admin/providers').then((r) => setList(r.providers)).catch((e) => setErr(errText(e, t))); }, [t]);
   useEffect(load, [load]);
+  const capLabel = (c: string) => ({ domains: t('الدومينات', 'Domains'), tlds: t('أسعار الامتدادات', 'TLD prices'), check: t('البحث', 'Search'), hosting: t('الاستضافة', 'Hosting'), dns: 'DNS', dnsread: t('DNS (قراءة)', 'DNS (read)') } as Record<string, string>)[c] ?? c;
+  const current = list.find((p) => p.id === open?.id);
   return (
     <Page title={t('التطبيقات', 'Apps')}>
       <p className="muted">{t('اربط حساباتك عند مزوّدي الدومينات والاستضافة. المفاتيح بتتحفظ على السيرفر ومش بتظهر تاني.', 'Connect your accounts at the domain and hosting providers. Keys are stored on the server and never shown again.')}</p>
@@ -33,35 +37,53 @@ export function AdminApps() {
         {list.map((p) => (
           <div className="card app-card" key={p.id}>
             <div className="app-head"><h3>{p.name}</h3><span className={`tag ${p.connected ? (p.test && !p.test.ok ? 'bad' : 'ok') : ''}`}>{p.connected ? (p.test ? (p.test.ok ? t('متصل', 'Connected') : t('فيه مشكلة', 'Problem')) : t('محفوظ', 'Saved')) : t('غير متصل', 'Not connected')}</span></div>
-            <p className="muted">{p.caps.map((c) => ({ domains: t('الدومينات', 'Domains'), tlds: t('أسعار الامتدادات', 'TLD prices'), check: t('البحث', 'Search'), hosting: t('الاستضافة', 'Hosting') } as Record<string, string>)[c]).join(' · ')}</p>
+            <p className="muted">{p.caps.map(capLabel).join(' · ')}</p>
             {p.test && !p.test.ok && <div className="form-error">{p.test.message}</div>}
-            <div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => setOpen(open === p.id ? null : p.id)}>{open === p.id ? t('إغلاق', 'Close') : p.connected ? t('الإعدادات والمزامنة', 'Settings & sync') : t('ربط', 'Connect')}</button></div>
-            {open === p.id && <ProviderPanel p={p} onChange={(msg) => { setOk(msg); load(); }} onError={setErr} />}
+            <div className="row-actions">
+              <button className="btn btn-primary btn-sm" onClick={() => setOpen({ id: p.id, tab: 'connect' })}>{p.connected ? t('الإعدادات', 'Settings') : t('ربط', 'Connect')}</button>
+              {p.connected && p.caps.includes('domains') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'domains' })}>{t('جلب الدومينات', 'Import domains')}</button>}
+              {p.connected && p.caps.includes('hosting') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'hosting' })}>{t('جلب الاستضافات', 'Import hosting')}</button>}
+              {p.connected && p.caps.includes('hosting') && <button className="btn btn-ghost btn-sm" onClick={() => setOpen({ id: p.id, tab: 'websites' })}>{t('جلب المواقع', 'Import websites')}</button>}
+            </div>
           </div>
         ))}
       </div>
+      {open && current && (
+        <Modal title={current.name} wide onClose={() => setOpen(null)}>
+          <div className="tabs" role="tablist">
+            {([['connect', t('الربط', 'Connection')], ...(current.connected ? [['domains', t('الدومينات', 'Domains')], ...(current.caps.includes('hosting') ? [['hosting', t('الاستضافات', 'Hosting')], ['websites', t('المواقع', 'Websites')]] : [])] : [])] as [Tab, string][]).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={open.tab === k} className={open.tab === k ? 'on' : ''} onClick={() => setOpen({ id: open.id, tab: k })}>{label}</button>
+            ))}
+          </div>
+          <Notice err={err} ok="" />
+          {open.tab === 'connect'
+            ? <ConnectForm key={current.id} p={current} onChange={(msg) => { setOk(msg); setErr(''); load(); }} onError={setErr} onGone={() => setOpen(null)} />
+            : <ImportPanel key={`${current.id}-${open.tab}`} p={current} kind={open.tab} onDone={(m) => { setOk(m); setOpen(null); }} onError={setErr} />}
+        </Modal>
+      )}
     </Page>
   );
 }
 
-function ProviderPanel({ p, onChange, onError }: { p: Provider; onChange: (msg: string) => void; onError: (e: string) => void }) {
+function ConnectForm({ p, onChange, onError, onGone }: { p: Provider; onChange: (msg: string) => void; onError: (e: string) => void; onGone: () => void }) {
   const { t } = useI18n();
   const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(p.fields.map((f) => [f.key, f.value])));
   const [sandbox, setSandbox] = useState(p.useSandbox);
   const [base, setBase] = useState(p.baseUrl);
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<'domains' | 'hosting' | null>(null);
-  const run = async (fn: () => Promise<string | void>) => {
-    onError(''); setBusy(true);
-    try { const m = await fn(); onChange(m || t('تم.', 'Done.')); } catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
+  const [msg, setMsg] = useState('');
+  const run = async (fn: () => Promise<string | void>, after?: () => void) => {
+    onError(''); setMsg(''); setBusy(true);
+    try { const m = await fn(); setMsg(m || t('تم.', 'Done.')); onChange(m || ''); after?.(); } catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
   };
-  const save = (e: FormEvent) => { e.preventDefault(); void run(async () => { await post('admin/providers', { id: p.id, fields: vals, useSandbox: sandbox, baseUrl: base }); return t('اتحفظ.', 'Saved.'); }); };
+  const save = (e: FormEvent) => { e.preventDefault(); void run(async () => { await post('admin/providers', { id: p.id, fields: vals, useSandbox: sandbox, baseUrl: base }); return t('اتحفظ. جرّب اختبار الاتصال.', 'Saved. Now test the connection.'); }); };
   const test = () => void run(async () => { const r = await post<{ ok: boolean; message: string }>('admin/providers/test', { id: p.id }); if (!r.ok) throw new Error(r.message); return r.message; });
-  const disconnect = () => { if (window.confirm(t('تفصل الربط وتمسح المفاتيح؟', 'Disconnect and delete the saved keys?'))) void run(async () => { await post('admin/providers', { id: p.id, disconnect: true }); return t('اتفصل.', 'Disconnected.'); }); };
+  const disconnect = () => { if (window.confirm(t('تفصل الربط وتمسح المفاتيح؟', 'Disconnect and delete the saved keys?'))) void run(async () => { await post('admin/providers', { id: p.id, disconnect: true }); return t('اتفصل.', 'Disconnected.'); }, onGone); };
   return (
-    <div className="app-panel">
+    <>
       <p className="muted">{t(p.help[0], p.help[1])}</p>
-      <form className="admin-form" onSubmit={save} style={{ marginBlock: 8 }}>
+      {msg && <div className="form-ok" role="status">{msg}</div>}
+      <form className="admin-form" onSubmit={save} style={{ marginBlock: 0 }}>
         {p.fields.map((f) => (
           <div className="field" key={f.key}>
             <label htmlFor={`${p.id}-${f.key}`}>{f.label}</label>
@@ -77,61 +99,67 @@ function ProviderPanel({ p, onChange, onError }: { p: Provider; onChange: (msg: 
           {p.connected && <button className="btn btn-ghost btn-sm" type="button" onClick={disconnect} disabled={busy}>{t('فصل', 'Disconnect')}</button>}
         </div>
       </form>
-      {p.connected && (
-        <div className="row-actions" style={{ marginBottom: 8 }}>
-          {p.caps.includes('domains') && <button className="btn btn-primary btn-sm" onClick={() => setView(view === 'domains' ? null : 'domains')}>{t('جلب الدومينات', 'Import domains')}</button>}
-          {p.caps.includes('hosting') && <button className="btn btn-primary btn-sm" onClick={() => setView(view === 'hosting' ? null : 'hosting')}>{t('جلب الاستضافات', 'Import hosting')}</button>}
-        </div>
-      )}
-      {view && <ImportPanel p={p} kind={view} onDone={(m) => { setView(null); onChange(m); }} onError={onError} />}
-    </div>
+    </>
   );
 }
 
-function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains' | 'hosting'; onDone: (m: string) => void; onError: (e: string) => void }) {
+function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains' | 'hosting' | 'websites'; onDone: (m: string) => void; onError: (e: string) => void }) {
   const { t } = useI18n();
   const cur = useCurrency();
   const [users, setUsers] = useState<User[]>([]);
   const [uid, setUid] = useState('');
   const [rows, setRows] = useState<(PDomain | PHost)[] | null>(null);
   const [pick, setPick] = useState<Record<string, boolean>>({});
-  const [bills, setBills] = useState(kind === 'hosting');
+  const [own, setOwn] = useState<Record<string, string>>({});
+  const [bills, setBills] = useState(kind !== 'websites');
   const [busy, setBusy] = useState(false);
   const key = (r: PDomain | PHost) => ('ref' in r ? r.ref : r.name);
   useEffect(() => {
     setRows(null);
     api<{ users: User[] }>('admin/users').then((r) => { setUsers(r.users); setUid((u) => u || r.users.find((x) => x.role === 'client')?.id || r.users[0]?.id || ''); }).catch(() => undefined);
-    api<Record<string, (PDomain | PHost)[]>>(`admin/providers/${kind}`, undefined, { id: p.id }).then((r) => setRows(r[kind])).catch((e) => { onError(errText(e, t)); setRows([]); });
+    const src = kind === 'domains' ? 'domains' : 'hosting';
+    api<Record<string, (PDomain | PHost)[]>>(`admin/providers/${src}`, undefined, { id: p.id })
+      .then((r) => setRows(kind === 'domains' ? r.domains : (r.hosting as PHost[]).filter((h) => (kind === 'websites') === (h.kind === 'website'))))
+      .catch((e) => { onError(errText(e, t)); setRows([]); });
   }, [p.id, kind, onError, t]);
-  const chosen = useMemo(() => (rows ?? []).filter((r) => pick[key(r)] && !r.imported), [rows, pick]);
+  const free = useMemo(() => (rows ?? []).filter((r) => !r.imported), [rows]);
+  const chosen = useMemo(() => free.filter((r) => pick[key(r)]), [free, pick]);
+  const all = free.length > 0 && chosen.length === free.length;
   const go = async () => {
     setBusy(true); onError('');
-    try { const r = await post<{ imported: number }>('admin/providers/import', { id: p.id, kind, uid, bills, items: chosen }); onDone(t(`اتجلب ${r.imported}.`, `Imported ${r.imported}.`)); }
-    catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
+    try {
+      const items = chosen.map((r) => ({ ...r, uid: own[key(r)] || uid }));
+      const r = await post<{ imported: number }>('admin/providers/import', { id: p.id, kind, uid, bills: bills && kind !== 'websites', items });
+      onDone(t(`اتجلب ${r.imported}.`, `Imported ${r.imported}.`));
+    } catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
   };
+  if (rows === null) return <p className="muted">…</p>;
+  if (rows.length === 0) return <p className="muted">{t('مفيش عناصر عند المزوّد.', 'Nothing found at the provider.')}</p>;
   return (
-    <div className="app-import">
-      {rows === null ? <p className="muted">…</p> : rows.length === 0 ? <p className="muted">{t('مفيش عناصر.', 'Nothing found.')}</p> : (
-        <>
-          <Table head={['', kind === 'domains' ? t('الدومين', 'Domain') : t('الخطة', 'Plan'), t('ينتهي', 'Expires'), ...(kind === 'hosting' ? [t('التكلفة', 'Cost')] : [])]}>
-            {rows.map((r) => (
-              <tr key={key(r)}>
-                <td><input type="checkbox" disabled={r.imported} checked={r.imported || !!pick[key(r)]} onChange={(e) => setPick({ ...pick, [key(r)]: e.target.checked })} aria-label={key(r)} /></td>
-                <td>{'ref' in r ? <>{r.plan} {r.domain && <Ltr>{r.domain}</Ltr>}</> : <Ltr>{r.name}</Ltr>} {r.imported && <span className="tag">{t('موجود', 'Imported')}</span>}</td>
-                <td><Ltr>{r.expires || '-'}</Ltr></td>
-                {'ref' in r && <td><span className="latin">{money(r.costStore)} {cur}</span> <span className="muted">/ {r.billing === 'yearly' ? t('سنة', 'yr') : t('شهر', 'mo')}</span></td>}
-              </tr>
-            ))}
-          </Table>
-          <div className="inline-form" style={{ gridTemplateColumns: '1fr auto auto', marginTop: 12 }}>
-            <div className="field"><label htmlFor="imp-uid">{t('اربطها بالعميل', 'Assign to client')}</label>
-              <select id="imp-uid" className="select" value={uid} onChange={(e) => setUid(e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}</select></div>
-            <label className="check"><input type="checkbox" checked={bills} onChange={(e) => setBills(e.target.checked)} /> {t('إصدار فواتير شراء', 'Create purchase bills')}</label>
-            <button className="btn btn-accent" onClick={() => void go()} disabled={busy || chosen.length === 0 || !uid}>{t(`جلب (${chosen.length})`, `Import (${chosen.length})`)}</button>
-          </div>
-        </>
-      )}
-    </div>
+    <>
+      <div className="inline-form" style={{ gridTemplateColumns: '1fr auto', marginBottom: 0 }}>
+        <div className="field"><label htmlFor="imp-uid">{t('العميل الافتراضي', 'Default client')}</label>
+          <select id="imp-uid" className="select" value={uid} onChange={(e) => setUid(e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}</select></div>
+        {kind !== 'websites' && <label className="check"><input type="checkbox" checked={bills} onChange={(e) => setBills(e.target.checked)} /> {t('إصدار فواتير شراء', 'Create purchase bills')}</label>}
+      </div>
+      <Table head={[kind === 'domains' ? t('الدومين', 'Domain') : kind === 'websites' ? t('الموقع', 'Website') : t('الخطة', 'Plan'), t('ينتهي', 'Expires'), ...(kind === 'hosting' ? [t('التكلفة', 'Cost')] : []), t('العميل', 'Client')]}>
+        {rows.map((r) => (
+          <tr key={key(r)}>
+            <td>
+              <label className="check"><input type="checkbox" disabled={r.imported} checked={r.imported || !!pick[key(r)]} onChange={(e) => setPick({ ...pick, [key(r)]: e.target.checked })} />
+                {'ref' in r ? (kind === 'websites' ? <Ltr>{r.domain}</Ltr> : r.plan) : <Ltr>{r.name}</Ltr>} {r.imported && <span className="tag">{t('موجود', 'Imported')}</span>}</label>
+            </td>
+            <td><Ltr>{r.expires || '-'}</Ltr></td>
+            {kind === 'hosting' && 'ref' in r && <td><span className="latin">{money(r.costStore)} {cur}</span> <span className="muted">/ {r.billing === 'yearly' ? t('سنة', 'yr') : t('شهر', 'mo')}</span></td>}
+            <td>{r.imported ? '-' : <select className="select" aria-label={t('العميل', 'Client')} value={own[key(r)] ?? ''} onChange={(e) => setOwn({ ...own, [key(r)]: e.target.value })}><option value="">{t('الافتراضي', 'Default')}</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</td>
+          </tr>
+        ))}
+      </Table>
+      <div className="row-actions">
+        <button className="btn btn-ghost btn-sm" onClick={() => setPick(all ? {} : Object.fromEntries(free.map((r) => [key(r), true])))}>{all ? t('إلغاء التحديد', 'Clear selection') : t('تحديد الكل', 'Select all')}</button>
+        <button className="btn btn-accent" onClick={() => void go()} disabled={busy || chosen.length === 0 || !uid}>{t(`جلب (${chosen.length})`, `Import (${chosen.length})`)}</button>
+      </div>
+    </>
   );
 }
 

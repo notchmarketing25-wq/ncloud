@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { DnsEditor } from '../dns';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { ApiError } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
-import { DomainSearch, Ph } from '../site/parts';
+import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
@@ -91,6 +92,7 @@ export function PortalLayout() {
     { to: '/portal/domains', label: t('الدومينات', 'Domains') },
     { to: '/portal/email', label: t('الإيميلات', 'Email') },
     { to: '/portal/hosting', label: t('الاستضافة', 'Hosting') },
+    { to: '/portal/websites', label: t('المواقع', 'Websites') },
     { to: '/portal/servers', label: t('السيرفرات', 'Servers') },
     { to: '/portal/billing', label: t('الفواتير', 'Billing') },
     { to: '/portal/support', label: t('الدعم', 'Support') },
@@ -168,56 +170,82 @@ export function Overview() {
 
 export function PortalDomains() {
   const { t } = useI18n();
-  const { data, addDns, delDns } = usePortal();
-  const [sel, setSel] = useState<string | null>(null);
-  const [form, setForm] = useState({ type: 'A', host: '', value: '', ttl: 3600 });
-  const [err, setErr] = useState('');
+  const { data } = usePortal();
+  const nav = useNavigate();
   if (!data) return <Loading />;
-  const current = data.domains.find((d) => d.id === sel) ?? data.domains[0];
-  const add = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!current || !form.value.trim()) return;
-    setErr('');
-    try { await addDns(current.id, { ...form, host: form.host.trim() || '@', value: form.value.trim() }); setForm({ ...form, host: '', value: '' }); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); }
-  };
   return (
     <Page title={t('الدومينات', 'Domains')} action={<Link to="/portal/support?new=domain" className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
       <div className="card" style={{ marginBottom: 16 }}><h3>{t('ابحث عن دومين جديد', 'Find a new domain')}</h3><DomainSearch /></div>
       {data.domains.length === 0 ? <Empty>{t('مفيش دومينات لسه. اطلب دومين من الدعم.', 'No domains yet. Request one from support.')}</Empty> : (
-        <>
-          <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
-            {data.domains.map((d) => (
-              <tr key={d.id} className={d.id === current?.id ? 'is-sel' : ''}>
-                <td><Ltr>{d.name}</Ltr></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires || '-'}</Ltr></td>
-                <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
-                <td><button className="btn btn-ghost btn-sm" onClick={() => setSel(d.id)}>{t('إدارة DNS', 'Manage DNS')}</button></td>
-              </tr>
-            ))}
-          </Table>
-          {current && (
-            <>
-              <h2 className="sub">{t('سجلات DNS', 'DNS records')} · <Ltr>{current.name}</Ltr></h2>
-              <div className="dns">
-                <div className="dns-row dns-head"><span>TYPE</span><span>HOST</span><span>VALUE</span><span>TTL</span><span /></div>
-                {current.dns.length === 0 && <div className="dns-empty nt-hatch-dark">{t('مفيش سجلات لسه', 'No records yet')}</div>}
-                {current.dns.map((r) => (
-                  <div className="dns-row" key={r.id}>
-                    <span>{r.type}</span><span>{r.host}</span><span>{r.value}</span><span>{r.ttl}</span>
-                    <button className="dns-del" onClick={() => void delDns(current.id, r.id)} aria-label={t('حذف السجل', 'Delete record')}>×</button>
-                  </div>
-                ))}
-              </div>
-              {err && <div className="form-error" style={{ marginTop: 10 }}>{err}</div>}
-              <form className="dns-form" onSubmit={add}>
-                <select className="select" aria-label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((x) => <option key={x}>{x}</option>)}</select>
-                <input className="input latin" aria-label="Host" placeholder="@ / www" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
-                <input className="input latin" aria-label="Value" placeholder={t('القيمة', 'Value')} required value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
-                <select className="select" aria-label="TTL" value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })}>{[300, 3600, 14400, 86400].map((x) => <option key={x}>{x}</option>)}</select>
-                <button className="btn btn-primary" type="submit">{t('إضافة', 'Add')}</button>
-              </form>
-            </>
-          )}
-        </>
+        <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
+          {data.domains.map((d) => (
+            <tr key={d.id} className="row-link" onClick={() => nav(`/portal/domains/${d.id}`)}>
+              <td><Link to={`/portal/domains/${d.id}`} onClick={(e) => e.stopPropagation()}><Ltr>{d.name}</Ltr></Link></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires || '-'}</Ltr></td>
+              <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
+              <td><span className="btn btn-ghost btn-sm">{t('التفاصيل و DNS', 'Details & DNS')}</span></td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Page>
+  );
+}
+
+/** One domain: its details, DNS records, and everything linked to it (hosting, websites, mailboxes). */
+export function PortalDomainDetail() {
+  const { t } = useI18n();
+  const { id } = useParams();
+  const { data, addDns, delDns } = usePortal();
+  const [err, setErr] = useState('');
+  if (!data) return <Loading />;
+  const d = data.domains.find((x) => x.id === id);
+  if (!d) return <Page title={t('الدومين', 'Domain')}><Empty>{t('الدومين ده مش موجود.', 'Domain not found.')}</Empty><Link to="/portal/domains" className="btn btn-ghost btn-sm">{t('← كل الدومينات', '← All domains')}</Link></Page>;
+  const under = (h: string) => { h = (h || '').toLowerCase(); return h === d.name.toLowerCase() || h.endsWith('.' + d.name.toLowerCase()); };
+  const sites = (data.websites ?? []).filter((w) => w.domainId === d.id || under(w.url));
+  const hosts = data.hosting.filter((h) => under(h.domain) || sites.some((w) => w.hostingId === h.id));
+  const mails = data.mailboxes.filter((m) => m.address.toLowerCase().endsWith('@' + d.name.toLowerCase()));
+  return (
+    <Page title={d.name} action={<Link to="/portal/domains" className="btn btn-ghost btn-sm">{t('← كل الدومينات', '← All domains')}</Link>}>
+      <div className="card"><dl className="kv">
+        <div><dt>{t('الحالة', 'Status')}</dt><dd><StatusTag s={d.status} /></dd></div>
+        <div><dt>{t('ينتهي', 'Expires')}</dt><dd><Ltr>{d.expires || '-'}</Ltr></dd></div>
+        <div><dt>{t('تجديد تلقائي', 'Auto-renew')}</dt><dd>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</dd></div>
+        {d.price ? <div><dt>{t('سعر التجديد', 'Renewal price')}</dt><dd><Money value={d.price} /></dd></div> : null}
+      </dl></div>
+      <h2 className="sub">{t('سجلات DNS', 'DNS records')}</h2>
+      <DnsEditor records={d.dns} err={err}
+        onAdd={async (r) => { setErr(''); try { await addDns(d.id, r); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }}
+        onDelete={async (rid) => { setErr(''); try { await delDns(d.id, rid); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }} />
+      <h2 className="sub">{t('المرتبط بالدومين', 'Linked to this domain')}</h2>
+      <div className="linked">
+        {sites.map((w) => <div key={w.id}><span>{t('موقع', 'Website')}: <Ltr>{w.name}</Ltr></span><StatusTag s={w.status} /></div>)}
+        {hosts.map((h) => <div key={h.id}><span>{t('استضافة', 'Hosting')}: {h.plan}</span><StatusTag s={h.status} /></div>)}
+        {mails.map((m) => <div key={m.id}><span>{t('إيميل', 'Mailbox')}: <Ltr>{m.address}</Ltr></span><StatusTag s={m.status} /></div>)}
+        {sites.length + hosts.length + mails.length === 0 && <p className="muted">{t('مفيش حاجة مرتبطة لسه.', 'Nothing linked yet.')}</p>}
+      </div>
+    </Page>
+  );
+}
+
+export function PortalWebsites() {
+  const { t } = useI18n();
+  const { data } = usePortal();
+  if (!data) return <Loading />;
+  const sites = data.websites ?? [];
+  const dom = (id: string) => data.domains.find((d) => d.id === id);
+  const host = (id: string) => data.hosting.find((h) => h.id === id);
+  return (
+    <Page title={t('المواقع', 'Websites')} action={<Link to="/portal/support?new=website" className="btn btn-primary btn-sm">{t('+ اطلب موقع', '+ Request a website')}</Link>}>
+      {sites.length === 0 ? <Empty>{t('مفيش مواقع لسه.', 'No websites yet.')}</Empty> : (
+        <Table head={[t('الموقع', 'Website'), t('الحالة', 'Status'), t('الدومين', 'Domain'), t('الاستضافة', 'Hosting')]}>
+          {sites.map((w) => (
+            <tr key={w.id}>
+              <td><Ltr>{w.name}</Ltr></td><td><StatusTag s={w.status} /></td>
+              <td>{dom(w.domainId) ? <Link to={`/portal/domains/${w.domainId}`}><Ltr>{dom(w.domainId)!.name}</Ltr></Link> : '-'}</td>
+              <td>{host(w.hostingId)?.plan ?? '-'}</td>
+            </tr>
+          ))}
+        </Table>
       )}
     </Page>
   );
@@ -340,7 +368,7 @@ export function PortalSupport() {
   const topic = params.get('new');
   const topics: Record<string, [string, string]> = {
     domain: ['طلب دومين جديد', 'New domain request'], mailbox: ['طلب صندوق إيميل جديد', 'New mailbox request'], hosting: ['طلب خطة استضافة', 'Hosting request'],
-    server: ['طلب سيرفر جديد', 'New server request'], payment: ['دفع فاتورة', 'Invoice payment'],
+    server: ['طلب سيرفر جديد', 'New server request'], website: ['طلب موقع جديد', 'New website request'], payment: ['دفع فاتورة', 'Invoice payment'],
   };
   const [creating, setCreating] = useState(Boolean(topic));
   const [subject, setSubject] = useState(topic && topics[topic] ? t(topics[topic][0], topics[topic][1]) : '');

@@ -14,14 +14,14 @@ function prov_defs() {
     return array(
         'hostinger' => array(
             'name' => 'Hostinger',
-            'caps' => array('domains', 'tlds', 'check', 'hosting'),
+            'caps' => array('domains', 'tlds', 'check', 'hosting', 'dns'),
             'base' => 'https://developers.hostinger.com',
             'fields' => array('token' => array('API token', true)),
             'help' => array('hPanel → Account → API → create a token', 'hPanel ← Account ← API ← أنشئ Token'),
         ),
         'namecheap' => array(
             'name' => 'Namecheap',
-            'caps' => array('domains', 'tlds', 'check'),
+            'caps' => array('domains', 'tlds', 'check', 'dns'),
             'base' => 'https://api.namecheap.com',
             'sandbox' => 'https://api.sandbox.namecheap.com',
             'fields' => array('apiUser' => array('API user', false), 'apiKey' => array('API key', true), 'username' => array('Username (usually the same as API user)', false), 'clientIp' => array('Whitelisted server IP', false)),
@@ -29,7 +29,7 @@ function prov_defs() {
         ),
         'resellerclub' => array(
             'name' => 'ResellerClub',
-            'caps' => array('domains', 'tlds', 'check'),
+            'caps' => array('domains', 'tlds', 'check', 'dnsread'),
             'base' => 'https://httpapi.com',
             'sandbox' => 'https://test.httpapi.com',
             'fields' => array('userId' => array('Reseller ID (auth-userid)', false), 'apiKey' => array('API key', true)),
@@ -273,6 +273,90 @@ function resellerclub_check($cfg, $name, $tlds) {
     return $o;
 }
 
+
+/* ───────── DNS: read (all three) and write (Hostinger, Namecheap) ─────────
+ * Records are {type, host, value, ttl}. MX values read "10 mail.example.com" (priority first). */
+function dns_group($records) {
+    $g = array();
+    foreach ($records as $r) { $k = $r['host'] . '|' . $r['type'] . '|' . $r['ttl']; $g[$k]['host'] = $r['host']; $g[$k]['type'] = $r['type']; $g[$k]['ttl'] = (int) $r['ttl']; $g[$k]['values'][] = $r['value']; }
+    return array_values($g);
+}
+function hostinger_dns_get($cfg, $domain) {
+    $o = array();
+    foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/dns/v1/zones/' . rawurlencode($domain))) as $z) {
+        if (!is_array($z) || empty($z['type'])) { continue; }
+        $type = strtoupper($z['type']);
+        if (!in_array($type, array('A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'), true)) { continue; }
+        foreach (isset($z['records']) && is_array($z['records']) ? $z['records'] : array() as $rec) {
+            $v = is_array($rec) ? (isset($rec['content']) ? $rec['content'] : '') : (string) $rec;
+            if ($v === '') { continue; }
+            $o[] = array('type' => $type, 'host' => isset($z['name']) && $z['name'] !== '' ? $z['name'] : '@', 'value' => $v, 'ttl' => (int) (isset($z['ttl']) ? $z['ttl'] : 3600));
+        }
+    }
+    return $o;
+}
+function hostinger_dns_set($cfg, $domain, $records) {
+    $zone = array();
+    foreach (dns_group($records) as $g) {
+        $zone[] = array('name' => $g['host'], 'type' => $g['type'], 'ttl' => $g['ttl'], 'records' => array_map(function ($v) { return array('content' => $v); }, $g['values']));
+    }
+    hostinger_call($cfg, 'PUT', '/api/dns/v1/zones/' . rawurlencode($domain), array('overwrite' => true, 'zone' => $zone));
+}
+function nc_split_domain($domain) { $p = explode('.', $domain, 2); return array($p[0], isset($p[1]) ? $p[1] : ''); }
+function namecheap_dns_get($cfg, $domain) {
+    list($sld, $tld) = nc_split_domain($domain);
+    $x = namecheap_call($cfg, 'namecheap.domains.dns.getHosts', array('SLD' => $sld, 'TLD' => $tld));
+    $o = array();
+    foreach ($x->CommandResponse->DomainDNSGetHostsResult->host as $h) {
+        $type = strtoupper((string) $h['Type']);
+        if (!in_array($type, array('A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'CAA'), true)) { continue; }
+        $v = (string) $h['Address'];
+        if ($type === 'MX') { $v = ((string) $h['MXPref'] !== '' ? (string) $h['MXPref'] : '10') . ' ' . $v; }
+        $o[] = array('type' => $type, 'host' => (string) $h['Name'] ?: '@', 'value' => $v, 'ttl' => (int) ((string) $h['TTL'] ?: 1800));
+    }
+    return $o;
+}
+function namecheap_dns_set($cfg, $domain, $records) {
+    list($sld, $tld) = nc_split_domain($domain);
+    $p = array('SLD' => $sld, 'TLD' => $tld);
+    $i = 0;
+    foreach ($records as $r) {
+        $i++;
+        $v = $r['value']; $pref = '';
+        if ($r['type'] === 'MX' && preg_match('/^(\d+)\s+(\S+)$/', $v, $m)) { $pref = $m[1]; $v = $m[2]; } elseif ($r['type'] === 'MX') { $pref = '10'; }
+        $p['HostName' . $i] = $r['host']; $p['RecordType' . $i] = $r['type']; $p['Address' . $i] = $v; $p['TTL' . $i] = max(60, min(60000, (int) $r['ttl']));
+        if ($pref !== '') { $p['MXPref' . $i] = $pref; }
+    }
+    if ($i === 0) { throw new Exception('Namecheap: refusing to save an empty record list'); }
+    $x = namecheap_call($cfg, 'namecheap.domains.dns.setHosts', $p);
+    if ((string) $x->CommandResponse->DomainDNSSetHostsResult['IsSuccess'] !== 'true') { throw new Exception('Namecheap: the records were not accepted'); }
+}
+function resellerclub_dns_get($cfg, $domain) {
+    $o = array(); $firstErr = null; $okAny = false;
+    foreach (array('A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS') as $type) {
+        try {
+            $j = resellerclub_call($cfg, 'dns/manage/search-records.json', array('domain-name' => $domain, 'type' => $type, 'no-of-records' => 50, 'page-no' => 1));
+            $okAny = true;
+            foreach ($j as $k => $r) {
+                if (!is_array($r) || !ctype_digit((string) $k) || !isset($r['value'])) { continue; }
+                $v = (string) $r['value'];
+                if ($type === 'MX') { $v = (isset($r['priority']) ? $r['priority'] : '10') . ' ' . $v; }
+                $host = isset($r['name']) ? (string) $r['name'] : '@';
+                if (substr($host, -strlen($domain)) === $domain) { $host = rtrim(substr($host, 0, -strlen($domain)), '.'); }
+                $o[] = array('type' => $type, 'host' => $host === '' ? '@' : $host, 'value' => $v, 'ttl' => (int) (isset($r['timetolive']) ? $r['timetolive'] : 3600));
+            }
+        } catch (Exception $e) { if ($firstErr === null) { $firstErr = $e; } }
+    }
+    if (!$okAny && $firstErr) { throw $firstErr; }
+    return $o;
+}
+function dns_can_write($id) { return in_array($id, array('hostinger', 'namecheap'), true); }
+function dns_clean($records) {
+    $o = array();
+    foreach ($records as $r) { $o[] = array('id' => new_id(), 'type' => $r['type'], 'host' => clean_text($r['host'], 253) ?: '@', 'value' => clean_text($r['value'], 500), 'ttl' => in_array((int) $r['ttl'], array(300, 3600, 14400, 86400), true) ? (int) $r['ttl'] : (int) $r['ttl']); }
+    return array_slice($o, 0, 200);
+}
+
 /* ───────── dispatch ───────── */
 function prov_run($id, $fn, $db) {
     $cfg = prov_cfg($db, $id);
@@ -433,6 +517,57 @@ function prov_route($r, $me) {
             @unlink(prov_cache_file());
             out(array('providers' => prov_masked(db_read())));
 
+        case 'admin/domain':
+            need_admin(); $db = db_read();
+            $id = isset($_GET['id']) ? (string) $_GET['id'] : '';
+            $i = find_by(items_of($db, 'domains'), 'id', $id);
+            if ($i < 0) { fail('domain not found', 404); }
+            $d = $db['items']['domains'][$i];
+            $name = strtolower($d['name']);
+            $pv = isset($d['provider']) ? (string) $d['provider'] : '';
+            $related = function ($res, $fn) use ($db) { return array_values(array_filter(items_of($db, $res), $fn)); };
+            $under = function ($host) use ($name) { $host = strtolower((string) $host); return $host === $name || (strlen($host) > strlen($name) && substr($host, -strlen($name) - 1) === '.' . $name); };
+            out(array('domain' => $d, 'owner' => (function ($uid) use ($db) { $u = find_user($db, 'id', $uid); return $u < 0 ? null : public_user($db['users'][$u]); })($d['uid']),
+                'hosting' => $related('hosting', function ($h) use ($id, $under) { return (isset($h['domainId']) && $h['domainId'] === $id) || $under(isset($h['domain']) ? $h['domain'] : ''); }),
+                'websites' => $related('websites', function ($w) use ($id, $under) { return (isset($w['domainId']) && $w['domainId'] === $id) || $under(isset($w['url']) ? $w['url'] : ''); }),
+                'mailboxes' => $related('mailboxes', function ($m) use ($name) { return substr(strtolower($m['address']), -strlen($name) - 1) === '@' . $name; }),
+                'canPull' => $pv !== '' && isset(prov_defs()[$pv]) && (in_array('dns', prov_defs()[$pv]['caps'], true) || in_array('dnsread', prov_defs()[$pv]['caps'], true)),
+                'canPush' => dns_can_write($pv)));
+
+        case 'admin/domain-dns':
+            require_post();
+            $b = body(); $id = isset($b['id']) ? (string) $b['id'] : ''; $action = isset($b['action']) ? (string) $b['action'] : '';
+            $db = db_read();
+            $i = find_by(items_of($db, 'domains'), 'id', $id);
+            if ($i < 0) { fail('domain not found', 404); }
+            $d = $db['items']['domains'][$i];
+            $pid = isset($d['provider']) ? (string) $d['provider'] : '';
+            if ($pid === '' || !isset(prov_defs()[$pid])) { fail('this domain has no provider — choose one in the domain details first', 422); }
+            try {
+                if ($action === 'pull') {
+                    $recs = dns_clean(prov_run($pid, 'dns_get', $db, strtolower($d['name'])));
+                    db_update(function (&$db) use ($id, $recs, $me, $d) {
+                        $k = find_by(items_of($db, 'domains'), 'id', $id);
+                        if ($k < 0) { return; }
+                        $db['items']['domains'][$k]['dns'] = $recs; $db['items']['domains'][$k]['dnsSynced'] = true;
+                        log_act($db, $me, 'dns-pull', $d['name'] . ' x' . count($recs));
+                    });
+                    out(array('ok' => true, 'records' => count($recs)));
+                }
+                if ($action === 'push') {
+                    if (!dns_can_write($pid)) { fail(prov_name($pid) . ' DNS is read-only here — edit it at the provider', 422); }
+                    $local = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
+                    prov_run($pid, 'dns_set', $db, strtolower($d['name']), $local);
+                    db_update(function (&$db) use ($id, $me, $d, $local) {
+                        $k = find_by(items_of($db, 'domains'), 'id', $id);
+                        if ($k >= 0) { $db['items']['domains'][$k]['dnsSynced'] = true; }
+                        log_act($db, $me, 'dns-push', $d['name'] . ' x' . count($local));
+                    });
+                    out(array('ok' => true, 'records' => count($local)));
+                }
+            } catch (Exception $e) { fail($e->getMessage(), 502); }
+            fail('unknown action', 422);
+
         case 'admin/providers/test':
             require_post();
             $b = body(); $_GET['id'] = isset($b['id']) ? $b['id'] : ''; $id = prov_id();
@@ -453,24 +588,27 @@ function prov_route($r, $me) {
             need_admin(); $id = prov_id(); $db = db_read();
             if (!in_array('hosting', prov_defs()[$id]['caps'], true)) { fail('this provider has no hosting API', 422); }
             try { $list = prov_run($id, 'hosting', $db); } catch (Exception $e) { fail($e->getMessage(), 502); }
-            $have = array(); foreach (items_of($db, 'hosting') as $h) { if (!empty($h['ref'])) { $have[$h['ref']] = true; } }
+            $have = array(); foreach (array_merge(items_of($db, 'hosting'), items_of($db, 'websites')) as $h) { if (!empty($h['ref'])) { $have[$h['ref']] = true; } }
             foreach ($list as $k => $h) { $list[$k]['imported'] = isset($have[$h['ref']]); $list[$k]['costStore'] = prov_to_store($db, $h['cost'], $h['currency']); }
             out(array('hosting' => $list, 'currency' => meta_get($db, 'currency', '') ?: 'EGP'));
 
         case 'admin/providers/import':
             require_post();
             $b = body(); $_GET['id'] = isset($b['id']) ? $b['id'] : ''; $id = prov_id();
-            $kind = isset($b['kind']) && $b['kind'] === 'hosting' ? 'hosting' : 'domains';
+            $kind = isset($b['kind']) && in_array($b['kind'], array('hosting', 'websites'), true) ? $b['kind'] : 'domains';
             $uid = isset($b['uid']) ? (string) $b['uid'] : '';
             $items = isset($b['items']) && is_array($b['items']) ? array_slice($b['items'], 0, 200) : array();
             $bills = !empty($b['bills']);
             if (!$items) { fail('select at least one item', 422); }
             $count = db_update(function (&$db) use ($id, $kind, $uid, $items, $bills, $me) {
-                if (find_user($db, 'id', $uid) < 0) { return -1; }
+                $defaultUid = $uid;
+                if (find_user($db, 'id', $defaultUid) < 0) { return -1; }
                 $n = 0;
                 $cache = prov_cache_read();
                 foreach ($items as $it) {
                     if (!is_array($it)) { continue; }
+                    // Each row may name its own client; otherwise the one chosen for the whole import.
+                    $uid = isset($it['uid']) && find_user($db, 'id', (string) $it['uid']) >= 0 ? (string) $it['uid'] : $defaultUid;
                     if ($kind === 'domains') {
                         $name = strtolower(clean_text(isset($it['name']) ? $it['name'] : '', 253));
                         if ($name === '') { continue; }
@@ -482,6 +620,18 @@ function prov_route($r, $me) {
                             'expires' => prov_date(isset($it['expires']) ? $it['expires'] : ''), 'autoRenew' => !empty($it['autoRenew']), 'provider' => $id, 'cost' => $cost, 'price' => 0, 'dns' => array());
                         $db['items']['domains'][] = $rec;
                         if ($bills && $cost > 0) { prov_add_bill($db, array('provider' => $id, 'ref' => $name, 'item' => 'Domain renewal ' . $name, 'amount' => $cost, 'period' => 'yearly', 'service' => 'domain', 'client' => $uid, 'date' => $rec['expires'])); }
+                    } elseif ($kind === 'websites') {
+                        $host = strtolower(clean_text(isset($it['domain']) ? $it['domain'] : (isset($it['name']) ? $it['name'] : ''), 253));
+                        if ($host === '') { continue; }
+                        $ref = clean_text(isset($it['ref']) ? $it['ref'] : ('site:' . $host), 80);
+                        foreach (items_of($db, 'websites') as $w) { if (isset($w['ref']) && $w['ref'] === $ref) { continue 2; } }
+                        // Link it: the longest domain it sits under, and the provider's first hosting plan of that client.
+                        $domainId = ''; $best = 0;
+                        foreach (items_of($db, 'domains') as $d) { $dn = strtolower($d['name']); if (($host === $dn || substr($host, -strlen($dn) - 1) === '.' . $dn) && strlen($dn) > $best) { $best = strlen($dn); $domainId = $d['id']; } }
+                        $hostingId = '';
+                        foreach (items_of($db, 'hosting') as $h) { if (isset($h['provider']) && $h['provider'] === $id && $h['uid'] === $uid) { $hostingId = $h['id']; break; } }
+                        $db['items']['websites'][] = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'name' => $host, 'url' => $host, 'status' => in_array(isset($it['status']) ? $it['status'] : '', array('active', 'pending', 'stopped'), true) ? $it['status'] : 'active',
+                            'domainId' => $domainId, 'hostingId' => $hostingId, 'provider' => $id, 'ref' => $ref, 'notes' => '');
                     } else {
                         $ref = clean_text(isset($it['ref']) ? $it['ref'] : '', 80);
                         foreach (items_of($db, 'hosting') as $h) { if ($ref !== '' && isset($h['ref']) && $h['ref'] === $ref) { continue 2; } }
@@ -536,4 +686,16 @@ function prov_add_bill(&$db, $f) {
     $db['meta']['purchaseSeq'] = $seq;
     $db['items']['purchases'][] = array('id' => new_id(), 'uid' => '', 'created' => gmdate('c'), 'number' => 'PUR-' . $seq, 'provider' => $f['provider'], 'ref' => $f['ref'], 'item' => clean_text($f['item'], 160),
         'amount' => round((float) $f['amount'], 2), 'period' => $f['period'], 'service' => $f['service'], 'client' => $f['client'], 'date' => $f['date'] !== '' ? $f['date'] : gmdate('Y-m-d'), 'status' => 'due');
+}
+
+/** After a client or admin changes a domain's DNS: when the zone was pulled from its provider, send the new list back. Returns a warning text or ''. */
+function prov_dns_autopush($domainId) {
+    $db = db_read();
+    $i = find_by(items_of($db, 'domains'), 'id', $domainId);
+    if ($i < 0) { return ''; }
+    $d = $db['items']['domains'][$i];
+    $pid = isset($d['provider']) ? (string) $d['provider'] : '';
+    if (empty($d['dnsSynced']) || !dns_can_write($pid) || !prov_has_keys($pid, prov_cfg($db, $pid))) { return ''; }
+    try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), isset($d['dns']) ? $d['dns'] : array()); return ''; }
+    catch (Exception $e) { return 'saved here, but not sent to ' . prov_name($pid) . ': ' . $e->getMessage(); }
 }
