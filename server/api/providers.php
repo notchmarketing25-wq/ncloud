@@ -157,7 +157,9 @@ function hostinger_hosting($cfg) {
     try {
         foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/hosting/v1/websites')) as $w) {
             if (!is_array($w) || empty($w['domain'])) { continue; }
-            $o[] = array('ref' => 'site:' . $w['domain'], 'kind' => 'website', 'plan' => 'Website', 'domain' => strtolower($w['domain']), 'status' => (isset($w['is_enabled']) && !$w['is_enabled']) ? 'stopped' : 'active', 'expires' => '', 'cost' => 0, 'billing' => 'monthly', 'currency' => 'USD');
+            $usedB = null;
+            foreach (array('disk_usage', 'disk_usage_bytes', 'disk_space_used', 'used_disk_space') as $k) { if (isset($w[$k]) && is_numeric($w[$k])) { $usedB = (float) $w[$k]; break; } }
+            $o[] = array('usedGb' => $usedB === null ? null : round($usedB / 1073741824, 2), 'ref' => 'site:' . $w['domain'], 'kind' => 'website', 'plan' => 'Website', 'domain' => strtolower($w['domain']), 'status' => (isset($w['is_enabled']) && !$w['is_enabled']) ? 'stopped' : 'active', 'expires' => '', 'cost' => 0, 'billing' => 'monthly', 'currency' => 'USD');
         }
     } catch (Exception $e) { /* websites are a bonus: subscriptions alone are still useful */ }
     return $o;
@@ -449,7 +451,12 @@ function prov_search($db, $q, $tldsWanted, $admin) {
     $cache = prov_cache_read();
     if (!$cache['providers']) { $cache = prov_cache_refresh($db); }
     $table = array();
-    foreach (prov_tld_table($db, $cache) as $r) { if ($r['selected']) { $table[$r['tld']] = $r; } } // only extensions you chose to sell
+    $rowsAll = prov_tld_table($db, $cache);
+    if (!$rowsAll) { fail('no provider prices yet — connect a provider in Apps first', 409); }
+    $pricingSel = prov_pricing($db);
+    $useSelected = (bool) $pricingSel['selected'];
+    // Only the extensions you chose to sell. Until you choose any, the popular ones are searched so the box still works.
+    foreach ($rowsAll as $r) { if ($useSelected ? $r['selected'] : in_array($r['tld'], $pricingSel['popular'], true)) { $table[$r['tld']] = $r; } }
     if (!$table) { fail('no extensions are enabled for sale yet — choose them in TLD pricing', 409); }
     $pricing = prov_pricing($db);
     $want = array();
@@ -578,6 +585,60 @@ function prov_route($r, $me) {
             } catch (Exception $e) { fail($e->getMessage(), 502); }
             fail('unknown action', 422);
 
+        case 'admin/domain-mail':
+            require_post();
+            $b = body(); $id = isset($b['id']) ? (string) $b['id'] : '';
+            $db = db_read();
+            $i = find_by(items_of($db, 'domains'), 'id', $id);
+            if ($i < 0) { fail('domain not found', 404); }
+            $d = $db['items']['domains'][$i];
+            // Hostinger Email: the records a domain needs to receive mail there.
+            $want = array(
+                array('type' => 'MX', 'host' => '@', 'value' => '5 mx1.hostinger.com', 'ttl' => 14400),
+                array('type' => 'MX', 'host' => '@', 'value' => '10 mx2.hostinger.com', 'ttl' => 14400),
+                array('type' => 'TXT', 'host' => '@', 'value' => 'v=spf1 include:_spf.mail.hostinger.com ~all', 'ttl' => 14400),
+            );
+            $added = db_update(function (&$db) use ($id, $want, $me) {
+                $k = find_by(items_of($db, 'domains'), 'id', $id);
+                if ($k < 0) { return 0; }
+                $dns = isset($db['items']['domains'][$k]['dns']) && is_array($db['items']['domains'][$k]['dns']) ? $db['items']['domains'][$k]['dns'] : array();
+                $n = 0;
+                foreach ($want as $w) {
+                    $has = false;
+                    foreach ($dns as $r) { if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && strtolower($r['value']) === strtolower($w['value'])) { $has = true; } }
+                    if (!$has) { $w['id'] = new_id(); $dns[] = $w; $n++; }
+                }
+                $db['items']['domains'][$k]['dns'] = $dns;
+                $db['items']['domains'][$k]['mail'] = 'hostinger';
+                log_act($db, $me, 'mail-hostinger', $db['items']['domains'][$k]['name'] . ' +' . $n);
+                return $n;
+            });
+            $warning = prov_dns_autopush($id);
+            out(array('ok' => true, 'added' => $added, 'warning' => $warning, 'webmail' => 'https://mail.hostinger.com'));
+
+        case 'admin/hosting-sync':
+            require_post();
+            $b = body(); $id = isset($b['id']) ? (string) $b['id'] : '';
+            $db = db_read();
+            $i = find_by(items_of($db, 'hosting'), 'id', $id);
+            if ($i < 0) { fail('hosting not found', 404); }
+            $h = $db['items']['hosting'][$i];
+            $pid = isset($h['provider']) ? (string) $h['provider'] : '';
+            if ($pid !== 'hostinger') { fail('only Hostinger hosting can be refreshed from the provider', 422); }
+            try { $remote = prov_run($pid, 'hosting', $db); } catch (Exception $e) { fail($e->getMessage(), 502); }
+            $updated = db_update(function (&$db) use ($remote, $h, $me) {
+                $n = 0;
+                foreach ($remote as $r) {
+                    if ($r['kind'] !== 'website' || $r['usedGb'] === null) { continue; }
+                    foreach ($db['items']['websites'] as $k => $w) {
+                        if ((isset($w['ref']) && $w['ref'] === $r['ref']) || strtolower($w['name']) === $r['domain']) { $db['items']['websites'][$k]['usedGb'] = $r['usedGb']; $n++; }
+                    }
+                }
+                log_act($db, $me, 'hosting-sync', $h['plan'] . ' x' . $n);
+                return $n;
+            });
+            out(array('ok' => true, 'updated' => $updated, 'note' => $updated === 0 ? 'The provider did not return disk usage for these websites — enter it by hand.' : ''));
+
         case 'admin/providers/test':
             require_post();
             $b = body(); $_GET['id'] = isset($b['id']) ? $b['id'] : ''; $id = prov_id();
@@ -641,7 +702,7 @@ function prov_route($r, $me) {
                         $hostingId = '';
                         foreach (items_of($db, 'hosting') as $h) { if (isset($h['provider']) && $h['provider'] === $id && $h['uid'] === $uid) { $hostingId = $h['id']; break; } }
                         $db['items']['websites'][] = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'name' => $host, 'url' => $host, 'status' => in_array(isset($it['status']) ? $it['status'] : '', array('active', 'pending', 'stopped'), true) ? $it['status'] : 'active',
-                            'domainId' => $domainId, 'hostingId' => $hostingId, 'provider' => $id, 'ref' => $ref, 'notes' => '');
+                            'domainId' => $domainId, 'hostingId' => $hostingId, 'provider' => $id, 'ref' => $ref, 'notes' => '', 'diskGb' => 0, 'usedGb' => isset($it['usedGb']) && is_numeric($it['usedGb']) ? (float) $it['usedGb'] : 0);
                     } else {
                         $ref = clean_text(isset($it['ref']) ? $it['ref'] : '', 80);
                         foreach (items_of($db, 'hosting') as $h) { if ($ref !== '' && isset($h['ref']) && $h['ref'] === $ref) { continue 2; } }

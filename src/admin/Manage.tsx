@@ -1,10 +1,10 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSite, useCurrency } from '../site/settings';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
 import type { DnsRec, Lead, Settings, Ticket } from '../lib/types';
-import { day, InvoiceTag, Page, StatusTag, Table, TicketTag } from '../ui';
+import { day, InvoiceTag, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
 
 type Item = { id: string; uid: string; [k: string]: unknown };
@@ -54,16 +54,21 @@ function DnsAdmin({ domainId, records, onChange }: { domainId: string; records: 
 /* ───────── Generic resource manager ───────── */
 type Col = { label: [string, string]; render: (it: Item, owner: string) => ReactNode };
 
-function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions }: {
+function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions, detail }: {
   res: string; title: [string, string]; newLabel: [string, string]; fields: Field[]; defaults: Record<string, unknown>; columns: Col[];
   actions?: (it: Item, run: (fn: () => Promise<unknown>, done: string) => Promise<boolean>) => ReactNode;
+  /** Where a row opens (a detail page), when the resource has one. */
+  detail?: (it: Item) => string;
 }) {
   const { t } = useI18n();
+  const nav = useNavigate();
   const users = useUsers();
   const [items, setItems] = useState<Item[]>([]);
   const [form, setForm] = useState<Record<string, unknown> | null>(null);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [tab, setTab] = useState('all');
+  const [q, setQ] = useState('');
   const owner = (uid: string) => users.find((u) => u.id === uid)?.name ?? '-';
 
   const load = useCallback(() => { api<{ items: Item[] }>('admin/items', undefined, { res }).then((r) => setItems(r.items)).catch((e) => setErr(errText(e, t))); }, [res, t]);
@@ -75,49 +80,72 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
     if (form && await run(() => post('admin/item-save', { item: form }, { res }), t('تم الحفظ.', 'Saved.'))) setForm(null);
   };
   const liveForm = form && form.id ? items.find((i) => i.id === form.id) : null;
+  const hasStatus = items.some((i) => typeof i.status === 'string');
+  const statuses = Array.from(new Set(items.map((i) => String(i.status ?? '')).filter(Boolean)));
+  const count = (s: string) => items.filter((i) => s === 'all' || i.status === s).length;
+  const shown = items.filter((i) => (tab === 'all' || i.status === tab) && (!q.trim() || JSON.stringify(Object.values(i).filter((v) => typeof v === 'string' || typeof v === 'number')).toLowerCase().includes(q.trim().toLowerCase()) || owner(i.uid).toLowerCase().includes(q.trim().toLowerCase())));
+  const stLabel = (s: string) => ({ active: t('نشط', 'Active'), pending: t('قيد التفعيل', 'Pending'), expiring: t('قرب ينتهي', 'Expiring'), stopped: t('متوقف', 'Stopped'), due: t('مستحقة', 'Due'), paid: t('مدفوعة', 'Paid'), void: t('ملغاة', 'Void') } as Record<string, string>)[s] ?? s;
+  const open = (it: Item) => { setOk(''); setForm({ ...it }); };
 
   return (
-    <Page title={t(title[0], title[1])} action={<button className="btn btn-primary btn-sm" onClick={() => setForm(form ? null : { uid: users.find((u) => u.role === 'client')?.id ?? users[0]?.id ?? '', ...defaults })}>{form ? t('إلغاء', 'Cancel') : t(newLabel[0], newLabel[1])}</button>}>
+    <Page title={t(title[0], title[1])} action={<button className="btn btn-accent btn-sm" onClick={() => setForm({ uid: users.find((u) => u.role === 'client')?.id ?? users[0]?.id ?? '', ...defaults })}>{t(newLabel[0], newLabel[1])}</button>}>
       <Notice err={err} ok={ok} />
+      <div className="stat-strip">
+        <div><span>{t('الإجمالي', 'Total')}</span><b className="latin">{items.length}</b></div>
+        {statuses.slice(0, 3).map((s) => <div key={s}><span>{stLabel(s)}</span><b className="latin">{count(s)}</b></div>)}
+        <div><span>{t('العملاء', 'Clients')}</span><b className="latin">{new Set(items.map((i) => i.uid)).size}</b></div>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="cust-bar">
+          {hasStatus ? <div className="tabs tabs-bar" role="tablist">{(['all', ...statuses]).map((s) => <button key={s} role="tab" aria-selected={tab === s} className={tab === s ? 'on' : ''} onClick={() => setTab(s)}>{s === 'all' ? t('الكل', 'All') : stLabel(s)} <span className="latin">({count(s)})</span></button>)}</div> : <span />}
+          <input className="input" style={{ height: 40, width: 220 }} placeholder={t('ابحث', 'Search')} aria-label={t('بحث', 'Search')} value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+          <table className="tbl">
+            <thead><tr>{[...columns.map((c) => t(c.label[0], c.label[1])), t('العميل', 'Client'), ''].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+            <tbody>
+              {shown.map((it) => (
+                <tr key={it.id} className={detail ? 'row-link' : ''} onClick={detail ? () => nav(detail(it)) : undefined}>
+                  {columns.map((c, i) => <td key={i}>{c.render(it, owner(it.uid))}</td>)}
+                  <td>{owner(it.uid)}</td>
+                  <td onClick={(e) => e.stopPropagation()}><div className="row-actions">
+                    {actions?.(it, run)}
+                    <button className="btn btn-ghost btn-sm" onClick={() => open(it)}>{t('تعديل', 'Edit')}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف العنصر ده؟', 'Delete this item?'))) void run(() => post('admin/item-delete', { id: it.id }, { res }), t('تم الحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>
+                  </div></td>
+                </tr>
+              ))}
+              {shown.length === 0 && <tr><td colSpan={columns.length + 2}><div className="empty-note">{items.length === 0 ? t('مفيش عناصر لسه.', 'Nothing here yet.') : t('مفيش نتائج.', 'No results.')}</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
       {form && (
-        <form className="card admin-form" onSubmit={save}>
-          <div className="field"><label htmlFor="f-uid">{t('العميل', 'Client')}</label>
-            <select id="f-uid" className="select" required value={String(form.uid ?? '')} onChange={(e) => setForm({ ...form, uid: e.target.value })}>
-              <option value="" disabled>{t('اختر عميل', 'Choose a client')}</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}
-            </select></div>
-          {fields.map((f) => (
-            <div className="field" key={f.key}>
-              <label htmlFor={`f-${f.key}`}>{t(f.label[0], f.label[1])}</label>
-              {f.type === 'select' ? (
-                <select id={`f-${f.key}`} className="select" value={String(form[f.key] ?? '')} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}>{f.options!.map(([v, ar, en]) => <option key={v} value={v}>{t(ar, en)}</option>)}</select>
-              ) : f.type === 'bool' ? (
-                <label className="check"><input id={`f-${f.key}`} type="checkbox" checked={Boolean(form[f.key])} onChange={(e) => setForm({ ...form, [f.key]: e.target.checked })} /> {t('نعم', 'Yes')}</label>
-              ) : (
-                <input id={`f-${f.key}`} className={`input${f.latin ? ' latin' : ''}`} type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'} step={f.type === 'number' ? 'any' : undefined} min={f.type === 'number' ? 0 : undefined}
-                  required={f.req} value={String(form[f.key] ?? '')} onChange={(e) => setForm({ ...form, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })} />
-              )}
-            </div>
-          ))}
-          <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
-          {res === 'domains' && liveForm && <div style={{ gridColumn: '1 / -1' }}><DnsAdmin domainId={liveForm.id} records={(liveForm.dns as DnsRec[]) ?? []} onChange={load} /></div>}
-        </form>
+        <Modal title={form.id ? t('تعديل', 'Edit') : t(newLabel[0], newLabel[1])} wide onClose={() => setForm(null)}>
+          <form className="admin-form" style={{ marginBlock: 0 }} onSubmit={save}>
+            <div className="field"><label htmlFor="f-uid">{t('العميل', 'Client')}</label>
+              <select id="f-uid" className="select" required value={String(form.uid ?? '')} onChange={(e) => setForm({ ...form, uid: e.target.value })}>
+                <option value="" disabled>{t('اختر عميل', 'Choose a client')}</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}
+              </select></div>
+            {fields.map((f) => (
+              <div className="field" key={f.key}>
+                <label htmlFor={`f-${f.key}`}>{t(f.label[0], f.label[1])}</label>
+                {f.type === 'select' ? (
+                  <select id={`f-${f.key}`} className="select" value={String(form[f.key] ?? '')} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}>{f.options!.map(([v, ar, en]) => <option key={v} value={v}>{t(ar, en)}</option>)}</select>
+                ) : f.type === 'bool' ? (
+                  <label className="check"><input id={`f-${f.key}`} type="checkbox" checked={Boolean(form[f.key])} onChange={(e) => setForm({ ...form, [f.key]: e.target.checked })} /> {t('نعم', 'Yes')}</label>
+                ) : (
+                  <input id={`f-${f.key}`} className={`input${f.latin ? ' latin' : ''}`} type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'} step={f.type === 'number' ? 'any' : undefined} min={f.type === 'number' ? 0 : undefined}
+                    required={f.req} value={String(form[f.key] ?? '')} onChange={(e) => setForm({ ...form, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })} />
+                )}
+              </div>
+            ))}
+            <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
+            {res === 'domains' && liveForm && <div style={{ gridColumn: '1 / -1' }}><DnsAdmin domainId={liveForm.id} records={(liveForm.dns as DnsRec[]) ?? []} onChange={load} /></div>}
+          </form>
+        </Modal>
       )}
-      <Table head={[...columns.map((c) => t(c.label[0], c.label[1])), t('العميل', 'Client'), '']} empty={items.length === 0 ? t('مفيش عناصر لسه.', 'Nothing here yet.') : undefined}>
-        {items.map((it) => (
-          <Fragment key={it.id}>
-            <tr>
-              {columns.map((c, i) => <td key={i}>{c.render(it, owner(it.uid))}</td>)}
-              <td>{owner(it.uid)}</td>
-              <td><div className="row-actions">
-                {actions?.(it, run)}
-                <button className="btn btn-ghost btn-sm" onClick={() => { setOk(''); setForm({ ...it }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t('تعديل', 'Edit')}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف العنصر ده؟', 'Delete this item?'))) void run(() => post('admin/item-delete', { id: it.id }, { res }), t('تم الحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>
-              </div></td>
-            </tr>
-          </Fragment>
-        ))}
-      </Table>
     </Page>
   );
 }
@@ -137,7 +165,7 @@ function CostCell({ it }: { it: Item }) {
 const status = (it: Item) => <StatusTag s={it.status as 'active'} />;
 
 export const AdminDomains = () => (
-  <ResourcePage res="domains" title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
+  <ResourcePage res="domains" detail={(it) => `/admin/domains/${it.id}`} title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
     fields={[
       { key: 'name', label: ['الدومين', 'Domain'], type: 'text', latin: true, req: true },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [...statusOpts.slice(0, 2), ['expiring', 'قرب ينتهي', 'Expiring'], statusOpts[2]] },
@@ -168,7 +196,7 @@ export const AdminMailboxes = () => (
 );
 
 export const AdminHosting = () => (
-  <ResourcePage res="hosting" title={['الاستضافة', 'Hosting']} newLabel={['+ خطة استضافة', '+ Hosting plan']} defaults={{ plan: 'Business', domain: '', diskGb: 50, usedGb: 0, status: 'active', provider: '', cost: 0, billing: 'monthly', expires: '', price: 0 }}
+  <ResourcePage res="hosting" detail={(it) => `/admin/hosting/${it.id}`} title={['الاستضافة', 'Hosting']} newLabel={['+ خطة استضافة', '+ Hosting plan']} defaults={{ plan: 'Business', domain: '', diskGb: 50, usedGb: 0, status: 'active', provider: '', cost: 0, billing: 'monthly', expires: '', price: 0 }}
     fields={[
       { key: 'plan', label: ['الخطة', 'Plan'], type: 'text', req: true }, { key: 'domain', label: ['الدومين', 'Domain'], type: 'text', latin: true },
       { key: 'diskGb', label: ['المساحة (GB)', 'Disk (GB)'], type: 'number' }, { key: 'usedGb', label: ['المستخدم (GB)', 'Used (GB)'], type: 'number' },

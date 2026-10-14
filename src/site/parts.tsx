@@ -94,7 +94,7 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
     setName(clean); setErr(''); setLive(null);
     if (mode !== 'server' || !clean) return;
     setBusy(true);
-    try { setLive((await api<{ results: Found[] }>('public/domain-search', undefined, { q: raw })).results); }
+    try { const r = await api<{ results: Found[]; errors?: Record<string, string> }>('public/domain-search', undefined, { q: raw }); setLive(r.results); if (r.results.length === 0 && r.errors && Object.keys(r.errors).length) setErr(t('البحث مش متاح لحظيًا، جرّب بعد شوية.', 'Search is temporarily unavailable, try again shortly.')); }
     catch (x) { setErr(x instanceof Error && /enabled|prices/.test(x.message) ? t('البحث غير متاح حاليًا.', 'Search is not available right now.') : t('تعذّر البحث، حاول تاني.', 'Search failed, please try again.')); }
     finally { setBusy(false); }
   };

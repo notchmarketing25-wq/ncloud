@@ -22,13 +22,13 @@ const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb
 
 /** Resources an admin manages for clients: field => [type, max/options, 'req'?]. Every item also has id, uid (owner), created. */
 $SCHEMA = array(
-    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500)),
+    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500), 'mail' => array('str', 20)),
     'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
     'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num')),
     'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped'))),
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
     // Websites: each one is linked to a hosting plan and a domain (and, through the domain, to its mailboxes).
-    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500)),
+    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num')),
     // Public price list shown on the website (edited in Admin → Plans). Not owned by a client.
     'plans' => array('category' => array('enum', array('hosting', 'email', 'vps', 'site', 'bundle')), 'nameAr' => array('str', 80, 'req'), 'nameEn' => array('str', 80), 'price' => array('num', 'req'), 'per' => array('enum', array('month', 'year', 'once')), 'featured' => array('bool'), 'active' => array('bool'), 'sort' => array('num'), 'specs' => array('str', 700), 'features' => array('str', 900)),
     // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
@@ -293,7 +293,7 @@ if ($r === 'admin/update' || $r === 'admin/update/restore') {
     upd_route($r, $me);
     fail('not found', 404);
 }
-if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0 || strpos($r, 'admin/domain') === 0) {
+if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0 || strpos($r, 'admin/domain') === 0 || strpos($r, 'admin/hosting-') === 0) {
     require_once __DIR__ . '/providers.php';
     $me = need_admin();
     prov_route($r, $me);
@@ -667,9 +667,19 @@ switch ($r) {
         $role = isset($b['role']) ? ($b['role'] === 'admin' ? 'admin' : 'client') : null;
         $hash = null;
         if (isset($b['password']) && $b['password'] !== '') { check_password($b['password']); $hash = password_hash($b['password'], PASSWORD_DEFAULT); }
-        $res = db_update(function (&$db) use ($id, $name, $role, $hash, $me) {
+        $phone = isset($b['phone']) ? clean_text($b['phone'], 30) : null;
+        $company = isset($b['company']) ? clean_text($b['company'], 80) : null;
+        $email = isset($b['email']) ? clean_email($b['email']) : null;
+        if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
+        $res = db_update(function (&$db) use ($id, $name, $role, $hash, $me, $phone, $company, $email) {
             $i = find_user($db, 'id', $id);
             if ($i < 0) { return 'missing'; }
+            if ($email !== null && $email !== $db['users'][$i]['email']) {
+                if (find_user($db, 'email', $email) >= 0) { return 'dup'; }
+                $db['users'][$i]['email'] = $email;
+            }
+            if ($phone !== null) { $db['users'][$i]['phone'] = $phone; }
+            if ($company !== null) { $db['users'][$i]['company'] = $company; }
             if ($role !== null && $role !== 'admin' && $db['users'][$i]['role'] === 'admin' && admin_count($db) <= 1) { return 'last-admin'; }
             if ($name !== null && $name !== '') { $db['users'][$i]['name'] = $name; }
             if ($role !== null) { $db['users'][$i]['role'] = $role; }
@@ -679,6 +689,7 @@ switch ($r) {
         });
         if ($res === 'missing') { fail('user not found', 404); }
         if ($res === 'last-admin') { fail('there must be at least one admin', 409); }
+        if ($res === 'dup') { fail('this email is already registered', 409); }
         out(array('ok' => true));
 
     case 'admin/user-delete':

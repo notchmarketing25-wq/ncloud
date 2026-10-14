@@ -278,12 +278,15 @@ export function AdminPricing() {
         <>
           <div className="card" style={{ marginTop: 16 }}>
             <h3>{t('اختار الامتدادات اللي هتبيعها', 'Choose the extensions you sell')} <span className="tag">{t(`${sel.size} مختار`, `${sel.size} selected`)}</span></h3>
+            {sel.size === 0 && <div className="form-error" style={{ marginBottom: 8 }}>{t('لسه ما اخترتش امتدادات: البحث في الموقع شغّال حاليًا على الامتدادات الشائعة (com, net, org...) لحد ما تختار وتحفظ.', 'No extensions chosen yet: the website search uses the popular ones (com, net, org…) until you choose and save.')}</div>}
             <p className="muted">{t('الامتدادات اللي مش متعلّم عليها مش بتظهر للعملاء ومش بتتبحث. لكل امتداد تقدر تحط نسبة مكسب % أو مكسب ثابت بالجنيه (الثابت بيغلب النسبة).', 'Extensions you do not tick are never shown to clients or searched. For each one you can set a margin % or a fixed profit amount (the fixed amount wins).')}</p>
             <div className="row-actions" style={{ alignItems: 'center' }}>
               <input className="input latin" style={{ maxWidth: 200, height: 40 }} value={filter} onChange={(e) => { setFilter(e.target.value); setLimit(60); }} placeholder={t('ابحث: .com', 'Filter: .com')} aria-label={t('فلتر الامتداد', 'Filter extension')} />
               <label className="check"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} /> {t('المختارة بس', 'Selected only')}</label>
               <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => new Set([...s, ...shown.map((x) => x.tld)]))}>{t(`تحديد الظاهر (${shown.length})`, `Select shown (${shown.length})`)}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setSel((s) => { const n = new Set(s); shown.forEach((x) => n.delete(x.tld)); return n; })}>{t('إلغاء تحديد الظاهر', 'Clear shown')}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSel(new Set(d.tlds.map((x) => x.tld)))}>{t(`تحديد الكل (${d.tlds.length})`, `Select all (${d.tlds.length})`)}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSel(new Set()); setPct({}); setFixed({}); }}>{t('مسح الكل وإعادة الاختيار', 'Clear all and start over')}</button>
               <button className="btn btn-accent" disabled={!dirty || busy} onClick={() => void save()}>{t('حفظ', 'Save')}</button>
             </div>
           </div>

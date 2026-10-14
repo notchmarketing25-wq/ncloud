@@ -180,3 +180,6 @@
 .app-tile-name { font-size: 17px; }
 .app-tile-desc { color: var(--nt-slate); font-size: 14.5px; min-height: 44px; }
 .app-tile-more { font-weight: 600; margin-top: 6px; }
+
+/* Detail tabs */
+.tabs-bar { margin: 14px 0; }
