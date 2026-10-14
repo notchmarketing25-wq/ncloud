@@ -33,9 +33,112 @@ function fail($msg, $code = 400) { out(array('error' => $msg), $code); }
 function nc_len($s) { return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s); }
 function nc_cut($s, $n) { return function_exists('mb_substr') ? mb_substr($s, 0, $n, 'UTF-8') : substr($s, 0, $n); }
 
-/* ───────── storage ───────── */
+/* ───────── storage ─────────
+ * Two back ends behind the same two functions (db_read / db_update):
+ *  - MySQL/MariaDB when api/data/config.php holds database settings (what install.php sets up);
+ *  - a PHP-guarded JSON file otherwise (older installs keep working).
+ */
 function db_default() { return array('users' => array(), 'attempts' => array(), 'meta' => array(), 'items' => array(), 'tickets' => array(), 'leads' => array(), 'log' => array()); }
+
+function nc_cfg() {
+    static $c = null;
+    if ($c === null) {
+        $f = NC_DATA . '/config.php';
+        $c = is_file($f) ? include $f : array();
+        if (!is_array($c)) { $c = array(); }
+    }
+    return $c;
+}
+function use_sql() { $c = nc_cfg(); return !empty($c['db']['name']); }
+function nc_pdo() {
+    static $pdo = null;
+    if ($pdo === null) {
+        $c = nc_cfg();
+        $d = $c['db'];
+        $dsn = 'mysql:host=' . $d['host'] . (!empty($d['port']) ? ';port=' . (int) $d['port'] : '') . ';dbname=' . $d['name'] . ';charset=utf8mb4';
+        $pdo = new PDO($dsn, $d['user'], $d['pass'], array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false));
+        $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+    return $pdo;
+}
+function db_fail(Exception $e) {
+    error_log('ncloud db: ' . $e->getMessage());
+    fail('database error: ' . preg_replace('/\s+/', ' ', substr($e->getMessage(), 0, 160)), 500);
+}
+function nc_j($v) { return json_encode($v, JSON_UNESCAPED_UNICODE); }
+
+/** Lists kept in their own tables: key in the db array => [table, extra columns taken from each record]. */
+function sql_lists() { return array('users' => array('nc_users', array('email', 'role')), 'tickets' => array('nc_tickets', array('uid')), 'leads' => array('nc_leads', array())); }
+
+function sql_read(PDO $pdo) {
+    $d = db_default();
+    foreach (sql_lists() as $key => $t) { foreach ($pdo->query('SELECT data FROM ' . $t[0] . ' ORDER BY seq') as $r) { $d[$key][] = json_decode($r['data'], true); } }
+    foreach ($pdo->query('SELECT res, data FROM nc_items ORDER BY seq') as $r) { $d['items'][$r['res']][] = json_decode($r['data'], true); }
+    foreach ($pdo->query('SELECT data FROM nc_log ORDER BY seq') as $r) { $d['log'][] = json_decode($r['data'], true); }
+    foreach ($pdo->query('SELECT k, v FROM nc_meta') as $r) { $d['meta'][$r['k']] = json_decode($r['v'], true); }
+    foreach ($pdo->query('SELECT k, v FROM nc_attempts') as $r) { $d['attempts'][$r['k']] = json_decode($r['v'], true); }
+    return $d;
+}
+
+/** Writes only what changed between $old and $new (rows are matched by id / key). */
+function sql_write(PDO $pdo, $old, $new) {
+    $rows = function ($list) { $m = array(); foreach ($list as $it) { $m[(string) $it['id']] = $it; } return $m; };
+    $syncRows = function ($table, $cols, $o, $n) use ($pdo, $rows) {
+        $o = $rows($o); $n = $rows($n);
+        foreach (array_diff_key($o, $n) as $id => $_) { $pdo->prepare('DELETE FROM ' . $table . ' WHERE id = ?')->execute(array($id)); }
+        foreach ($n as $id => $it) {
+            $json = nc_j($it);
+            if (isset($o[$id])) {
+                if (nc_j($o[$id]) === $json) { continue; }
+                $set = 'data = ?'; $args = array($json);
+                foreach ($cols as $c) { $set .= ', ' . $c . ' = ?'; $args[] = isset($it[$c]) ? (string) $it[$c] : ''; }
+                $args[] = $id;
+                $pdo->prepare('UPDATE ' . $table . ' SET ' . $set . ' WHERE id = ?')->execute($args);
+            } else {
+                $names = 'id, data'; $q = '?, ?'; $args = array($id, $json);
+                foreach ($cols as $c) { $names .= ', ' . $c; $q .= ', ?'; $args[] = isset($it[$c]) ? (string) $it[$c] : ''; }
+                $pdo->prepare('INSERT INTO ' . $table . ' (' . $names . ') VALUES (' . $q . ')')->execute($args);
+            }
+        }
+    };
+    foreach (sql_lists() as $key => $t) {
+        $cols = $t[1];
+        $syncRows($t[0], $cols, $old[$key], $new[$key]);
+    }
+    // items: one table, the resource name is a column
+    $flat = function ($items) { $o = array(); foreach ($items as $res => $list) { foreach ($list as $it) { $it['__res'] = $res; $o[] = $it; } } return $o; };
+    $oi = $rows($flat($old['items'])); $ni = $rows($flat($new['items']));
+    foreach (array_diff_key($oi, $ni) as $id => $_) { $pdo->prepare('DELETE FROM nc_items WHERE id = ?')->execute(array($id)); }
+    foreach ($ni as $id => $it) {
+        $res = $it['__res']; unset($it['__res']);
+        $json = nc_j($it);
+        if (isset($oi[$id])) {
+            $o = $oi[$id]; unset($o['__res']);
+            if (nc_j($o) === $json && $oi[$id]['__res'] === $res) { continue; }
+            $pdo->prepare('UPDATE nc_items SET data = ?, res = ?, uid = ? WHERE id = ?')->execute(array($json, $res, isset($it['uid']) ? (string) $it['uid'] : '', $id));
+        } else {
+            $pdo->prepare('INSERT INTO nc_items (id, res, uid, data) VALUES (?, ?, ?, ?)')->execute(array($id, $res, isset($it['uid']) ? (string) $it['uid'] : '', $json));
+        }
+    }
+    if (nc_j($old['log']) !== nc_j($new['log'])) { // a short, capped list: rewritten as a whole
+        $pdo->exec('DELETE FROM nc_log');
+        $ins = $pdo->prepare('INSERT INTO nc_log (data) VALUES (?)');
+        foreach ($new['log'] as $l) { $ins->execute(array(nc_j($l))); }
+    }
+    foreach (array('meta' => 'nc_meta', 'attempts' => 'nc_attempts') as $key => $table) {
+        $col = $key === 'meta' ? 'v' : 'v';
+        foreach (array_diff_key($old[$key], $new[$key]) as $k => $_) { $pdo->prepare('DELETE FROM ' . $table . ' WHERE k = ?')->execute(array((string) $k)); }
+        foreach ($new[$key] as $k => $v) {
+            if (isset($old[$key][$k]) && nc_j($old[$key][$k]) === nc_j($v)) { continue; }
+            $pdo->prepare('REPLACE INTO ' . $table . ' (k, ' . $col . ') VALUES (?, ?)')->execute(array((string) $k, nc_j($v)));
+        }
+    }
+}
+
 function db_read() {
+    if (use_sql()) {
+        try { return sql_read(nc_pdo()); } catch (Exception $e) { db_fail($e); }
+    }
     if (!is_file(NC_DB)) { return db_default(); }
     $raw = file_get_contents(NC_DB);
     $nl = strpos($raw, "\n");
@@ -46,6 +149,26 @@ function db_read() {
 }
 /** Locked read-modify-write. $fn receives the db array by reference and may return a value. */
 function db_update($fn) {
+    if (use_sql()) {
+        $pdo = null; $locked = false;
+        try {
+            $pdo = nc_pdo();
+            $locked = (int) $pdo->query("SELECT GET_LOCK('nc_db', 10)")->fetchColumn() === 1;
+            if (!$locked) { fail('storage busy', 503); }
+            $pdo->beginTransaction();
+            $old = sql_read($pdo);
+            $db = $old;
+            $ret = $fn($db);
+            sql_write($pdo, $old, $db);
+            $pdo->commit();
+            $pdo->query("SELECT RELEASE_LOCK('nc_db')");
+            return $ret;
+        } catch (Exception $e) {
+            if ($pdo && $pdo->inTransaction()) { $pdo->rollBack(); }
+            if ($pdo && $locked) { try { $pdo->query("SELECT RELEASE_LOCK('nc_db')"); } catch (Exception $x) { /* connection gone */ } }
+            db_fail($e);
+        }
+    }
     $lock = fopen(NC_DATA . '/db.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX)) { fail('storage busy', 503); }
     $db = db_read();
@@ -159,7 +282,7 @@ switch ($r) {
     /* ── public ── */
     case 'status':
         $db = db_read();
-        out(array('installed' => true, 'site' => meta_get($db, 'site', '')));
+        out(array('installed' => true, 'storage' => use_sql() ? 'mysql' : 'file', 'site' => meta_get($db, 'site', '')));
 
     case 'public/settings':
         $db = db_read();

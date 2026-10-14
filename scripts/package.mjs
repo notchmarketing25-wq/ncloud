@@ -21,7 +21,7 @@ if (!files['index.html']) throw new Error('dist/index.html missing: run `npm run
 mkdirSync(join(root, 'release'), { recursive: true });
 
 // The one-file installer also carries the PHP API.
-const installFiles = { ...files, 'api/index.php': new Uint8Array(readFileSync(join(root, 'server', 'api', 'index.php'))) };
+const installFiles = { ...files, 'api/index.php': new Uint8Array(readFileSync(join(root, 'server', 'api', 'index.php'))), 'api/schema.php': new Uint8Array(readFileSync(join(root, 'server', 'api', 'schema.php'))) };
 
 const php = Object.entries(installFiles)
   .map(([path, data]) => `  '${path.replace(/'/g, "\\'")}' => '${Buffer.from(data).toString('base64')}',`)

@@ -2,7 +2,8 @@
 /**
  * Notch Cloud Services: one-file installer (v__VERSION__).
  * Upload this single file to any PHP hosting (PHP 7.0+), open it in the browser, create the admin account, press Install.
- * No database: accounts are stored in api/data (PHP-guarded, never public). The installer can delete itself afterwards.
+ * Creates the MySQL/MariaDB tables, connects the API to the database and creates the admin account.
+ * (Without a database the accounts can also be kept in api/data, PHP-guarded and never public.) The installer can delete itself afterwards.
  */
 $FILES = array(
 __FILES__
@@ -24,9 +25,10 @@ $dir = __DIR__;
 $data = $dir . '/api/data';
 $locked = is_file($data . '/installed.lock');
 $isSource = is_file($dir . '/src/main.tsx'); // the repo was uploaded as is (source files, no build)
-$exists = file_exists($dir . '/index.html') && !$isSource;
+$exists = file_exists($dir . '/index.html') && !$isSource && !is_file($dir . '/api/index.php'); // our own earlier attempt is not a foreign site
 $phpOk = version_compare(PHP_VERSION, '7.0.0', '>=');
 $jsonOk = function_exists('json_encode') && function_exists('password_hash');
+$pdoOk = class_exists('PDO') && in_array('mysql', PDO::getAvailableDrivers(), true);
 $writable = is_writable($dir);
 $action = isset($_POST['action']) ? $_POST['action'] : '';
 $tokenOk = isset($_POST['tok']) && hash_equals($tok, (string) $_POST['tok']);
@@ -36,7 +38,39 @@ $deleted = false;
 $updated = false;
 $written = 0;
 $cleaned = 0;
-$f = array('site' => post('site'), 'name' => post('name'), 'email' => strtolower(post('email')));
+$f = array('site' => post('site'), 'name' => post('name'), 'email' => strtolower(post('email')),
+    'storage' => post('storage') === 'file' ? 'file' : 'mysql',
+    'dbhost' => post('dbhost') !== '' ? post('dbhost') : 'localhost', 'dbport' => post('dbport'), 'dbname' => post('dbname'), 'dbuser' => post('dbuser'), 'dbpass' => isset($_POST['dbpass']) ? (string) $_POST['dbpass'] : '');
+$dbTest = '';
+
+/** Connects to MySQL; creates the database when it does not exist and the account may. Returns [PDO|null, message]. */
+function db_connect($f, $create) {
+    $port = $f['dbport'] !== '' ? ';port=' . (int) $f['dbport'] : '';
+    $opts = array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 8);
+    try {
+        return array(new PDO('mysql:host=' . $f['dbhost'] . $port . ';dbname=' . $f['dbname'] . ';charset=utf8mb4', $f['dbuser'], $f['dbpass'], $opts), '');
+    } catch (PDOException $e) {
+        $code = (int) (isset($e->errorInfo[1]) ? $e->errorInfo[1] : 0);
+        if ($code === 1049 && $create) { // unknown database: try to create it
+            try {
+                $root = new PDO('mysql:host=' . $f['dbhost'] . $port . ';charset=utf8mb4', $f['dbuser'], $f['dbpass'], $opts);
+                $root->exec('CREATE DATABASE IF NOT EXISTS `' . str_replace('`', '', $f['dbname']) . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+                return array(new PDO('mysql:host=' . $f['dbhost'] . $port . ';dbname=' . $f['dbname'] . ';charset=utf8mb4', $f['dbuser'], $f['dbpass'], $opts), '');
+            } catch (PDOException $e2) { $e = $e2; $code = (int) (isset($e->errorInfo[1]) ? $e->errorInfo[1] : 0); }
+        }
+        if ($code === 1045) { return array(null, t('اسم المستخدم أو كلمة السر بتاعة قاعدة البيانات غلط.', 'The database username or password is wrong.')); }
+        if ($code === 1049) { return array(null, t('قاعدة البيانات دي مش موجودة. أنشئها من لوحة الاستضافة (MySQL Databases) وحط اسمها هنا.', 'That database does not exist. Create it in your hosting panel (MySQL Databases) and enter its name here.')); }
+        if ($code === 1044) { return array(null, t('المستخدم ده مالوش صلاحية على قاعدة البيانات دي. اربطه بيها من لوحة الاستضافة.', 'That user has no access to this database. Attach the user to it in your hosting panel.')); }
+        if ($code === 2002 || $code === 2006) { return array(null, t('مش قادر أوصل لسيرفر قاعدة البيانات. جرّب Host = localhost (أو 127.0.0.1).', 'Cannot reach the database server. Try Host = localhost (or 127.0.0.1).')); }
+        return array(null, t('فشل الاتصال بقاعدة البيانات: ', 'Database connection failed: ') . preg_replace('/\s+/', ' ', substr($e->getMessage(), 0, 200)));
+    }
+}
+function db_fields_ok($f, &$errors) {
+    if ($f['dbname'] === '' || $f['dbuser'] === '') { $errors[] = t('اكتب اسم قاعدة البيانات واسم المستخدم.', 'Enter the database name and user.'); return false; }
+    if (!preg_match('/^[A-Za-z0-9_.\-]+$/', $f['dbname'])) { $errors[] = t('اسم قاعدة البيانات فيه رموز غير مسموحة.', 'The database name has characters that are not allowed.'); return false; }
+    if (!preg_match('/^[A-Za-z0-9_.\-:\/]+$/', $f['dbhost'])) { $errors[] = t('الـ Host غير صالح.', 'The host is not valid.'); return false; }
+    return true;
+}
 
 /** Repo files that must not live on the web root. Exact names only; nothing else is ever deleted. */
 function leftover_names() { return array('src', 'scripts', 'server', 'release', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.tsbuildinfo', 'vite.config.ts', 'README.md', 'INSTALL.md', '.gitignore', '.env.clean', '.env.development', 'node_modules'); }
@@ -68,6 +102,12 @@ function write_site($FILES, $dir, &$errors, &$written) {
 
 if ($action !== '' && !$tokenOk) {
     $errors[] = t('انتهت الجلسة، حدّث الصفحة وحاول تاني.', 'Session expired, reload the page and try again.');
+} elseif ($action === 'testdb' && !$locked) {
+    if (!$pdoOk) { $errors[] = t('إضافة pdo_mysql مش مفعّلة على الاستضافة دي.', 'The pdo_mysql extension is not enabled on this host.'); }
+    elseif (db_fields_ok($f, $errors)) {
+        list($pdoT, $msgT) = db_connect($f, false);
+        if ($pdoT) { $dbTest = t('الاتصال بقاعدة البيانات ناجح.', 'Connected to the database successfully.'); } else { $errors[] = $msgT; }
+    }
 } elseif ($action === 'install' && !$locked) {
     $pass = isset($_POST['password']) ? (string) $_POST['password'] : '';
     $pass2 = isset($_POST['password2']) ? (string) $_POST['password2'] : '';
@@ -78,18 +118,41 @@ if ($action !== '' && !$tokenOk) {
     if ($pass !== $pass2) { $errors[] = t('كلمتا السر غير متطابقتين.', 'The passwords do not match.'); }
     if ($exists && empty($_POST['overwrite'])) { $errors[] = t('فيه موقع موجود في الفولدر ده. علّم على "اكتب فوقه" لو عايز تستبدله.', 'A site already exists in this folder. Tick "overwrite" to replace it.'); }
     if (!$writable) { $errors[] = t('الفولدر ده مش قابل للكتابة. اضبط الصلاحيات على 755 وحاول تاني.', 'This folder is not writable. Set its permissions to 755 and try again.'); }
+    $pdoI = null;
+    if (!$errors && $f['storage'] === 'mysql') {
+        if (!$pdoOk) { $errors[] = t('إضافة pdo_mysql مش مفعّلة على الاستضافة دي. فعّلها أو اختار التخزين في ملف.', 'The pdo_mysql extension is not enabled on this host. Enable it, or choose file storage.'); }
+        elseif (db_fields_ok($f, $errors)) { list($pdoI, $msgI) = db_connect($f, true); if (!$pdoI) { $errors[] = $msgI; } }
+    }
     if (!$errors && write_site($FILES, $dir, $errors, $written)) {
         if (!is_dir($data) && !@mkdir($data, 0755, true)) { $errors[] = t('تعذّر إنشاء فولدر البيانات.', 'Could not create the data folder.'); }
         else {
             @file_put_contents($data . '/.htaccess', "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nOrder allow,deny\nDeny from all\n</IfModule>\n");
             @file_put_contents($data . '/index.html', '');
-            $db = array(
-                'users' => array(array('id' => function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)), 'name' => $nameClean, 'email' => $f['email'], 'role' => 'admin', 'hash' => password_hash($pass, PASSWORD_DEFAULT), 'created' => gmdate('c'))),
-                'attempts' => new stdClass(),
-                'meta' => array('site' => trim(strip_tags($f['site'])), 'version' => '__VERSION__'),
-            );
-            $ok = @file_put_contents($data . '/db.php', "<?php http_response_code(404); exit; ?>\n" . json_encode($db, JSON_UNESCAPED_UNICODE), LOCK_EX);
-            if ($ok === false) { $errors[] = t('تعذّرت كتابة بيانات الأدمن.', 'Could not write the admin data.'); }
+            $userRec = array('id' => function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)), 'name' => $nameClean, 'email' => $f['email'], 'role' => 'admin', 'hash' => password_hash($pass, PASSWORD_DEFAULT), 'created' => gmdate('c'));
+            $meta = array('site' => trim(strip_tags($f['site'])), 'version' => '__VERSION__');
+            $ok = false;
+            if ($f['storage'] === 'mysql') {
+                try {
+                    require_once $dir . '/api/schema.php';
+                    nc_schema($pdoI);
+                    $have = (int) $pdoI->query('SELECT COUNT(*) FROM nc_users')->fetchColumn();
+                    if ($have > 0 && empty($_POST['wipe'])) { throw new Exception(t('قاعدة البيانات دي فيها حسابات بالفعل. علّم على "امسح الحسابات القديمة" لو عايز تبدأ من جديد.', 'This database already has accounts. Tick "wipe old accounts" to start fresh.')); }
+                    $pdoI->beginTransaction();
+                    foreach (array('nc_users', 'nc_items', 'nc_tickets', 'nc_leads', 'nc_log', 'nc_meta', 'nc_attempts') as $tb) { $pdoI->exec('DELETE FROM ' . $tb); }
+                    $pdoI->prepare('INSERT INTO nc_users (id, email, role, data) VALUES (?, ?, ?, ?)')->execute(array($userRec['id'], $userRec['email'], 'admin', json_encode($userRec, JSON_UNESCAPED_UNICODE)));
+                    foreach ($meta as $mk => $mv) { $pdoI->prepare('INSERT INTO nc_meta (k, v) VALUES (?, ?)')->execute(array($mk, json_encode($mv, JSON_UNESCAPED_UNICODE))); }
+                    $pdoI->commit();
+                    $cfg = "<?php\nif (!defined('NC_DATA')) { http_response_code(404); exit; }\nreturn " . var_export(array('db' => array('host' => $f['dbhost'], 'port' => $f['dbport'], 'name' => $f['dbname'], 'user' => $f['dbuser'], 'pass' => $f['dbpass'])), true) . ";\n";
+                    $ok = @file_put_contents($data . '/config.php', $cfg, LOCK_EX);
+                    @chmod($data . '/config.php', 0600);
+                    if ($ok === false) { $errors[] = t('تعذّرت كتابة إعدادات قاعدة البيانات (api/data/config.php).', 'Could not write the database settings (api/data/config.php).'); }
+                } catch (Exception $e) { $ok = false; if ($pdoI->inTransaction()) { $pdoI->rollBack(); } $errors[] = $e->getMessage(); }
+            } else {
+                $db = array('users' => array($userRec), 'attempts' => new stdClass(), 'meta' => $meta);
+                $ok = @file_put_contents($data . '/db.php', "<?php http_response_code(404); exit; ?>\n" . json_encode($db, JSON_UNESCAPED_UNICODE), LOCK_EX);
+                if ($ok === false) { $errors[] = t('تعذّرت كتابة بيانات الأدمن.', 'Could not write the admin data.'); }
+            }
+            if ($ok === false) { /* error already recorded */ }
             else {
                 @chmod($data . '/db.php', 0600);
                 @file_put_contents($data . '/installed.lock', gmdate('c'));
@@ -146,7 +209,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
     <div class="row"><a class="btn v" href="<?= h($loginUrl) ?>"><?= h(t('تسجيل الدخول', 'Sign in')) ?></a><a class="btn g" href="<?= h($siteUrl) ?>"><?= h(t('افتح الموقع', 'Open the site')) ?></a></div>
 <?php elseif ($done || $updated): ?>
     <h1><?= h($done ? t('اتثبّت بنجاح', 'Installed successfully') : t('اتحدّث بنجاح', 'Updated successfully')) ?></h1>
-    <div class="good"><?= h(t('تم نسخ ', 'Wrote ')) ?><?= (int) $written ?><?= h(t(' ملف.', ' files.')) ?><?= $done ? ' ' . h(t('وتم إنشاء حساب الأدمن.', 'The admin account was created.')) : ' ' . h(t('بياناتك لم تتغيّر.', 'Your data was not touched.')) ?><?= $cleaned ? ' ' . h(t('ومسحنا ', 'Removed ')) . (int) $cleaned . h(t(' عنصر من ملفات المصدر.', ' leftover source items.')) : '' ?></div>
+    <div class="good"><?= h(t('تم نسخ ', 'Wrote ')) ?><?= (int) $written ?><?= h(t(' ملف.', ' files.')) ?><?= $done ? ' ' . h($f['storage'] === 'mysql' ? t('وتم إنشاء الجداول وربط قاعدة البيانات وإنشاء حساب الأدمن.', 'The tables were created, the database is connected and the admin account was created.') : t('وتم إنشاء حساب الأدمن.', 'The admin account was created.')) : ' ' . h(t('بياناتك لم تتغيّر.', 'Your data was not touched.')) ?><?= $cleaned ? ' ' . h(t('ومسحنا ', 'Removed ')) . (int) $cleaned . h(t(' عنصر من ملفات المصدر.', ' leftover source items.')) : '' ?></div>
     <ul id="chk"></ul>
     <script>
     (function(){
@@ -174,14 +237,27 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bid
       <button class="btn g" name="action" value="delete" type="submit"><?= h(t('احذف ملف التثبيت', 'Delete installer')) ?></button></form>
 <?php else: ?>
     <h1><?= h(t('تثبيت Notch Cloud Services', 'Install Notch Cloud Services')) ?></h1>
-    <p><?= h(t('هتنشئ حساب الأدمن وتتنسخ ملفات الموقع في نفس الفولدر. مفيش قاعدة بيانات.', 'You create the admin account and the site files are written into this folder. No database needed.')) ?></p>
+    <p><?= h(t('هيتم إنشاء جداول قاعدة البيانات وربط الـ API بيها وإنشاء حساب الأدمن، وتتنسخ ملفات الموقع في نفس الفولدر.', 'This creates the database tables, connects the API to the database, creates the admin account and writes the site files into this folder.')) ?></p>
 <?php foreach ($errors as $e): ?><div class="err"><?= h($e) ?></div><?php endforeach; ?>
     <ul>
       <li><span>PHP</span><span class="<?= ($phpOk && $jsonOk) ? 'ok' : 'bad' ?>"><?= h(PHP_VERSION) ?><?= $phpOk ? '' : ' (7.0+)' ?></span></li>
+      <li><span>MySQL (pdo_mysql)</span><span class="<?= $pdoOk ? 'ok' : 'bad' ?>"><?= $pdoOk ? h(t('متاح', 'Available')) : h(t('مش متاح', 'Not available')) ?></span></li>
       <li><span><?= h(t('صلاحية الكتابة', 'Folder writable')) ?></span><span class="<?= $writable ? 'ok' : 'bad' ?>"><?= $writable ? h(t('تمام', 'OK')) : h(t('لا', 'No')) ?></span></li>
       <li><span><?= h(t('الفولدر', 'Folder')) ?></span><code><?= h($dir) ?></code></li>
     </ul>
+    <?php if ($dbTest): ?><div class="good"><?= h($dbTest) ?></div><?php endif; ?>
     <form method="post" style="display:grid;gap:14px" autocomplete="off"><input type="hidden" name="tok" value="<?= h($tok) ?>">
+      <h2><?= h(t('قاعدة البيانات', 'Database')) ?></h2>
+      <label class="c"><input type="radio" name="storage" value="mysql" <?= $f['storage'] === 'mysql' ? 'checked' : '' ?>> <?= h(t('MySQL / MariaDB (موصى به)', 'MySQL / MariaDB (recommended)')) ?></label>
+      <p><?= h(t('أنشئ قاعدة بيانات ومستخدم من لوحة الاستضافة (MySQL Databases) وحط بياناتهم هنا. لو الحساب يسمح هننشئ القاعدة بنفسنا.', 'Create a database and user in your hosting panel (MySQL Databases) and enter them here. If the account is allowed to, we create the database ourselves.')) ?></p>
+      <div class="field"><label for="dbhost"><?= h(t('Host', 'Host')) ?></label><input id="dbhost" name="dbhost" type="text" class="l" value="<?= h($f['dbhost']) ?>" placeholder="localhost"></div>
+      <div class="field"><label for="dbport"><?= h(t('Port (اختياري)', 'Port (optional)')) ?></label><input id="dbport" name="dbport" type="text" class="l" value="<?= h($f['dbport']) ?>" placeholder="3306"></div>
+      <div class="field"><label for="dbname"><?= h(t('اسم قاعدة البيانات', 'Database name')) ?></label><input id="dbname" name="dbname" type="text" class="l" value="<?= h($f['dbname']) ?>"></div>
+      <div class="field"><label for="dbuser"><?= h(t('مستخدم قاعدة البيانات', 'Database user')) ?></label><input id="dbuser" name="dbuser" type="text" class="l" value="<?= h($f['dbuser']) ?>"></div>
+      <div class="field"><label for="dbpass"><?= h(t('كلمة سر قاعدة البيانات', 'Database password')) ?></label><input id="dbpass" name="dbpass" type="password" class="l" value="<?= h($f['dbpass']) ?>"></div>
+      <label class="c"><input type="checkbox" name="wipe" value="1"> <?= h(t('امسح الحسابات القديمة لو القاعدة فيها بيانات', 'Wipe old accounts if the database already has data')) ?></label>
+      <div class="row"><button class="btn g" name="action" value="testdb" type="submit" formnovalidate <?= $pdoOk ? '' : 'disabled' ?>><?= h(t('اختبار الاتصال', 'Test connection')) ?></button></div>
+      <label class="c"><input type="radio" name="storage" value="file" <?= $f['storage'] === 'file' ? 'checked' : '' ?>> <?= h(t('من غير قاعدة بيانات (تخزين في ملف)', 'No database (store in a file)')) ?></label>
       <h2><?= h(t('حساب الأدمن', 'Admin account')) ?></h2>
       <div class="field"><label for="site"><?= h(t('اسم الشركة (اختياري)', 'Company name (optional)')) ?></label><input id="site" name="site" type="text" value="<?= h($f['site']) ?>"></div>
       <div class="field"><label for="name"><?= h(t('الاسم', 'Name')) ?></label><input id="name" name="name" type="text" required value="<?= h($f['name']) ?>"></div>
