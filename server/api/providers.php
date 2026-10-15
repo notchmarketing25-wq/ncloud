@@ -739,39 +739,9 @@ function prov_route($r, $me) {
             $i = find_by(items_of($db, 'domains'), 'id', $id);
             if ($i < 0) { fail('domain not found', 404); }
             $d = $db['items']['domains'][$i];
-            // Hostinger Email: the records a domain needs to receive mail there.
-            $want = array(
-                array('type' => 'MX', 'host' => '@', 'value' => '5 mx1.hostinger.com', 'ttl' => 14400),
-                array('type' => 'MX', 'host' => '@', 'value' => '10 mx2.hostinger.com', 'ttl' => 14400),
-                array('type' => 'TXT', 'host' => '@', 'value' => 'v=spf1 include:_spf.mail.hostinger.com ~all', 'ttl' => 14400),
-            );
-            $added = db_update(function (&$db) use ($id, $want, $me) {
-                $k = find_by(items_of($db, 'domains'), 'id', $id);
-                if ($k < 0) { return 0; }
-                $dns = isset($db['items']['domains'][$k]['dns']) && is_array($db['items']['domains'][$k]['dns']) ? $db['items']['domains'][$k]['dns'] : array();
-                $n = 0;
-                foreach ($want as $w) {
-                    $has = false;
-                    foreach ($dns as $ri => $r) {
-                        if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && dns_norm($r['value']) === dns_norm($w['value'])) { $has = true; }
-                        // A domain may have only ONE SPF record: when it already has one (Google, another mailer…) add Hostinger to it instead of creating a second.
-                        if (!$has && $w['type'] === 'TXT' && $r['type'] === 'TXT' && $r['host'] === $w['host'] && stripos(trim(str_replace('"', '', $r['value'])), 'v=spf1') === 0) {
-                            $has = true;
-                            $cur = trim(str_replace('"', '', $r['value']));
-                            if (stripos($cur, '_spf.mail.hostinger.com') === false) {
-                                $merged = preg_match('/\s[-~?+]all\s*$/i', $cur) ? preg_replace('/(\s[-~?+]all)\s*$/i', ' include:_spf.mail.hostinger.com$1', $cur) : $cur . ' include:_spf.mail.hostinger.com ~all';
-                                $dns[$ri]['value'] = $merged; $n++;
-                            }
-                        }
-                    }
-                    if (!$has) { $w['id'] = new_id(); $dns[] = $w; $n++; }
-                }
-                $db['items']['domains'][$k]['dns'] = $dns;
-                $db['items']['domains'][$k]['mail'] = 'hostinger';
-                log_act($db, $me, 'mail-hostinger', $db['items']['domains'][$k]['name'] . ' +' . $n);
-                return $n;
-            });
-            $warning = prov_dns_autopush($id);
+            $res = mail_dns_apply($id, $me, !empty($b['dkim']), true);
+            $added = $res['added'];
+            $warning = $res['warning'];
             out(array('ok' => true, 'added' => $added, 'warning' => $warning, 'webmail' => 'https://mail.hostinger.com'));
 
         case 'admin/hosting-sync':
@@ -1115,21 +1085,52 @@ class NcImap {
     function examine($folder) { $r = $this->cmd('EXAMINE ' . $this->q(mail_utf7_enc($folder))); if (!$r['ok']) { throw new Exception('folder not found'); } return preg_match('/\* (\d+) EXISTS/', $r['data'], $m) ? (int) $m[1] : 0; }
     function headers($from, $to) {
         $r = $this->cmd("FETCH $from:$to (UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])", 1500000);
-        $o = array();
-        foreach (preg_split('/(?=^\* \d+ FETCH)/m', $r['data']) as $blk) {
-            if (!preg_match('/^\* (\d+) FETCH/', $blk, $m)) { continue; }
-            $uid = preg_match('/UID (\d+)/', $blk, $u) ? (int) $u[1] : (int) $m[1];
-            $hdr = ''; if (preg_match('/\{\d+\}\r?\n(.*)\r?\n\)/s', $blk, $h)) { $hdr = $h[1]; }
-            $p = mail_headers($hdr);
-            $o[] = array('uid' => $uid, 'from' => isset($p['from']) ? $p['from'] : '', 'subject' => isset($p['subject']) ? $p['subject'] : '', 'date' => isset($p['date']) ? $p['date'] : '', 'seen' => stripos($blk, '\\Seen') !== false, 'size' => preg_match('/RFC822\.SIZE (\d+)/', $blk, $z) ? (int) $z[1] : 0);
-        }
-        return array_reverse($o);
+        return array_reverse($this->parseHeaders($r['data']));
     }
     function message($uid) {
         $r = $this->cmd('UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', 2500000);
         if (!$r['ok'] || !preg_match('/\{(\d+)\}\r?\n/', $r['data'], $m, PREG_OFFSET_CAPTURE)) { throw new Exception('message not found'); }
         $raw = substr($r['data'], $m[0][1] + strlen($m[0][0]), (int) $m[1][0]); // exactly the literal: the closing ")" of the FETCH is not part of the mail
         return mail_parse($raw);
+    }
+    function select($folder) { $r = $this->cmd('SELECT ' . $this->q(mail_utf7_enc($folder))); if (!$r['ok']) { throw new Exception('folder not found'); } return preg_match('/\* (\d+) EXISTS/', $r['data'], $m) ? (int) $m[1] : 0; }
+    function status($folder) { $r = $this->cmd('STATUS ' . $this->q(mail_utf7_enc($folder)) . ' (MESSAGES UNSEEN)'); return array('messages' => preg_match('/MESSAGES (\d+)/', $r['data'], $m) ? (int) $m[1] : 0, 'unseen' => preg_match('/UNSEEN (\d+)/', $r['data'], $u) ? (int) $u[1] : 0); }
+    /** UIDs matching a search (newest first). $crit is an IMAP search expression built by mail_search(). */
+    function searchUids($crit) { $r = $this->cmd('UID SEARCH ' . $crit); $u = array(); if (preg_match('/\* SEARCH ([\d ]*)/', $r['data'], $m)) { $u = array_map('intval', preg_split('/\s+/', trim($m[1]), -1, PREG_SPLIT_NO_EMPTY)); } rsort($u); return $u; }
+    function headersByUids($uids) { if (!$uids) { return array(); } $r = $this->cmd('UID FETCH ' . implode(',', array_map('intval', $uids)) . ' (UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])', 1500000); $by = array(); foreach ($this->parseHeaders($r['data']) as $h) { $by[$h['uid']] = $h; } $o = array(); foreach ($uids as $u) { if (isset($by[$u])) { $o[] = $by[$u]; } } return $o; }
+    function store($uid, $flag, $on) { $r = $this->cmd('UID STORE ' . (int) $uid . ' ' . ($on ? '+' : '-') . 'FLAGS.SILENT (' . $flag . ')'); return $r['ok']; }
+    function moveTo($uid, $dest) {
+        $r = $this->cmd('UID MOVE ' . (int) $uid . ' ' . $this->q(mail_utf7_enc($dest)));
+        if ($r['ok']) { return true; }
+        $c = $this->cmd('UID COPY ' . (int) $uid . ' ' . $this->q(mail_utf7_enc($dest)));
+        if (!$c['ok']) { return false; }
+        return $this->expunge($uid);
+    }
+    function expunge($uid) { $this->store($uid, '\\Deleted', true); $r = $this->cmd('UID EXPUNGE ' . (int) $uid); if (!$r['ok']) { $r = $this->cmd('EXPUNGE'); } return $r['ok']; }
+    function append($folder, $raw, $flags = '\\Seen') {
+        $tag = 'a' . (++$this->n);
+        fwrite($this->fp, $tag . ' APPEND ' . $this->q(mail_utf7_enc($folder)) . ' (' . $flags . ') {' . strlen($raw) . "}\r\n");
+        $l = fgets($this->fp, 4096);
+        if ($l === false || $l[0] !== '+') { return false; }
+        fwrite($this->fp, $raw . "\r\n");
+        while (($l = fgets($this->fp, 4096)) !== false) { if (strpos($l, $tag . ' ') === 0) { return stripos($l, $tag . ' OK') === 0; } }
+        return false;
+    }
+    function rawMessage($uid) {
+        $r = $this->cmd('UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', 12000000);
+        if (!$r['ok'] || !preg_match('/\{(\d+)\}\r?\n/', $r['data'], $m, PREG_OFFSET_CAPTURE)) { throw new Exception('message not found'); }
+        return substr($r['data'], $m[0][1] + strlen($m[0][0]), (int) $m[1][0]);
+    }
+    private function parseHeaders($data) {
+        $o = array();
+        foreach (preg_split('/(?=^\* \d+ FETCH)/m', $data) as $blk) {
+            if (!preg_match('/^\* (\d+) FETCH/', $blk, $m)) { continue; }
+            $uid = preg_match('/UID (\d+)/', $blk, $u) ? (int) $u[1] : (int) $m[1];
+            $hdr = ''; if (preg_match('/\{\d+\}\r?\n(.*)\r?\n\)/s', $blk, $h)) { $hdr = $h[1]; }
+            $p = mail_headers($hdr);
+            $o[] = array('uid' => $uid, 'from' => isset($p['from']) ? $p['from'] : '', 'subject' => isset($p['subject']) ? $p['subject'] : '', 'date' => isset($p['date']) ? $p['date'] : '', 'seen' => stripos($blk, '\\Seen') !== false, 'size' => preg_match('/RFC822\.SIZE (\d+)/', $blk, $z) ? (int) $z[1] : 0);
+        }
+        return $o;
     }
     function close() { @fwrite($this->fp, "x LOGOUT\r\n"); @fclose($this->fp); }
 }
@@ -1138,9 +1139,12 @@ function mail_utf7_enc($s) { return function_exists('mb_convert_encoding') && pr
 function mail_dec($v) {
     $v = trim((string) $v);
     if ($v === '') { return ''; }
-    if (function_exists('iconv_mime_decode')) { $d = @iconv_mime_decode($v, 2, 'UTF-8'); if ($d !== false) { return clean_text($d, 400); } }
-    if (function_exists('mb_decode_mimeheader')) { return clean_text(mb_decode_mimeheader($v), 400); }
-    return clean_text($v, 400);
+    $d = false;
+    if (function_exists('iconv_mime_decode')) { $d = @iconv_mime_decode($v, 2, 'UTF-8'); }
+    if ($d === false && function_exists('mb_decode_mimeheader')) { $d = mb_decode_mimeheader($v); }
+    if ($d === false) { $d = $v; }
+    // Kept as text (the page prints it escaped): the <address> part of "Name <a@b>" must survive.
+    return nc_cut(trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', (string) $d)), 400);
 }
 function mail_headers($raw) {
     $raw = preg_replace('/\r?\n[ \t]+/', ' ', $raw); $o = array();
@@ -1155,15 +1159,15 @@ function mail_body_decode($body, $enc, $cs) {
     return mail_charset($body, $cs);
 }
 /** A small MIME reader: headers + the text of the message (plain text preferred, HTML turned into text) + attachment names. */
-function mail_parse($raw, $depth = 0) {
+function mail_parse($raw, $depth = 0, $keep = false) {
     $parts = preg_split('/\r?\n\r?\n/', $raw, 2); $hdr = mail_headers($parts[0]); $body = isset($parts[1]) ? $parts[1] : '';
     $ct = isset($hdr['content-type']) ? $hdr['content-type'] : 'text/plain'; $enc = isset($hdr['content-transfer-encoding']) ? $hdr['content-transfer-encoding'] : '7bit';
-    $res = array('headers' => array_intersect_key($hdr, array_flip(array('from', 'to', 'cc', 'subject', 'date', 'reply-to'))), 'text' => '', 'html' => false, 'attachments' => array());
+    $res = array('headers' => array_intersect_key($hdr, array_flip(array('from', 'to', 'cc', 'subject', 'date', 'reply-to', 'message-id', 'references', 'in-reply-to'))), 'text' => '', 'html' => false, 'attachments' => array());
     if (preg_match('#^multipart/#i', $ct) && $depth < 5 && preg_match('/boundary="?([^";\s]+)"?/i', $ct, $b)) {
         $plain = ''; $html = '';
         foreach (preg_split('/--' . preg_quote($b[1], '/') . '(?:--)?\r?\n?/', $body) as $seg) {
             if (trim($seg) === '') { continue; }
-            $sub = mail_parse($seg, $depth + 1);
+            $sub = mail_parse($seg, $depth + 1, $keep);
             if ($sub['text'] !== '') { if ($sub['html']) { $html .= ($html ? "\n" : '') . $sub['text']; } else { $plain .= ($plain ? "\n" : '') . $sub['text']; } }
             $res['attachments'] = array_merge($res['attachments'], $sub['attachments']);
         }
@@ -1172,10 +1176,127 @@ function mail_parse($raw, $depth = 0) {
     }
     $disp = isset($hdr['content-disposition']) ? $hdr['content-disposition'] : '';
     $name = ''; if (preg_match('/(?:file)?name\*?="?([^";]+)"?/i', $disp . ' ' . $ct, $nm)) { $name = mail_dec(urldecode($nm[1])); }
-    if (stripos($disp, 'attachment') === 0 || ($name !== '' && !preg_match('#^text/(plain|html)#i', $ct))) { $res['attachments'][] = array('name' => $name !== '' ? $name : 'attachment', 'type' => strtolower(trim(explode(';', $ct)[0])), 'size' => strlen($body)); return $res; }
+    if (stripos($disp, 'attachment') === 0 || ($name !== '' && !preg_match('#^text/(plain|html)#i', $ct))) { $att = array('name' => $name !== '' ? $name : 'attachment', 'type' => strtolower(trim(explode(';', $ct)[0])), 'size' => strlen($body)); if ($keep) { $att['data'] = strtolower(trim($enc)) === 'base64' ? base64_decode($body) : (strtolower(trim($enc)) === 'quoted-printable' ? quoted_printable_decode($body) : $body); $att['size'] = strlen($att['data']); } $res['attachments'][] = $att; return $res; }
     $cs = preg_match('/charset="?([^";\s]+)"?/i', $ct, $cm) ? $cm[1] : '';
     $txt = mail_body_decode($body, $enc, $cs);
     if (preg_match('#^text/html#i', $ct)) { $txt = html_entity_decode(trim(preg_replace('/[ \t]+/', ' ', strip_tags(preg_replace(array('#<(script|style)[^>]*>.*?</\1>#is', '#<br\s*/?>|</p>|</div>|</tr>|</h\d>#i'), array('', "\n"), $txt)))), ENT_QUOTES, 'UTF-8'); $res['html'] = true; }
     $res['text'] = nc_substr(preg_replace("/\n{3,}/", "\n\n", trim($txt)), 60000);
     return $res;
+}
+
+/* ───────── the "N Emails" platform: folders, search, actions, sending, DNS ───────── */
+/** The folder names for Sent / Trash / Drafts / Spam, whatever the server calls them. */
+function mail_special($folders) {
+    $pick = function ($re) use ($folders) { foreach ($folders as $f) { if (preg_match($re, $f)) { return $f; } } return ''; };
+    return array('inbox' => 'INBOX', 'sent' => $pick('/^(INBOX[.\/])?(Sent( (Items|Messages|Mail))?)$/i'), 'drafts' => $pick('/^(INBOX[.\/])?Drafts?$/i'), 'trash' => $pick('/^(INBOX[.\/])?(Trash|Deleted( (Items|Messages))?|Bin)$/i'), 'spam' => $pick('/^(INBOX[.\/])?(Spam|Junk( E-?mail)?)$/i'));
+}
+function mail_search_crit($q, $unreadOnly) {
+    $parts = array();
+    if ($unreadOnly) { $parts[] = 'UNSEEN'; }
+    $q = trim(str_replace(array("\r", "\n", '"', '\\'), ' ', (string) $q));
+    if ($q !== '') { $parts[] = 'OR OR FROM "' . $q . '" SUBJECT "' . $q . '" TO "' . $q . '"'; }
+    return $parts ? implode(' ', $parts) : 'ALL';
+}
+function mail_smtp_cfg($db) { $c = meta_get($db, 'smtpOut', array()); return array('host' => !empty($c['host']) ? $c['host'] : 'smtp.hostinger.com', 'port' => !empty($c['port']) ? (int) $c['port'] : 465, 'secure' => isset($c['secure']) && in_array($c['secure'], array('tls', 'none'), true) ? $c['secure'] : 'ssl'); }
+/** Delivers a ready-made RFC 822 message over SMTP with the mailbox's own login. */
+function smtp_deliver($cfg, $user, $pass, $from, $rcpts, $raw) {
+    $fp = @stream_socket_client(($cfg['secure'] === 'ssl' ? 'ssl://' : 'tcp://') . $cfg['host'] . ':' . $cfg['port'], $en, $es, 12);
+    if (!$fp) { throw new Exception('cannot reach the mail server ' . $cfg['host'] . ' (' . $es . ')'); }
+    stream_set_timeout($fp, 25);
+    try {
+        smtp_cmd($fp, null, 220);
+        $me = isset($_SERVER['SERVER_NAME']) ? preg_replace('/[^A-Za-z0-9.\-]/', '', $_SERVER['SERVER_NAME']) : 'localhost';
+        smtp_cmd($fp, 'EHLO ' . ($me ?: 'localhost'), 250);
+        if ($cfg['secure'] === 'tls') { smtp_cmd($fp, 'STARTTLS', 220); if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) { throw new Exception('TLS handshake failed'); } smtp_cmd($fp, 'EHLO ' . ($me ?: 'localhost'), 250); }
+        smtp_cmd($fp, 'AUTH LOGIN', 334); smtp_cmd($fp, base64_encode($user), 334); smtp_cmd($fp, base64_encode($pass), 235);
+        smtp_cmd($fp, 'MAIL FROM:<' . $from . '>', 250);
+        foreach ($rcpts as $r) { smtp_cmd($fp, 'RCPT TO:<' . $r . '>', array(250, 251)); }
+        smtp_cmd($fp, 'DATA', 354);
+        fwrite($fp, preg_replace('/^\./m', '..', $raw) . "\r\n.\r\n");
+        smtp_cmd($fp, null, 250);
+        @fwrite($fp, "QUIT\r\n");
+    } catch (Exception $e) { @fclose($fp); throw $e; }
+    @fclose($fp);
+}
+function mail_addr_list($s) { $o = array(); foreach (preg_split('/[,;]+/', (string) $s) as $a) { $a = trim($a); if (preg_match('/<([^>]+)>/', $a, $m)) { $a = trim($m[1]); } $a = strtolower($a); if ($a !== '') { if (!filter_var($a, FILTER_VALIDATE_EMAIL)) { throw new Exception('invalid address: ' . clean_text($a, 80)); } $o[] = $a; } } return array_values(array_unique($o)); }
+/** Builds the message: text + attachments, with reply headers. */
+function mail_build($from, $fromName, $to, $cc, $subject, $text, $files, $inReplyTo, $refs) {
+    $dom = substr(strrchr($from, '@'), 1);
+    $h = 'From: ' . ($fromName !== '' ? '=?UTF-8?B?' . base64_encode($fromName) . '?= ' : '') . '<' . $from . ">\r\nTo: " . implode(', ', $to) . "\r\n" . ($cc ? 'Cc: ' . implode(', ', $cc) . "\r\n" : '') . 'Subject: =?UTF-8?B?' . base64_encode($subject) . "?=\r\nDate: " . date('r') . "\r\nMessage-ID: <" . bin2hex(function_exists('random_bytes') ? random_bytes(10) : md5(uniqid('', true), true)) . '@' . $dom . ">\r\nMIME-Version: 1.0\r\n";
+    if ($inReplyTo !== '' && preg_match('/^<[^<>\s]+>$/', $inReplyTo)) { $h .= 'In-Reply-To: ' . $inReplyTo . "\r\nReferences: " . trim(preg_replace('/[^<>@\w.\-\s]/', '', $refs) . ' ' . $inReplyTo) . "\r\n"; }
+    $bodyPart = "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text));
+    if (!$files) { return $h . $bodyPart; }
+    $b = '=_nc' . bin2hex(function_exists('random_bytes') ? random_bytes(8) : md5(uniqid('', true), true));
+    $m = $h . 'Content-Type: multipart/mixed; boundary="' . $b . "\"\r\n\r\n--" . $b . "\r\n" . $bodyPart;
+    foreach ($files as $f) { $n = preg_replace('/[\r\n"\\\\]/', '_', $f['name']); $m .= "--" . $b . "\r\nContent-Type: " . ($f['type'] ?: 'application/octet-stream') . '; name="' . $n . "\"\r\nContent-Disposition: attachment; filename=\"" . $n . "\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($f['data'])); }
+    return $m . '--' . $b . "--\r\n";
+}
+
+/* Mail DNS: what a domain needs to send and receive at Hostinger Email. */
+function mail_dns_want() {
+    return array(
+        'mx' => array(array('host' => '@', 'type' => 'MX', 'value' => '5 mx1.hostinger.com', 'ttl' => 14400), array('host' => '@', 'type' => 'MX', 'value' => '10 mx2.hostinger.com', 'ttl' => 14400)),
+        'spf' => array(array('host' => '@', 'type' => 'TXT', 'value' => 'v=spf1 include:_spf.mail.hostinger.com ~all', 'ttl' => 14400)),
+        'dkim' => array(array('host' => 'hostingermail-a._domainkey', 'type' => 'CNAME', 'value' => 'hostingermail-a.dkim.mail.hostinger.com', 'ttl' => 14400), array('host' => 'hostingermail-b._domainkey', 'type' => 'CNAME', 'value' => 'hostingermail-b.dkim.mail.hostinger.com', 'ttl' => 14400), array('host' => 'hostingermail-c._domainkey', 'type' => 'CNAME', 'value' => 'hostingermail-c.dkim.mail.hostinger.com', 'ttl' => 14400)),
+        'dmarc' => array(array('host' => '_dmarc', 'type' => 'TXT', 'value' => 'v=DMARC1; p=none', 'ttl' => 14400)),
+    );
+}
+/** Public DNS answer for one record set, or null when the host cannot look it up. */
+function mail_dns_live($host, $type) {
+    if (!function_exists('dns_get_record')) { return null; }
+    $r = @dns_get_record($host, $type === 'MX' ? DNS_MX : ($type === 'CNAME' ? DNS_CNAME : DNS_TXT));
+    if ($r === false) { return null; }
+    $o = array();
+    foreach ($r as $x) { $o[] = $type === 'MX' ? (int) $x['pri'] . ' ' . $x['target'] : ($type === 'CNAME' ? $x['target'] : (isset($x['txt']) ? $x['txt'] : '')); }
+    return $o;
+}
+function mail_dns_status($domain, $localRecords, $live = true) {
+    $out = array(); $name = strtolower($domain['name']);
+    foreach (mail_dns_want() as $key => $recs) {
+        $okAll = true; $detail = array(); $liveAny = false;
+        foreach ($recs as $w) {
+            $fq = $w['host'] === '@' ? $name : $w['host'] . '.' . $name;
+            $got = $live ? mail_dns_live($fq, $w['type']) : null;
+            if ($got !== null) { $liveAny = true; }
+            $match = function ($g) use ($key, $w) { return $key === 'spf' ? (stripos($g, '_spf.mail.hostinger.com') !== false) : ($key === 'dmarc' ? stripos(trim(str_replace('"', '', $g)), 'v=DMARC1') === 0 : dns_norm($g) === dns_norm($w['value'])); };
+            $has = false; $saved = false;
+            if ($got !== null) { foreach ($got as $g) { if ($match($g)) { $has = true; } } }
+            foreach ($localRecords as $r) { if ($r['type'] === $w['type'] && ($r['host'] === $w['host'] || $r['host'] === $fq) && $match($r['value'])) { $saved = true; } }
+            if (!$has && $got === null && $saved) { $has = true; }
+            if (!$has) { $okAll = false; }
+            $detail[] = array('host' => $fq, 'type' => $w['type'], 'value' => $w['value'], 'ok' => $has, 'saved' => $saved);
+        }
+        $out[] = array('key' => $key, 'ok' => $okAll, 'live' => $liveAny, 'records' => $detail, 'required' => $key === 'mx' || $key === 'spf');
+    }
+    return $out;
+}
+/** Adds the records a domain needs to the saved DNS (and pushes them to the provider when DNS is connected). MX + SPF always, DMARC by default, DKIM on request. */
+function mail_dns_apply($domainId, $actor, $dkim = false, $dmarc = true) {
+    $want = mail_dns_want(); $need = array_merge($want['mx'], $want['spf']);
+    if ($dmarc) { $need = array_merge($need, $want['dmarc']); }
+    if ($dkim) { $need = array_merge($need, $want['dkim']); }
+    $added = db_update(function (&$db) use ($domainId, $need, $actor) {
+        $k = find_by(items_of($db, 'domains'), 'id', $domainId);
+        if ($k < 0) { return 0; }
+        $dns = isset($db['items']['domains'][$k]['dns']) && is_array($db['items']['domains'][$k]['dns']) ? $db['items']['domains'][$k]['dns'] : array();
+        $n = 0;
+        foreach ($need as $w) {
+            $has = false;
+            foreach ($dns as $ri => $r) {
+                if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && dns_norm($r['value']) === dns_norm($w['value'])) { $has = true; }
+                // One SPF record only: merge Hostinger into an existing one.
+                if (!$has && $w['type'] === 'TXT' && $w['host'] === '@' && $r['type'] === 'TXT' && $r['host'] === '@' && stripos(trim(str_replace('"', '', $r['value'])), 'v=spf1') === 0) {
+                    $has = true; $cur = trim(str_replace('"', '', $r['value']));
+                    if (stripos($cur, '_spf.mail.hostinger.com') === false) { $dns[$ri]['value'] = preg_match('/\s[-~?+]all\s*$/i', $cur) ? preg_replace('/(\s[-~?+]all)\s*$/i', ' include:_spf.mail.hostinger.com$1', $cur) : $cur . ' include:_spf.mail.hostinger.com ~all'; $n++; }
+                }
+                // One DMARC record only.
+                if (!$has && $w['host'] === '_dmarc' && $r['host'] === '_dmarc' && $r['type'] === 'TXT') { $has = true; }
+            }
+            if (!$has) { $w['id'] = new_id(); $dns[] = $w; $n++; }
+        }
+        $db['items']['domains'][$k]['dns'] = $dns; $db['items']['domains'][$k]['mail'] = 'hostinger';
+        log_act($db, $actor, 'mail-dns', $db['items']['domains'][$k]['name'] . ' +' . $n);
+        return $n;
+    });
+    return array('added' => $added, 'warning' => prov_dns_autopush($domainId));
 }

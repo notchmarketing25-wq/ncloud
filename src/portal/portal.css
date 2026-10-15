@@ -368,3 +368,27 @@
 .mv-date { color: var(--nt-slate); font-size: .8rem; }
 .mv-read { display: grid; gap: 10px; align-content: start; min-width: 0; max-height: 520px; overflow: auto; }
 .mv-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; padding: 12px; border: 1px solid var(--nt-fog); border-radius: 12px; background: var(--nt-paper, #fff); }
+
+/* N Emails */
+.nmail { display: grid; gap: 12px; }
+.nm-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nm-search { display: flex; gap: 6px; flex: 1 1 220px; min-width: 0; }
+.nm-search .input { flex: 1; min-width: 0; }
+.nm-chk { display: flex; gap: 6px; align-items: center; font-size: .9rem; }
+.nm-note { padding: 10px 14px; }
+.nm-grid { display: grid; grid-template-columns: 170px minmax(240px, 1fr) minmax(0, 1.5fr); gap: 14px; min-height: 480px; align-items: start; }
+.nm-folders { display: grid; gap: 4px; align-content: start; }
+.nm-folders button { display: flex; justify-content: space-between; align-items: center; text-align: start; padding: 8px 12px; border-radius: 10px; background: none; border: 0; cursor: pointer; font: inherit; }
+.nm-folders button.on { background: var(--nt-black); color: #fff; }
+.nm-badge { background: var(--nt-orange, #e8590c); color: #fff; border-radius: 999px; padding: 0 8px; font-size: .75rem; }
+.nm-list { display: grid; gap: 4px; align-content: start; max-height: 640px; overflow: auto; min-width: 0; }
+.nm-read { display: grid; gap: 10px; align-content: start; min-width: 0; max-height: 640px; overflow: auto; }
+.nm-back { display: none; justify-self: start; }
+@media (max-width: 900px) {
+  .nm-grid { grid-template-columns: minmax(0, 1fr); }
+  .nm-folders { grid-auto-flow: column; overflow-x: auto; }
+  .nm-folders button { white-space: nowrap; gap: 6px; }
+  .nm-list.has-open { display: none; }
+  .nm-read:not(.has-open) { display: none; }
+  .nm-back { display: inline-flex; }
+}

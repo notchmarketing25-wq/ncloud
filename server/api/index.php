@@ -297,6 +297,16 @@ function deco_item($res, $it) {
     return $it;
 }
 function imap_cfg($db) { $c = meta_get($db, 'imap', array()); return array('host' => !empty($c['host']) ? $c['host'] : 'imap.hostinger.com', 'port' => !empty($c['port']) ? (int) $c['port'] : 993, 'secure' => isset($c['secure']) && $c['secure'] === 'none' ? 'none' : 'ssl'); }
+
+/** The mailbox a signed-in user may open: their own (an admin: any). */
+function mail_box($db, $u, $id) {
+    $i = find_by(items_of($db, 'mailboxes'), 'id', $id);
+    if ($i < 0) { fail('mailbox not found', 404); }
+    $m = $db['items']['mailboxes'][$i];
+    if ($u['role'] !== 'admin' && $m['uid'] !== $u['id']) { fail('mailbox not found', 404); }
+    return $m;
+}
+function mail_pass($db, $m) { $sec = meta_get($db, 'mailSecrets', array()); if (empty($sec[$m['id']])) { fail('mailbox not connected', 409); } return mail_unseal($sec[$m['id']]); }
 function with_pass($db, $list) { $sec = meta_get($db, 'mailSecrets', array()); return array_map(function ($m) use ($sec) { $m['hasPass'] = !empty($sec[$m['id']]); return $m; }, $list); }
 function deco_list($res, $list) { return array_map(function ($it) use ($res) { return deco_item($res, $it); }, $list); }
 
@@ -1573,7 +1583,7 @@ switch ($r) {
                 'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
                 'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass()),
                 'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'),
-                'imap' => imap_cfg($db), 'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
+                'imap' => imap_cfg($db), 'smtpOut' => (function ($c) { return array('host' => isset($c['host']) ? $c['host'] : '', 'port' => isset($c['port']) ? (int) $c['port'] : 465, 'secure' => isset($c['secure']) ? $c['secure'] : 'ssl'); })(meta_get($db, 'smtpOut', array())), 'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
                 'smtp' => smtp_public(meta_get($db, 'smtp', array())), 'gateways' => gw_public(meta_get($db, 'gateways', array())), 'coupons' => meta_get($db, 'coupons', array()),
                 'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false)));
         }
@@ -1609,6 +1619,7 @@ switch ($r) {
             $nt['version'] = ($nt['ar'] !== $old['ar'] || $nt['en'] !== $old['en']) ? (string) ((int) $old['version'] + 1) : $old['version']; // a changed text asks everybody to accept again
             $extra['terms'] = $nt;
         }
+        if (isset($b['smtpOut']) && is_array($b['smtpOut'])) { $extra['smtpOut'] = array('host' => preg_replace('/[^A-Za-z0-9.\-]/', '', (string) (isset($b['smtpOut']['host']) ? $b['smtpOut']['host'] : '')), 'port' => max(1, min(65535, (int) (isset($b['smtpOut']['port']) ? $b['smtpOut']['port'] : 465))), 'secure' => isset($b['smtpOut']['secure']) && in_array($b['smtpOut']['secure'], array('tls', 'none'), true) ? $b['smtpOut']['secure'] : 'ssl'); }
         if (isset($b['imap']) && is_array($b['imap'])) { $extra['imap'] = array('host' => preg_replace('/[^A-Za-z0-9.\-]/', '', (string) (isset($b['imap']['host']) ? $b['imap']['host'] : '')), 'port' => max(1, min(65535, (int) (isset($b['imap']['port']) ? $b['imap']['port'] : 993))), 'secure' => isset($b['imap']['secure']) && $b['imap']['secure'] === 'none' ? 'none' : 'ssl'); }
         if (isset($b['suspendAfterDays'])) { $extra['suspendAfterDays'] = max(0, min(365, (int) $b['suspendAfterDays'])); }
         if (isset($b['taxInclusive'])) { $extra['taxInclusive'] = !empty($b['taxInclusive']); }
@@ -2274,6 +2285,141 @@ switch ($r) {
             $msg = $im->message(isset($_GET['uid']) ? (int) $_GET['uid'] : 0);
             $im->close(); out($msg);
         } catch (Exception $e) { fail($e->getMessage(), 502); }
+
+    case 'mail/boxes':
+        $u = need_user();
+        $db0 = db_read(); $sec = meta_get($db0, 'mailSecrets', array()); $o = array();
+        foreach (items_of($db0, 'mailboxes') as $m) { if ($u['role'] === 'admin' ? false : ($m['uid'] !== $u['id'] || (isset($m['status']) && $m['status'] === 'archived'))) { continue; } if ($u['role'] === 'admin' && !empty($_GET['mine']) && $m['uid'] !== $u['id']) { continue; } $o[] = array('id' => $m['id'], 'address' => $m['address'], 'connected' => !empty($sec[$m['id']]), 'status' => isset($m['status']) ? $m['status'] : 'active'); }
+        out(array('boxes' => $o, 'webmail' => (string) meta_get($db0, 'webmailUrl', '')));
+
+    case 'mail/secret':
+        $u = need_user();
+        require_post();
+        $b = body(); $id = isset($b['id']) ? (string) $b['id'] : ''; $pw = isset($b['password']) ? (string) $b['password'] : '';
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        $mb = mail_box($db0, $u, $id);
+        if ($pw === '') { db_update(function (&$db) use ($id, $u) { $m = meta_get($db, 'mailSecrets', array()); unset($m[$id]); $db['meta']['mailSecrets'] = $m; log_act($db, $u, 'mailbox-disconnect', $id); }); out(array('ok' => true)); }
+        $rk = 'mailpw:' . $id;
+        if (rate_blocked($db0, $rk, 8, 900)) { fail('too many attempts, try again later', 429); }
+        try { $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $im->close(); $sealed = mail_seal($pw); }
+        catch (Exception $e) { db_update(function (&$db) use ($rk) { rate_hit($db, $rk); }); fail($e->getMessage(), 422); }
+        db_update(function (&$db) use ($id, $sealed, $u) { $m = meta_get($db, 'mailSecrets', array()); $m[$id] = $sealed; $db['meta']['mailSecrets'] = $m; log_act($db, $u, 'mailbox-connect', $id); });
+        out(array('ok' => true));
+
+    case 'mail/folders':
+    case 'mail/list':
+    case 'mail/read':
+    case 'mail/attachment':
+        $u = need_user();
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        $mb = mail_box($db0, $u, isset($_GET['id']) ? (string) $_GET['id'] : '');
+        $pw = mail_pass($db0, $mb);
+        $folder = isset($_GET['folder']) && $_GET['folder'] !== '' ? (string) $_GET['folder'] : 'INBOX';
+        try {
+            $im = new NcImap(imap_cfg($db0), $mb['address'], $pw);
+            if ($r === 'mail/folders') {
+                $fl = $im->folders(); $sp = mail_special($fl); $o = array();
+                foreach ($fl as $f) { $st = $im->status($f); $o[] = array('name' => $f, 'unseen' => $st['unseen'], 'total' => $st['messages']); }
+                $im->close(); out(array('folders' => $o, 'special' => $sp));
+            }
+            if ($r === 'mail/list') {
+                $size = 25; $page = max(1, (int) (isset($_GET['page']) ? $_GET['page'] : 1));
+                $q = isset($_GET['q']) ? (string) $_GET['q'] : ''; $unread = !empty($_GET['unread']);
+                $total = $im->select($folder);
+                if ($q !== '' || $unread) {
+                    $all = $im->searchUids(mail_search_crit($q, $unread)); $total = count($all);
+                    $msgs = $im->headersByUids(array_slice($all, ($page - 1) * $size, $size));
+                } else {
+                    $to = $total - ($page - 1) * $size; $from = max(1, $to - $size + 1);
+                    $msgs = $to >= 1 ? $im->headers($from, $to) : array();
+                }
+                $im->close(); out(array('total' => $total, 'page' => $page, 'size' => $size, 'messages' => $msgs));
+            }
+            $im->select($folder);
+            $uid = isset($_GET['uid']) ? (int) $_GET['uid'] : 0;
+            if ($r === 'mail/read') {
+                $msg = $im->message($uid);
+                if (!isset($_GET['peek'])) { $im->store($uid, '\\Seen', true); }
+                $im->close(); out($msg);
+            }
+            $raw = $im->rawMessage($uid); $im->close();
+            $msg = mail_parse($raw, 0, true); $idx = isset($_GET['n']) ? (int) $_GET['n'] : 0;
+            if (!isset($msg['attachments'][$idx])) { fail('attachment not found', 404); }
+            $a = $msg['attachments'][$idx];
+            header('Content-Type: application/octet-stream'); header('X-Content-Type-Options: nosniff'); header('Content-Disposition: attachment; filename*=UTF-8\'\'' . rawurlencode($a['name'])); header('Content-Length: ' . strlen($a['data']));
+            echo $a['data']; exit;
+        } catch (Exception $e) { fail($e->getMessage(), 502); }
+
+    case 'mail/action':
+        $u = need_user();
+        require_post();
+        require_once __DIR__ . '/providers.php';
+        $b = body(); $db0 = db_read();
+        $mb = mail_box($db0, $u, isset($b['id']) ? (string) $b['id'] : '');
+        $pw = mail_pass($db0, $mb);
+        $folder = isset($b['folder']) && $b['folder'] !== '' ? (string) $b['folder'] : 'INBOX';
+        $act = isset($b['action']) ? (string) $b['action'] : ''; $uids = array(); foreach ((isset($b['uids']) && is_array($b['uids']) ? $b['uids'] : array()) as $x) { $uids[] = (int) $x; } $uids = array_slice(array_unique($uids), 0, 100);
+        if (!in_array($act, array('seen', 'unseen', 'delete', 'spam'), true) || !$uids) { fail('bad request', 422); }
+        try {
+            $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $im->select($folder); $sp = mail_special($im->folders());
+            foreach ($uids as $x) {
+                if ($act === 'seen' || $act === 'unseen') { $im->store($x, '\\Seen', $act === 'seen'); }
+                elseif ($act === 'spam') { if ($sp['spam'] !== '') { $im->moveTo($x, $sp['spam']); } }
+                else { if ($sp['trash'] !== '' && strcasecmp($folder, $sp['trash']) !== 0) { $im->moveTo($x, $sp['trash']); } else { $im->expunge($x); } }
+            }
+            $im->close();
+        } catch (Exception $e) { fail($e->getMessage(), 502); }
+        out(array('ok' => true));
+
+    case 'mail/send':
+        $u = need_user();
+        require_post();
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        $mb = mail_box($db0, $u, isset($_POST['id']) ? (string) $_POST['id'] : '');
+        $pw = mail_pass($db0, $mb);
+        $rk = 'mailsend:' . $mb['id'];
+        if (rate_blocked($db0, $rk, 100, 86400)) { fail('daily sending limit reached for this mailbox', 429); }
+        try {
+            $to = mail_addr_list(isset($_POST['to']) ? $_POST['to'] : ''); $cc = mail_addr_list(isset($_POST['cc']) ? $_POST['cc'] : '');
+            if (!$to) { fail('add at least one recipient', 422); }
+            if (count($to) + count($cc) > 30) { fail('too many recipients', 422); }
+            $subject = clean_text(isset($_POST['subject']) ? $_POST['subject'] : '', 250); $text = nc_substr(isset($_POST['body']) ? (string) $_POST['body'] : '', 200000);
+            $files = array(); $tot = 0;
+            if (!empty($_FILES['files']) && is_array($_FILES['files']['name'])) {
+                foreach ($_FILES['files']['name'] as $k => $nm) {
+                    if ($_FILES['files']['error'][$k] === UPLOAD_ERR_NO_FILE) { continue; }
+                    if ($_FILES['files']['error'][$k] !== UPLOAD_ERR_OK || !is_uploaded_file($_FILES['files']['tmp_name'][$k])) { fail('attachment upload failed (too large?)', 422); }
+                    $tot += $_FILES['files']['size'][$k]; if ($tot > 8 * 1024 * 1024) { fail('attachments are limited to 8 MB in total', 413); }
+                    $files[] = array('name' => clean_text($nm, 120) ?: 'file', 'type' => preg_match('#^[\w.+-]+/[\w.+-]+$#', (string) $_FILES['files']['type'][$k]) ? $_FILES['files']['type'][$k] : 'application/octet-stream', 'data' => file_get_contents($_FILES['files']['tmp_name'][$k]));
+                }
+            }
+            $name = isset($u['name']) ? (string) $u['name'] : '';
+            $raw = mail_build($mb['address'], '', $to, $cc, $subject, $text, $files, isset($_POST['inReplyTo']) ? (string) $_POST['inReplyTo'] : '', isset($_POST['references']) ? (string) $_POST['references'] : '');
+            smtp_deliver(mail_smtp_cfg($db0), $mb['address'], $pw, $mb['address'], array_merge($to, $cc), $raw);
+        } catch (Exception $e) { fail($e->getMessage(), 502); }
+        db_update(function (&$db) use ($rk, $u, $mb) { rate_hit($db, $rk); log_act($db, $u, 'mail-sent', $mb['address']); });
+        $saved = false;
+        try { $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $sp = mail_special($im->folders()); if ($sp['sent'] !== '') { $saved = $im->append($sp['sent'], $raw, '\\Seen'); } $im->close(); } catch (Exception $e) { }
+        out(array('ok' => true, 'saved' => $saved));
+
+    case 'mail/dns':
+    case 'mail/dns-fix':
+        $u = need_user();
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        if ($r === 'mail/dns-fix') { require_post(); $b = body(); } else { $b = $_GET; }
+        $mb = mail_box($db0, $u, isset($b['id']) ? (string) $b['id'] : '');
+        $dn = strtolower(substr(strrchr($mb['address'], '@'), 1)); $dk = -1;
+        foreach (items_of($db0, 'domains') as $i => $d) { if (strtolower($d['name']) === $dn && ($u['role'] === 'admin' || $d['uid'] === $u['id'])) { $dk = $i; } }
+        if ($dk < 0) { out(array('domain' => $dn, 'managed' => false, 'checks' => mail_dns_status(array('name' => $dn), array(), true))); }
+        $d = $db0['items']['domains'][$dk];
+        if ($r === 'mail/dns') { out(array('domain' => $dn, 'managed' => true, 'dnsOff' => !empty($d['dnsOff']), 'checks' => mail_dns_status($d, isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array(), true))); }
+        if (!empty($d['dnsOff'])) { fail('DNS management is turned off for this domain', 403); }
+        $res = mail_dns_apply($d['id'], $u, !empty($b['dkim']), true);
+        out(array('ok' => true, 'added' => $res['added'], 'warning' => $res['warning']));
 
     case 'admin/activity':
         need_admin();

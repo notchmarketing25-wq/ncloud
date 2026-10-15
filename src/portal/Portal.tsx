@@ -153,6 +153,7 @@ export function PortalLayout() {
     { to: '/portal', label: t('نظرة عامة', 'Overview'), end: true },
     { to: '/portal/domains', label: t('الدومينات', 'Domains') },
     { to: '/portal/email', label: t('الإيميلات', 'Email') },
+    { to: '/portal/mail', label: 'N Emails' },
     { to: '/portal/hosting', label: t('الاستضافة', 'Hosting') },
     { to: '/portal/websites', label: t('المواقع', 'Websites') },
     { to: '/portal/servers', label: t('السيرفرات', 'Servers') },
@@ -354,7 +355,7 @@ export function PortalEmail() {
               <td><Ltr>{m.address}</Ltr></td>
               <td className="usage"><Meter value={pct(m.usedGb, m.quotaGb)} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
               <td><StatusTag s={m.status} /></td>
-              <td><div className="row-actions"><MailOpen address={m.address} url={data.webmail} />{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</div></td>
+              <td><div className="row-actions">{!demo && <Link className="btn btn-primary btn-sm" to={`/portal/mail?box=${m.id}`}>N Emails</Link>}<MailOpen address={m.address} url={data.webmail} />{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</div></td>
             </tr>
           ))}
         </Table>
