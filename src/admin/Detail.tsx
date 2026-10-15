@@ -208,7 +208,7 @@ export function AdminWebsites() {
                 const dom = all?.items.domains.find((x) => x.id === w.domainId); const host = all?.items.hosting.find((x) => x.id === w.hostingId);
                 return (
                   <tr key={w.id} className="row-link" onClick={() => nav(`/admin/websites/${w.id}`)}>
-                    <td><SvcCell host={String(w.url || dom?.name || w.name)} name={<Ltr>{String(w.name)}</Ltr>} sub={`${String(w.sub ?? '')}${w.expires ? ' · ' + String(w.expires) : ''}`} /></td><td><StatusTag s={w.status as 'active'} /></td>
+                    <td><SvcCell tech={w.appType} host={String(w.url || dom?.name || w.name)} name={<Ltr>{String(w.name)}</Ltr>} sub={`${String(w.sub ?? '')}${w.expires ? ' · ' + String(w.expires) : ''}`} /></td><td><StatusTag s={w.status as 'active'} /></td>
                     <td>{dom ? <Ltr>{String(dom.name)}</Ltr> : '-'}</td><td>{host ? String(host.plan) : '-'}</td>
                     <td style={{ minWidth: 130 }}><span className="latin">{gb(w.usedGb)} / {gb(w.diskGb)}</span>{num(w.diskGb) > 0 && <Meter value={pctUsed(w)} tone={pctUsed(w) > 85 ? 'warn' : undefined} />}</td><td>{owner(w.uid)}</td><td><StatusMenu res="websites" item={w} run={run} /></td>
                   </tr>

@@ -10,7 +10,7 @@ import { useCurrency } from '../site/settings';
 import { OrderButton } from '../site/CartPages';
 import { RenewButton } from './Extras';
 import { IdentityFields, TermsBox, TermsGate, useTerms } from './Identity';
-import { DomainName, SubLine, SvcCard } from '../site/svc';
+import { DomainName, SubLine, SvcCard, TechIcon } from '../site/svc';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
 
@@ -317,7 +317,7 @@ export function PortalWebsites() {
       {sites.length === 0 ? <Empty>{t('مفيش مواقع لسه.', 'No websites yet.')}</Empty> : (
         <div className="svc-list">
           {sites.map((w) => (
-            <SvcCard key={w.id} host={w.url || dom(w.domainId)?.name || w.name} to={`/portal/websites/${w.id}`} dim={w.status === 'stopped'}
+            <SvcCard key={w.id} host={w.url || dom(w.domainId)?.name || w.name} to={`/portal/websites/${w.id}`} dim={w.status === 'stopped'} tech={w.appType}
               title={<Ltr>{w.name}</Ltr>}
               sub={<SubLine sub={w.sub} started={w.started} expires={w.expires} extra={<><StatusTag s={w.status} />{dom(w.domainId) && <span><Ltr>{dom(w.domainId)!.name}</Ltr></span>}{host(w.hostingId) && <span>{host(w.hostingId)!.plan}</span>}</>} />}
               actions={<Link className="btn btn-ghost btn-sm" to={`/portal/websites/${w.id}`}>{t('التفاصيل', 'Details')}</Link>} />
@@ -458,7 +458,7 @@ export function PortalWebsiteDetail() {
         <div><span>{t('بدأ / ينتهي', 'Started / renews')}</span><b><Ltr>{w.started || '-'} → {w.expires || '-'}</Ltr></b></div>
       </div>
       <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
-      {tab === 'overview' && <div className="card"><dl className="kv"><div><dt>{t('الرابط', 'URL')}</dt><dd><Ltr>{w.url || w.name}</Ltr></dd></div><div><dt>{t('ملاحظات', 'Notes')}</dt><dd>{w.notes || '-'}</dd></div></dl>{(w.diskGb ?? 0) > 0 && <><h3 style={{ marginTop: 16 }}>{t('المساحة', 'Disk')}</h3><p className="muted latin">{Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} /></>}</div>}
+      {tab === 'overview' && <div className="card"><dl className="kv">{w.appType && <div><dt>{t('التقنية', 'Technology')}</dt><dd><TechIcon type={w.appType} label /></dd></div>}<div><dt>{t('الرابط', 'URL')}</dt><dd><Ltr>{w.url || w.name}</Ltr></dd></div><div><dt>{t('ملاحظات', 'Notes')}</dt><dd>{w.notes || '-'}</dd></div></dl>{(w.diskGb ?? 0) > 0 && <><h3 style={{ marginTop: 16 }}>{t('المساحة', 'Disk')}</h3><p className="muted latin">{Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} /></>}</div>}
       {tab === 'hosting' && (host ? <div className="card"><h3><Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link></h3><p className="muted latin">{host.usedGb} / {host.diskGb} GB</p><Meter value={pct(host.usedGb, host.diskGb)} /></div> : (data.sharedHosting ?? []).find((x) => x.id === w.hostingId) ? <div className="card"><h3>{(data.sharedHosting ?? []).find((x) => x.id === w.hostingId)!.plan}</h3><p className="muted">{t('موقعك على استضافة مشتركة بتديرها نوتش.', 'Your site runs on shared hosting managed by us.')}</p></div> : <p className="muted">{t('مفيش استضافة مربوطة.', 'No hosting linked.')}</p>)}
       {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومين الموقع.', 'No mailboxes on the website’s domain.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{m.address}</Ltr></td><td className="latin">{m.usedGb} / {m.quotaGb} GB</td></tr>)}</Table>}
     </Page>

@@ -431,3 +431,9 @@
 }
 
 .ma-html { width: 100%; border: 1px solid var(--nt-fog); border-radius: 12px; background: #fff; min-height: 160px; display: block; }
+
+.tech { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; margin-inline-end: 6px; }
+.tech svg { flex: none; display: block; }
+.tech-n { font-size: .85rem; }
+.svc-cell-t b { display: flex; align-items: center; flex-wrap: nowrap; gap: 2px; }
+.svc-title .tech { margin-inline-end: 8px; }

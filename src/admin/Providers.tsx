@@ -1,3 +1,4 @@
+import { TechIcon } from '../site/svc';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Ltr, useI18n } from '../i18n';
@@ -183,7 +184,7 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
                 {'ref' in r ? (kind === 'websites' ? <Ltr>{r.domain}</Ltr> : kind === 'servers' ? <Ltr>{r.name}</Ltr> : r.plan) : <Ltr>{r.name}</Ltr>} {r.imported && <span className="tag">{t('موجود', 'Imported')}</span>}</label>
               {'ref' in r && (kind === 'websites' || kind === 'servers') && (
                 <div className="sub-line muted">
-                  {r.appType && <span className="tag">{r.appType}</span>}{r.plan && <span>{r.plan}</span>}{r.ip && <span className="latin">{r.ip}</span>}{r.spec && <span className="latin">{r.spec}</span>}{r.dataCenter && <span className="latin">{r.dataCenter}</span>}{r.created && <span className="latin">{r.created}</span>}
+                  {r.appType && <TechIcon type={r.appType} label />}{r.plan && <span>{r.plan}</span>}{r.ip && <span className="latin">{r.ip}</span>}{r.spec && <span className="latin">{r.spec}</span>}{r.dataCenter && <span className="latin">{r.dataCenter}</span>}{r.created && <span className="latin">{r.created}</span>}
                   {r.details && Object.keys(r.details).length > 0 && <button type="button" className="link" onClick={() => setMore(more === key(r) ? null : key(r))}>{more === key(r) ? t('إخفاء التفاصيل', 'Hide details') : t('التفاصيل', 'Details')}</button>}
                 </div>
               )}

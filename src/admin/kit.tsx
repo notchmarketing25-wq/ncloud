@@ -1,3 +1,4 @@
+import { TechIcon } from '../site/svc';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Ltr, useI18n } from '../i18n';
@@ -89,7 +90,7 @@ export function ProviderCard({ item, extra }: { item: Item; extra?: [string, Rea
   const d = (item.providerData ?? {}) as Record<string, string>;
   const rows: [string, ReactNode][] = [
     ...(item.provider ? [[t('المزوّد', 'Provider'), String(item.provider)] as [string, ReactNode]] : []),
-    ...(item.appType ? [[t('نوع الموقع', 'Site type'), String(item.appType)] as [string, ReactNode]] : []),
+    ...(item.appType ? [[t('نوع الموقع', 'Site type'), <TechIcon type={item.appType} label />] as [string, ReactNode]] : []),
     ...(item.dataCenter ? [[t('مركز البيانات', 'Data center'), String(item.dataCenter)] as [string, ReactNode]] : []),
     ...(item.username ? [[t('اسم المستخدم', 'Username'), <span className="latin">{String(item.username)}</span>] as [string, ReactNode]] : []),
     ...(extra ?? []),
