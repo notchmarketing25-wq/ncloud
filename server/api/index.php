@@ -2326,9 +2326,9 @@ switch ($r) {
             }
             if ($r === 'mail/list') {
                 $size = 25; $page = max(1, (int) (isset($_GET['page']) ? $_GET['page'] : 1));
-                $q = isset($_GET['q']) ? (string) $_GET['q'] : ''; $unread = !empty($_GET['unread']);
+                $q = isset($_GET['q']) ? (string) $_GET['q'] : ''; $unread = isset($_GET['filter']) && in_array($_GET['filter'], array('unread', 'read', 'starred'), true) ? $_GET['filter'] : (!empty($_GET['unread']) ? 'unread' : '');
                 $total = $im->select($folder);
-                if ($q !== '' || $unread) {
+                if ($q !== '' || $unread !== '') {
                     $all = $im->searchUids(mail_search_crit($q, $unread)); $total = count($all);
                     $msgs = $im->headersByUids(array_slice($all, ($page - 1) * $size, $size));
                 } else {
@@ -2361,11 +2361,12 @@ switch ($r) {
         $pw = mail_pass($db0, $mb);
         $folder = isset($b['folder']) && $b['folder'] !== '' ? (string) $b['folder'] : 'INBOX';
         $act = isset($b['action']) ? (string) $b['action'] : ''; $uids = array(); foreach ((isset($b['uids']) && is_array($b['uids']) ? $b['uids'] : array()) as $x) { $uids[] = (int) $x; } $uids = array_slice(array_unique($uids), 0, 100);
-        if (!in_array($act, array('seen', 'unseen', 'delete', 'spam'), true) || !$uids) { fail('bad request', 422); }
+        if (!in_array($act, array('seen', 'unseen', 'delete', 'spam', 'star', 'unstar'), true) || !$uids) { fail('bad request', 422); }
         try {
             $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $im->select($folder); $sp = mail_special($im->folders());
             foreach ($uids as $x) {
                 if ($act === 'seen' || $act === 'unseen') { $im->store($x, '\\Seen', $act === 'seen'); }
+                elseif ($act === 'star' || $act === 'unstar') { $im->store($x, '\\Flagged', $act === 'star'); }
                 elseif ($act === 'spam') { if ($sp['spam'] !== '') { $im->moveTo($x, $sp['spam']); } }
                 else { if ($sp['trash'] !== '' && strcasecmp($folder, $sp['trash']) !== 0) { $im->moveTo($x, $sp['trash']); } else { $im->expunge($x); } }
             }

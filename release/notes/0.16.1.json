@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "N Emails is now a full-screen app of its own at #/mail (own sidebar, search bar, All/Unread/Read/Starred filters, star, sticky reply bar); DNS push no longer fails when ALIAS and A share a name (the record added last wins, the rest are reported)"
+ ],
+ "ar": [
+  "N Emails بقت تطبيق مستقل بشاشة كاملة على #/mail (سايدبار وبحث وفلاتر الكل/غير المقروء/المقروء/المميّز ونجمة وشريط رد)؛ ودفع الـ DNS ما بقاش يفشل لما ALIAS وA يتجمعوا على نفس الاسم (آخر سجل اتضاف بيكسب والباقي بيتبلّغ عنه)"
+ ]
+}

@@ -371,6 +371,27 @@ function dns_group($records) {
     foreach ($g as $k => $x) { unset($g[$k]['seen']); }
     return array_values($g);
 }
+/** DNS rules a provider enforces: ALIAS/CNAME cannot share a name with A/AAAA (or with each other). The record added last wins; the rest are dropped and reported. */
+function dns_resolve($records, &$notes) {
+    $notes = array(); $by = array();
+    foreach ($records as $i => $r) { $by[strtolower($r['host'])][] = $i; }
+    $drop = array();
+    foreach ($by as $host => $idx) {
+        $excl = -1; $addr = -1;
+        foreach ($idx as $i) { $t = $records[$i]['type']; if ($t === 'ALIAS' || $t === 'CNAME') { $excl = $i; } elseif ($t === 'A' || $t === 'AAAA') { $addr = $i; } }
+        if ($excl < 0) { continue; }
+        $winner = $excl > $addr ? $excl : $addr; $wt = $records[$winner]['type'];
+        foreach ($idx as $i) {
+            $t = $records[$i]['type']; if ($i === $winner || !in_array($t, array('A', 'AAAA', 'ALIAS', 'CNAME'), true)) { continue; }
+            if ($wt === 'A' || $wt === 'AAAA') { if ($t === 'ALIAS' || $t === 'CNAME') { $drop[$i] = true; } }
+            else { $drop[$i] = true; }
+        }
+        if ($wt === 'A' || $wt === 'AAAA') { foreach ($idx as $i) { if (isset($drop[$i]) && $i !== $winner) { $notes[] = $records[$i]['type'] . ' ' . $host; } } }
+        else { foreach ($idx as $i) { if (isset($drop[$i])) { $notes[] = $records[$i]['type'] . ' ' . $host; } } }
+    }
+    $o = array(); foreach ($records as $i => $r) { if (!isset($drop[$i])) { $o[] = $r; } }
+    return $o;
+}
 function hostinger_dns_get($cfg, $domain) {
     $o = array();
     foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/dns/v1/zones/' . rawurlencode($domain))) as $z) {
@@ -386,7 +407,7 @@ function hostinger_dns_get($cfg, $domain) {
     return $o;
 }
 function hostinger_dns_set($cfg, $domain, $records) {
-    $zone = array();
+    $zone = array(); $n = array(); $records = dns_resolve($records, $n);
     foreach (dns_group($records) as $g) {
         $zone[] = array('name' => $g['host'], 'type' => $g['type'], 'ttl' => $g['ttl'], 'records' => array_map(function ($v) { return array('content' => $v); }, $g['values']));
     }
@@ -720,14 +741,15 @@ function prov_route($r, $me) {
                 }
                 if ($action === 'push') {
                     if (!dns_can_write($pid)) { fail(prov_name($pid) . ' DNS is read-only here — edit it at the provider', 422); }
-                    $local = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
+                    $local = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array(); $notes = array();
+                    $local = dns_resolve($local, $notes);
                     prov_run($pid, 'dns_set', $db, strtolower($d['name']), $local);
                     db_update(function (&$db) use ($id, $me, $d, $local) {
                         $k = find_by(items_of($db, 'domains'), 'id', $id);
-                        if ($k >= 0) { $db['items']['domains'][$k]['dnsSynced'] = true; }
+                        if ($k >= 0) { $db['items']['domains'][$k]['dnsSynced'] = true; $db['items']['domains'][$k]['dns'] = $local; }
                         log_act($db, $me, 'dns-push', $d['name'] . ' x' . count($local));
                     });
-                    out(array('ok' => true, 'records' => count($local)));
+                    out(array('ok' => true, 'records' => count($local), 'removed' => $notes));
                 }
             } catch (Exception $e) { fail($e->getMessage(), 502); }
             fail('unknown action', 422);
@@ -921,7 +943,10 @@ function prov_dns_autopush($domainId) {
     foreach (isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array() as $r) { $k = $r['type'] . '|' . $r['host'] . '|' . dns_norm($r['value']); if (isset($seen[$k])) { continue; } $seen[$k] = true; $clean[] = $r; }
     if (count($clean) !== count(isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array())) { $d['dns'] = $clean; db_update(function (&$db) use ($domainId, $clean) { $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k >= 0) { $db['items']['domains'][$k]['dns'] = $clean; } }); }
     if (empty($d['dnsSynced']) || !dns_can_write($pid) || !prov_has_keys($pid, prov_cfg($db, $pid))) { return ''; }
-    try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), isset($d['dns']) ? $d['dns'] : array()); return ''; }
+    $recs = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array(); $notes = array();
+    $fixed = dns_resolve($recs, $notes);
+    if ($notes) { db_update(function (&$db) use ($domainId, $fixed) { $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k >= 0) { $db['items']['domains'][$k]['dns'] = $fixed; } }); }
+    try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), $fixed); return $notes ? 'sent, but these records were removed because the provider does not allow them on the same name as another record (A/AAAA vs ALIAS/CNAME): ' . implode(', ', $notes) : ''; }
     catch (Exception $e) { return 'saved here, but not sent to ' . prov_name($pid) . ': ' . $e->getMessage(); }
 }
 
@@ -1128,7 +1153,7 @@ class NcImap {
             $uid = preg_match('/UID (\d+)/', $blk, $u) ? (int) $u[1] : (int) $m[1];
             $hdr = ''; if (preg_match('/\{\d+\}\r?\n(.*)\r?\n\)/s', $blk, $h)) { $hdr = $h[1]; }
             $p = mail_headers($hdr);
-            $o[] = array('uid' => $uid, 'from' => isset($p['from']) ? $p['from'] : '', 'subject' => isset($p['subject']) ? $p['subject'] : '', 'date' => isset($p['date']) ? $p['date'] : '', 'seen' => stripos($blk, '\\Seen') !== false, 'size' => preg_match('/RFC822\.SIZE (\d+)/', $blk, $z) ? (int) $z[1] : 0);
+            $o[] = array('uid' => $uid, 'from' => isset($p['from']) ? $p['from'] : '', 'subject' => isset($p['subject']) ? $p['subject'] : '', 'date' => isset($p['date']) ? $p['date'] : '', 'seen' => stripos($blk, '\\Seen') !== false, 'starred' => stripos($blk, '\\Flagged') !== false, 'size' => preg_match('/RFC822\.SIZE (\d+)/', $blk, $z) ? (int) $z[1] : 0);
         }
         return $o;
     }
@@ -1190,9 +1215,10 @@ function mail_special($folders) {
     $pick = function ($re) use ($folders) { foreach ($folders as $f) { if (preg_match($re, $f)) { return $f; } } return ''; };
     return array('inbox' => 'INBOX', 'sent' => $pick('/^(INBOX[.\/])?(Sent( (Items|Messages|Mail))?)$/i'), 'drafts' => $pick('/^(INBOX[.\/])?Drafts?$/i'), 'trash' => $pick('/^(INBOX[.\/])?(Trash|Deleted( (Items|Messages))?|Bin)$/i'), 'spam' => $pick('/^(INBOX[.\/])?(Spam|Junk( E-?mail)?)$/i'));
 }
-function mail_search_crit($q, $unreadOnly) {
+function mail_search_crit($q, $filter) {
     $parts = array();
-    if ($unreadOnly) { $parts[] = 'UNSEEN'; }
+    $map = array('unread' => 'UNSEEN', 'read' => 'SEEN', 'starred' => 'FLAGGED');
+    if (isset($map[$filter])) { $parts[] = $map[$filter]; }
     $q = trim(str_replace(array("\r", "\n", '"', '\\'), ' ', (string) $q));
     if ($q !== '') { $parts[] = 'OR OR FROM "' . $q . '" SUBJECT "' . $q . '" TO "' . $q . '"'; }
     return $parts ? implode(' ', $parts) : 'ALL';

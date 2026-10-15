@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import './brand/fonts';
 import './brand/tokens.css';
 import './brand/base.css';
@@ -20,7 +20,7 @@ import { CartProvider } from './site/cart';
 import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
 import { AdminOrders } from './admin/Orders';
 import { PortalProfile, TermsPage } from './portal/Identity';
-import { PortalMail } from './portal/Mail';
+import { MailApp } from './portal/Mail';
 import { ForgotPassword, PortalInvoice, PortalQuotes, RenewPage, ResetPassword } from './portal/Extras';
 import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
 import { AdminClient } from './admin/Client';
@@ -88,6 +88,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="activity" element={<AdminActivity />} />
             <Route path="account" element={<AdminAccount />} />
           </Route>
+          <Route path="mail" element={<MailApp />} />
           <Route path="portal" element={<PortalLayout />}>
             <Route index element={<Overview />} />
             <Route path="domains" element={<PortalDomains />} />
@@ -104,7 +105,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />
             <Route path="email" element={<PortalEmail />} />
-            <Route path="mail" element={<PortalMail />} />
+            <Route path="mail" element={<Navigate to="/mail" replace />} />
             <Route path="hosting" element={<PortalHosting />} />
             <Route path="servers" element={<PortalServers />} />
             <Route path="billing" element={<PortalBilling />} />

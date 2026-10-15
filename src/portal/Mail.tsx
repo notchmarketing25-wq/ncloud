@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../auth';
+import { LangToggle } from '../site/Layout';
 import { Ltr, useI18n } from '../i18n';
 import { ApiError, api, apiUrl, post } from '../lib/api';
 import { errText } from '../admin/errors';
-import { Modal, Page } from '../ui';
-import { usePortal } from './PortalData';
+import { Modal } from '../ui';
 
 type Box = { id: string; address: string; connected: boolean; status: string };
 type Folder = { name: string; unseen: number; total: number };
-type Msg = { uid: number; from: string; subject: string; date: string; seen: boolean; size: number };
+type Msg = { uid: number; from: string; subject: string; date: string; seen: boolean; starred?: boolean; size: number };
 type Full = { headers: Record<string, string>; text: string; html: boolean; attachments: { name: string; type: string; size: number }[] };
 type Check = { key: string; ok: boolean; live: boolean; required: boolean; records: { host: string; type: string; value: string; ok: boolean; saved: boolean }[] };
 type Draft = { to: string; cc: string; subject: string; body: string; inReplyTo: string; references: string };
@@ -21,10 +22,10 @@ const sigKey = (id: string) => `nc.sig.${id}`;
 const getSig = (id: string) => { try { return localStorage.getItem(sigKey(id)) ?? ''; } catch { return ''; } };
 const setSig = (id: string, v: string) => { try { localStorage.setItem(sigKey(id), v); } catch { /* private mode */ } };
 
-/** "N Emails": the client's own webmail over IMAP/SMTP, inside the portal. */
-export function PortalMail() {
+/** "N Emails": a full-screen webmail app of its own (not inside the portal shell), over IMAP/SMTP. */
+export function MailApp() {
   const { t } = useI18n();
-  const { demo } = usePortal();
+  const { mode, user, logout } = useAuth();
   const [qs, setQs] = useSearchParams();
   const [boxes, setBoxes] = useState<Box[] | null>(null);
   const [webmail, setWebmail] = useState('');
@@ -34,18 +35,25 @@ export function PortalMail() {
   const loadBoxes = useCallback(() => {
     api<{ boxes: Box[]; webmail: string }>('mail/boxes').then((r) => { setBoxes(r.boxes); setWebmail(r.webmail); }).catch((e) => { setErr(errText(e, t)); setBoxes([]); });
   }, [t]);
-  useEffect(() => { if (!demo) loadBoxes(); }, [demo, loadBoxes]);
+  useEffect(() => { if (mode === 'server' && user) loadBoxes(); }, [mode, user, loadBoxes]);
+  useEffect(() => { document.title = 'N Emails'; }, []);
 
-  if (demo) return <Page title="N Emails"><div className="card"><p className="muted">{t('صندوق الإيميل المدمج بيشتغل على المنصة الفعلية (مش في وضع التجربة).', 'The built-in mailbox works on the live platform (not in demo mode).')}</p></div></Page>;
-  if (boxes === null) return <Page title="N Emails"><p className="muted">…</p></Page>;
+  if (mode === 'checking') return <div className="boot-loading" role="status">…</div>;
+  if (mode !== 'server') return <div className="mailapp-msg"><div className="card"><p className="muted">{t('صندوق الإيميل المدمج بيشتغل على المنصة الفعلية (مش في وضع التجربة).', 'The built-in mailbox works on the live platform (not in demo mode).')}</p><Link className="link" to="/portal">{t('← البوابة', '← Portal')}</Link></div></div>;
+  if (!user) return <Navigate to="/portal/login?next=%2Fmail" replace />;
+  if (boxes === null) return <div className="boot-loading" role="status">…</div>;
   const box = boxes.find((b) => b.id === sel) ?? boxes[0];
+  const switcher = boxes.length > 1 && box ? <select className="select nm-switch" aria-label={t('الصندوق', 'Mailbox')} value={box.id} onChange={(e) => setQs({ box: e.target.value })}>{boxes.map((b) => <option key={b.id} value={b.id}>{b.address}</option>)}</select> : null;
   return (
-    <Page title="N Emails" action={<div className="row-actions">{boxes.length > 1 && box && <select className="select" aria-label={t('الصندوق', 'Mailbox')} value={box.id} onChange={(e) => setQs({ box: e.target.value })}>{boxes.map((b) => <option key={b.id} value={b.id}>{b.address}</option>)}</select>}<Link to="/portal/email" className="btn btn-ghost btn-sm">{t('كل الصناديق', 'All mailboxes')}</Link></div>}>
-      {err && <div className="form-error" role="alert">{err}</div>}
-      {!box ? <div className="card"><p className="muted">{t('مفيش صناديق إيميل على حسابك لسه.', 'No mailboxes on your account yet.')} <Link className="link" to="/portal/support?new=mailbox">{t('اطلب صندوق', 'Request a mailbox')}</Link></p></div>
-        : !box.connected ? <Connect box={box} onDone={loadBoxes} webmail={webmail} />
-          : <Client key={box.id} box={box} onDisconnect={loadBoxes} />}
-    </Page>
+    <div className="mailapp">
+      {!box || !box.connected ? (
+        <div className="mailapp-msg">
+          <div className="mailapp-head"><span className="mailapp-logo">N <i>|</i> Mail</span><span className="row-actions">{switcher}<LangToggle /><Link to="/portal" className="btn btn-ghost btn-sm">{t('← البوابة', '← Portal')}</Link></span></div>
+          {err && <div className="form-error" role="alert">{err}</div>}
+          {!box ? <div className="card"><p className="muted">{t('مفيش صناديق إيميل على حسابك لسه.', 'No mailboxes on your account yet.')} <Link className="link" to="/portal/support?new=mailbox">{t('اطلب صندوق', 'Request a mailbox')}</Link></p></div> : <Connect box={box} onDone={loadBoxes} webmail={webmail} />}
+        </div>
+      ) : <Client key={box.id} box={box} switcher={switcher} onDisconnect={loadBoxes} onLogout={async () => { await logout(); window.location.hash = '#/portal/login'; }} />}
+    </div>
   );
 }
 
@@ -68,7 +76,8 @@ function Connect({ box, onDone, webmail }: { box: Box; onDone: () => void; webma
 
 const folderLabel = (f: string, t: (a: string, e: string) => string) => ({ inbox: t('الوارد', 'Inbox'), sent: t('المرسل', 'Sent'), trash: t('المحذوفات', 'Trash'), drafts: t('المسودات', 'Drafts'), spam: t('السبام', 'Spam'), junk: t('السبام', 'Spam') } as Record<string, string>)[f.toLowerCase().replace(/^inbox[./]/, '')] ?? f;
 
-function Client({ box, onDisconnect }: { box: Box; onDisconnect: () => void }) {
+type Filter = 'all' | 'unread' | 'read' | 'starred';
+function Client({ box, switcher, onDisconnect, onLogout }: { box: Box; switcher: React.ReactNode; onDisconnect: () => void; onLogout: () => void }) {
   const { t } = useI18n();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [special, setSpecial] = useState<Record<string, string>>({});
@@ -76,7 +85,7 @@ function Client({ box, onDisconnect }: { box: Box; onDisconnect: () => void }) {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
-  const [unread, setUnread] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
   const [list, setList] = useState<{ total: number; size: number; messages: Msg[] } | null>(null);
   const [open, setOpen] = useState<{ uid: number; msg: Full | null } | null>(null);
   const [err, setErr] = useState('');
@@ -84,15 +93,16 @@ function Client({ box, onDisconnect }: { box: Box; onDisconnect: () => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dns, setDns] = useState(false);
   const [sigEdit, setSigEdit] = useState(false);
+  const [menu, setMenu] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
   const loadFolders = useCallback(() => { api<{ folders: Folder[]; special: Record<string, string> }>('mail/folders', undefined, { id: box.id }).then((r) => { if (alive.current) { setFolders(r.folders); setSpecial(r.special); } }).catch(() => undefined); }, [box.id]);
   const loadList = useCallback((quiet = false) => {
     if (!quiet) setList(null);
-    const p: Record<string, string> = { id: box.id, folder, page: String(page) }; if (query) p.q = query; if (unread) p.unread = '1';
+    const p: Record<string, string> = { id: box.id, folder, page: String(page) }; if (query) p.q = query; if (filter !== 'all') p.filter = filter;
     api<{ total: number; size: number; messages: Msg[] }>('mail/list', undefined, p).then((r) => { if (alive.current) { setList(r); setErr(''); } }).catch((e) => { if (!alive.current) return; if (e instanceof ApiError && e.status === 409) onDisconnect(); setErr(errText(e, t)); setList({ total: 0, size: 25, messages: [] }); });
-  }, [box.id, folder, page, query, unread, t, onDisconnect]);
+  }, [box.id, folder, page, query, filter, t, onDisconnect]);
   useEffect(() => { loadFolders(); }, [loadFolders]);
   useEffect(() => { loadList(); }, [loadList]);
   // New mail arrives by polling while the page is open (shared hosting has no push).
@@ -102,11 +112,13 @@ function Client({ box, onDisconnect }: { box: Box; onDisconnect: () => void }) {
     setOpen({ uid, msg: null });
     api<Full>('mail/read', undefined, { id: box.id, folder, uid: String(uid) }).then((msg) => { setOpen({ uid, msg }); setList((l) => l && { ...l, messages: l.messages.map((m) => m.uid === uid ? { ...m, seen: true } : m) }); loadFolders(); }).catch((e) => { setErr(errText(e, t)); setOpen(null); });
   };
-  const act = async (action: 'seen' | 'unseen' | 'delete' | 'spam', uid: number) => {
+  const act = async (action: 'seen' | 'unseen' | 'delete' | 'spam' | 'star' | 'unstar', uid: number) => {
     setErr('');
-    try { await post('mail/action', { id: box.id, folder, action, uids: [uid] }); if (action !== 'seen' && action !== 'unseen') setOpen(null); loadList(true); loadFolders(); } catch (e) { setErr(errText(e, t)); }
+    if (action === 'star' || action === 'unstar') setList((l) => l && { ...l, messages: l.messages.map((m) => m.uid === uid ? { ...m, starred: action === 'star' } : m) });
+    try { await post('mail/action', { id: box.id, folder, action, uids: [uid] }); if (action === 'delete' || action === 'spam') setOpen(null); if (action !== 'star' && action !== 'unstar') { loadList(true); loadFolders(); } } catch (e) { setErr(errText(e, t)); loadList(true); }
   };
   const search = (e: FormEvent) => { e.preventDefault(); setPage(1); setQuery(q.trim()); setOpen(null); };
+  const go = (f: string) => { setFolder(f); setPage(1); setOpen(null); setQuery(''); setQ(''); setFilter('all'); setMenu(false); };
   const pages = list ? Math.max(1, Math.ceil(list.total / list.size)) : 1;
   const sig = getSig(box.id);
   const withSig = (b: string) => (sig ? `${b}\n\n-- \n${sig}` : b);
@@ -117,64 +129,82 @@ function Client({ box, onDisconnect }: { box: Box; onDisconnect: () => void }) {
     const mine = box.address.toLowerCase();
     const cc = all ? [h.to, h.cc].filter(Boolean).join(', ').split(',').map((x) => x.trim()).filter((x) => x && addrOf(x).toLowerCase() !== mine && addrOf(x).toLowerCase() !== to.toLowerCase()).join(', ') : '';
     const sub = h.subject || '';
-    setDraft({ to, cc, subject: /^re:/i.test(sub) ? sub : `Re: ${sub}`, body: withSig(`\n\n${t('في', 'On')} ${h.date}, ${nameOf(h.from || '')} ${t('كتب:', 'wrote:')}\n${open.msg.text.split('\n').map((l) => `> ${l}`).join('\n')}`).replace(/^\n\n/, '\n\n'), inReplyTo: h['message-id'] || '', references: h.references || '' });
+    setDraft({ to, cc, subject: /^re:/i.test(sub) ? sub : `Re: ${sub}`, body: withSig(`\n\n${t('في', 'On')} ${h.date}, ${nameOf(h.from || '')} ${t('كتب:', 'wrote:')}\n${open.msg.text.split('\n').map((l) => `> ${l}`).join('\n')}`), inReplyTo: h['message-id'] || '', references: h.references || '' });
   };
   const forward = () => {
     if (!open?.msg) return; const h = open.msg.headers; const sub = h.subject || '';
     setDraft({ to: '', cc: '', subject: /^fwd?:/i.test(sub) ? sub : `Fwd: ${sub}`, body: withSig(`\n\n---------- ${t('رسالة محوّلة', 'Forwarded message')} ----------\n${t('من', 'From')}: ${h.from}\n${t('التاريخ', 'Date')}: ${h.date}\n${t('الموضوع', 'Subject')}: ${sub}\n\n${open.msg.text}`), inReplyTo: '', references: '' });
   };
 
-  const trashed = special.trash && folder === special.trash;
+  const trashed = !!special.trash && folder === special.trash;
+  const cur = list?.messages.find((m) => m.uid === open?.uid);
+  const filters: [Filter, string][] = [['all', t('كل الرسايل', 'All mail')], ['unread', t('غير المقروء', 'Unread')], ['read', t('المقروء', 'Read')], ['starred', t('المميّز', 'Starred')]];
   return (
-    <div className="nmail">
-      <div className="nm-bar">
-        <button className="btn btn-accent" onClick={() => setDraft({ to: '', cc: '', subject: '', body: withSig('\n'), inReplyTo: '', references: '' })}>{t('+ رسالة جديدة', '+ Compose')}</button>
-        <form className="nm-search" onSubmit={search} role="search"><input className="input" type="search" aria-label={t('بحث', 'Search')} placeholder={t('ابحث في المرسل أو الموضوع…', 'Search sender or subject…')} value={q} onChange={(e) => setQ(e.target.value)} /><button className="btn btn-ghost btn-sm" type="submit">{t('بحث', 'Search')}</button></form>
-        <label className="nm-chk"><input type="checkbox" checked={unread} onChange={(e) => { setUnread(e.target.checked); setPage(1); }} /> {t('غير المقروء', 'Unread')}</label>
-        <button className="btn btn-ghost btn-sm" onClick={() => { loadList(); loadFolders(); }} aria-label={t('تحديث', 'Refresh')}>↻</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setDns(true)}>{t('إعداد الدومين', 'Domain setup')}</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setSigEdit(true)}>{t('التوقيع', 'Signature')}</button>
-      </div>
-      {note && <div className="card nm-note" role="status">{note}</div>}
-      {err && <div className="form-error" role="alert">{err}</div>}
-      <div className="nm-grid">
-        <aside className="nm-folders">
+    <div className={`mailapp-in${open ? ' reading' : ''}`}>
+      <aside className={`ma-side${menu ? ' is-open' : ''}`}>
+        <div className="ma-brand"><span className="mailapp-logo">N <i>|</i> Mail</span><button className="ma-burger" onClick={() => setMenu(!menu)} aria-label={t('القايمة', 'Menu')} aria-expanded={menu}>☰</button></div>
+        <button className="btn btn-accent ma-compose" onClick={() => setDraft({ to: '', cc: '', subject: '', body: withSig('\n'), inReplyTo: '', references: '' })}>✎ {t('رسالة جديدة', 'New message')}</button>
+        <nav className="ma-folders">
           {(folders.length ? folders : [{ name: 'INBOX', unseen: 0, total: 0 }]).map((f) => (
-            <button key={f.name} className={f.name === folder ? 'on' : ''} onClick={() => { setFolder(f.name); setPage(1); setOpen(null); setQuery(''); setQ(''); }}><span>{folderLabel(f.name, t)}</span>{f.unseen > 0 && <b className="nm-badge latin">{f.unseen}</b>}</button>
+            <button key={f.name} className={f.name === folder ? 'on' : ''} onClick={() => go(f.name)}><span>{folderLabel(f.name, t)}</span>{f.unseen > 0 && <b className="nm-badge latin">{f.unseen}</b>}</button>
           ))}
-          <button className="link" onClick={async () => { if (window.confirm(t('تفصل الصندوق؟ هتحتاج الباسورد تاني.', 'Disconnect this mailbox? You will need the password again.'))) { await post('mail/secret', { id: box.id, password: '' }); onDisconnect(); } }}>{t('فصل الصندوق', 'Disconnect')}</button>
-        </aside>
-        <section className={`nm-list${open ? ' has-open' : ''}`}>
-          <div className="row-actions" style={{ justifyContent: 'space-between' }}>
-            <b>{folderLabel(folder, t)} {list && <span className="muted latin">({list.total})</span>}</b>
-            <span className="row-actions"><button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label={t('السابق', 'Previous')}>‹</button><span className="latin">{page}/{pages}</span><button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label={t('التالي', 'Next')}>›</button></span>
+        </nav>
+        <div className="ma-foot">
+          {switcher}
+          <Ltr>{box.address}</Ltr>
+          <div className="row-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => setDns(true)}>{t('إعداد الدومين', 'Domain setup')}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setSigEdit(true)}>{t('التوقيع', 'Signature')}</button>
           </div>
-          {list === null ? <p className="muted">…</p> : list.messages.length === 0 ? <p className="muted">{query || unread ? t('مفيش نتايج.', 'No results.') : t('مفيش رسايل.', 'No messages.')}</p> : list.messages.map((m) => (
-            <button key={m.uid} className={`mv-row${open?.uid === m.uid ? ' on' : ''}${m.seen ? '' : ' unread'}`} onClick={() => read(m.uid)}>
-              <span className="mv-from">{special.sent && folder === special.sent ? '' : ''}{nameOf(m.from)}</span><span className="mv-sub">{m.subject || t('(بدون عنوان)', '(no subject)')}</span><span className="mv-date latin">{when(m.date)}</span>
-            </button>
-          ))}
-        </section>
-        <section className={`nm-read${open ? ' has-open' : ''}`}>
-          {!open ? <p className="muted">{t('اختار رسالة لقراءتها.', 'Pick a message to read it.')}</p> : !open.msg ? <p className="muted">…</p> : (
-            <>
-              <button className="btn btn-ghost btn-sm nm-back" onClick={() => setOpen(null)}>{t('← الرسايل', '← Messages')}</button>
-              <h3 style={{ margin: 0 }} dir="auto">{open.msg.headers.subject || t('(بدون عنوان)', '(no subject)')}</h3>
-              <p className="muted">{t('من', 'From')}: <Ltr>{open.msg.headers.from}</Ltr><br />{t('إلى', 'To')}: <Ltr>{open.msg.headers.to}</Ltr>{open.msg.headers.cc && <><br />Cc: <Ltr>{open.msg.headers.cc}</Ltr></>}<br /><Ltr>{open.msg.headers.date}</Ltr></p>
-              <div className="row-actions">
-                <button className="btn btn-primary btn-sm" onClick={() => reply(false)}>{t('رد', 'Reply')}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => reply(true)}>{t('رد على الكل', 'Reply all')}</button>
-                <button className="btn btn-ghost btn-sm" onClick={forward}>{t('تحويل', 'Forward')}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => act('unseen', open.uid)}>{t('غير مقروء', 'Mark unread')}</button>
-                {special.spam && folder !== special.spam && <button className="btn btn-ghost btn-sm" onClick={() => act('spam', open.uid)}>{t('سبام', 'Spam')}</button>}
-                <button className="btn btn-ghost btn-sm" onClick={() => { if (!trashed || window.confirm(t('تمسح الرسالة نهائيًا؟', 'Delete permanently?'))) act('delete', open.uid); }}>{trashed ? t('حذف نهائي', 'Delete forever') : t('حذف', 'Delete')}</button>
-              </div>
-              <div className="mv-body" dir="auto">{open.msg.text || t('(رسالة فاضية)', '(empty message)')}</div>
-              {open.msg.attachments.length > 0 && <p className="muted">{t('مرفقات', 'Attachments')}: {open.msg.attachments.map((a, i) => <a key={i} className="tag latin" href={apiUrl('mail/attachment', { id: box.id, folder, uid: String(open.uid), n: String(i) })}>{a.name} · {kb(a.size)}</a>)}</p>}
-              {open.msg.html && <p className="muted">{t('الرسالة HTML وبتتعرض كنص عادي للأمان.', 'This is an HTML message, shown as plain text for safety.')}</p>}
-            </>
-          )}
-        </section>
+          <button className="link" onClick={async () => { if (window.confirm(t('تفصل الصندوق؟ هتحتاج الباسورد تاني.', 'Disconnect this mailbox? You will need the password again.'))) { await post('mail/secret', { id: box.id, password: '' }); onDisconnect(); } }}>{t('فصل الصندوق', 'Disconnect')}</button>
+        </div>
+      </aside>
+      <div className="ma-main">
+        <header className="ma-top">
+          <form className="ma-search" onSubmit={search} role="search"><input className="input" type="search" aria-label={t('بحث', 'Search')} placeholder={t('ابحث في الإيميلات', 'Search mail')} value={q} onChange={(e) => setQ(e.target.value)} /></form>
+          <span className="row-actions"><LangToggle /><Link to="/portal" className="btn btn-ghost btn-sm">{t('← البوابة', '← Portal')}</Link><button className="btn btn-ghost btn-sm" onClick={onLogout}>{t('خروج', 'Sign out')}</button></span>
+        </header>
+        {note && <div className="card nm-note" role="status">{note}</div>}
+        {err && <div className="form-error" role="alert" style={{ margin: '0 16px' }}>{err}</div>}
+        <div className="ma-cols">
+          <section className="ma-list">
+            <div className="ma-listhead">
+              <h2>{folderLabel(folder, t)} {list && <span className="muted latin">({list.total})</span>}</h2>
+              <span className="row-actions"><button className="btn btn-ghost btn-sm" onClick={() => { loadList(); loadFolders(); }} aria-label={t('تحديث', 'Refresh')}>↻</button><button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label={t('السابق', 'Previous')}>‹</button><span className="latin">{page}/{pages}</span><button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label={t('التالي', 'Next')}>›</button></span>
+            </div>
+            <div className="ma-chips" role="tablist">{filters.map(([k, l]) => <button key={k} role="tab" aria-selected={filter === k} className={filter === k ? 'on' : ''} onClick={() => { setFilter(k); setPage(1); }}>{l}</button>)}</div>
+            <div className="ma-rows">
+              {list === null ? <p className="muted pad">…</p> : list.messages.length === 0 ? <p className="muted pad">{query || filter !== 'all' ? t('مفيش نتايج.', 'No results.') : t('مفيش رسايل.', 'No messages.')}</p> : list.messages.map((m) => (
+                <div key={m.uid} className={`ma-row${open?.uid === m.uid ? ' on' : ''}${m.seen ? '' : ' unread'}`}>
+                  <button className={`ma-star${m.starred ? ' on' : ''}`} aria-label={t('تمييز', 'Star')} aria-pressed={!!m.starred} onClick={() => act(m.starred ? 'unstar' : 'star', m.uid)}>{m.starred ? '★' : '☆'}</button>
+                  <button className="ma-open" onClick={() => read(m.uid)}><span className="mv-from">{nameOf(m.from)}</span><span className="mv-sub">{m.subject || t('(بدون عنوان)', '(no subject)')}</span></button>
+                  <span className="mv-date latin">{when(m.date)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="ma-read">
+            {!open ? <div className="ma-empty"><span aria-hidden="true">✉</span><p className="muted">{t('اختار رسالة لقراءتها.', 'Pick a message to read it.')}</p></div> : !open.msg ? <p className="muted pad">…</p> : (
+              <>
+                <div className="ma-tools">
+                  <button className="btn btn-ghost btn-sm nm-back" onClick={() => setOpen(null)}>{t('← الرسايل', '← Messages')}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => act('unseen', open.uid)}>{t('غير مقروء', 'Mark unread')}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => act(cur?.starred ? 'unstar' : 'star', open.uid)}>{cur?.starred ? '★' : '☆'} {t('تمييز', 'Star')}</button>
+                  {special.spam && folder !== special.spam && <button className="btn btn-ghost btn-sm" onClick={() => act('spam', open.uid)}>{t('سبام', 'Spam')}</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => { if (!trashed || window.confirm(t('تمسح الرسالة نهائيًا؟', 'Delete permanently?'))) act('delete', open.uid); }}>{trashed ? t('حذف نهائي', 'Delete forever') : t('حذف', 'Delete')}</button>
+                </div>
+                <div className="ma-msg">
+                  <h2 dir="auto">{open.msg.headers.subject || t('(بدون عنوان)', '(no subject)')}</h2>
+                  <p className="muted">{t('من', 'From')}: <Ltr>{open.msg.headers.from}</Ltr><br />{t('إلى', 'To')}: <Ltr>{open.msg.headers.to}</Ltr>{open.msg.headers.cc && <><br />Cc: <Ltr>{open.msg.headers.cc}</Ltr></>}<br /><Ltr>{open.msg.headers.date}</Ltr></p>
+                  <div className="mv-body" dir="auto">{open.msg.text || t('(رسالة فاضية)', '(empty message)')}</div>
+                  {open.msg.attachments.length > 0 && <p className="muted">{t('مرفقات', 'Attachments')}: {open.msg.attachments.map((a, i) => <a key={i} className="tag latin" href={apiUrl('mail/attachment', { id: box.id, folder, uid: String(open.uid), n: String(i) })}>{a.name} · {kb(a.size)}</a>)}</p>}
+                  {open.msg.html && <p className="muted">{t('الرسالة HTML وبتتعرض كنص عادي للأمان.', 'This is an HTML message, shown as plain text for safety.')}</p>}
+                </div>
+                <div className="ma-reply"><button className="btn btn-ghost" onClick={() => reply(false)}>↩ {t('رد', 'Reply')}</button><button className="btn btn-ghost" onClick={() => reply(true)}>↩↩ {t('رد على الكل', 'Reply all')}</button><button className="btn btn-ghost" onClick={forward}>↪ {t('تحويل', 'Forward')}</button></div>
+              </>
+            )}
+          </section>
+        </div>
       </div>
       {draft && <Compose box={box} draft={draft} onClose={() => setDraft(null)} onSent={(saved) => { setDraft(null); setNote(saved ? t('تم الإرسال.', 'Sent.') : t('تم الإرسال (من غير نسخة في المرسل).', 'Sent (no copy kept in Sent).')); window.setTimeout(() => setNote(''), 5000); loadFolders(); if (special.sent && folder === special.sent) loadList(true); }} />}
       {dns && <DnsPanel box={box} onClose={() => setDns(false)} />}
