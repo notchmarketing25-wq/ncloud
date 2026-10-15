@@ -6,7 +6,8 @@ import { post } from '../lib/api';
 import type { DnsRec } from '../lib/types';
 import { useCurrency, useSite } from '../site/settings';
 import { SvcCell } from '../site/svc';
-import { day, Meter, Modal, Page, StatusTag, Table } from '../ui';
+import { SvcFields } from './SvcEdit';
+import { Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
 import { ClientLine, Field, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
@@ -130,6 +131,7 @@ export function AdminDomainDetail() {
             <Field id="ed-pr" label={`${t('سعر العميل (سنة)', 'Client price (per year)')} · ${cur}`}><input id="ed-pr" className="input latin" type="number" min={0} step="any" value={String(edit.price ?? '')} onChange={(e) => setEdit({ ...edit, price: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
             <label className="check"><input type="checkbox" checked={Boolean(edit.autoRenew)} onChange={(e) => setEdit({ ...edit, autoRenew: e.target.checked })} /> {t('تجديد تلقائي', 'Auto-renew')}</label>
             <Field id="ed-nt" label={t('ملاحظات', 'Notes')} wide><input id="ed-nt" className="input" value={String(edit.notes ?? '')} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
+            <SvcFields kind="domains" v={edit} put={(k, val) => setEdit({ ...edit, [k]: val })} />
             <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
           </form>
         </Modal>
@@ -239,6 +241,7 @@ function WebsiteForm({ all, form, setForm, mine, onSave }: { all: NonNullable<Re
       <Field id="w-disk" label={t('المساحة المخصصة (GB)', 'Allotted space (GB)')}><input id="w-disk" className="input latin" type="number" min={0} step="any" value={String(form.diskGb ?? '')} onChange={numIn('diskGb')} /></Field>
       <Field id="w-used" label={t('المستخدم (GB)', 'Used (GB)')}><input id="w-used" className="input latin" type="number" min={0} step="any" value={String(form.usedGb ?? '')} onChange={numIn('usedGb')} /></Field>
       <Field id="w-nt" label={t('ملاحظات', 'Notes')} wide><input id="w-nt" className="input" value={String(form.notes ?? '')} onChange={(e) => set('notes', e.target.value)} /></Field>
+      <SvcFields kind="websites" v={form} put={set} />
       <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
     </form>
   );
@@ -381,102 +384,8 @@ export function AdminHostingDetail() {
             <Field id="hd-co" label={`${t('تكلفتك', 'Your cost')} · ${cur}`}><input id="hd-co" className="input latin" type="number" min={0} step="any" value={String(edit.cost ?? '')} onChange={(e) => setEdit({ ...edit, cost: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
             <Field id="hd-pr" label={`${t('سعر العميل', 'Client price')} · ${cur}`}><input id="hd-pr" className="input latin" type="number" min={0} step="any" value={String(edit.price ?? '')} onChange={(e) => setEdit({ ...edit, price: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
             <Field id="hd-ex" label={t('التجديد القادم', 'Next renewal')}><input id="hd-ex" className="input" type="date" value={String(edit.expires ?? '')} onChange={(e) => setEdit({ ...edit, expires: e.target.value })} /></Field>
+            <SvcFields kind="hosting" v={edit} put={(k, val) => setEdit({ ...edit, [k]: val })} />
             <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
-          </form>
-        </Modal>
-      )}
-    </Page>
-  );
-}
-
-/* ───────── One customer ───────── */
-const SECTIONS: { key: string; res: string; ar: string; en: string; to: string; label: (it: Item) => string }[] = [
-  { key: 'domains', res: 'domains', ar: 'الدومينات', en: 'Domains', to: '/admin/domains', label: (it) => String(it.name) },
-  { key: 'hosting', res: 'hosting', ar: 'الاستضافة', en: 'Hosting', to: '/admin/hosting', label: (it) => `${it.plan}${it.domain ? ` · ${it.domain}` : ''}` },
-  { key: 'websites', res: 'websites', ar: 'المواقع', en: 'Websites', to: '/admin/websites', label: (it) => String(it.name) },
-  { key: 'mailboxes', res: 'mailboxes', ar: 'الإيميلات', en: 'Email', to: '/admin/email', label: (it) => String(it.address) },
-  { key: 'servers', res: 'servers', ar: 'السيرفرات', en: 'Servers', to: '/admin/servers', label: (it) => `${it.name}${it.ip ? ` · ${it.ip}` : ''}` },
-  { key: 'invoices', res: 'invoices', ar: 'الفواتير', en: 'Invoices', to: '/admin/invoices', label: (it) => `${it.number ?? ''} ${it.item} — ${it.amount}` },
-];
-const itemPath = (res: string, it: Item) => (res === 'domains' ? `/admin/domains/${it.id}` : res === 'hosting' ? `/admin/hosting/${it.id}` : res === 'websites' ? `/admin/websites/${it.id}` : null);
-
-export function AdminUserDetail() {
-  const { t } = useI18n();
-  const cur = useCurrency();
-  const nav = useNavigate();
-  const { id } = useParams();
-  const { all, error, load } = useAll();
-  const { err, ok, run } = useActions(load);
-  const [tab, setTab] = useState<string>('overview');
-  const [pick, setPick] = useState<Record<string, string>>({});
-  const [pass, setPass] = useState('');
-  const [edit, setEdit] = useState<{ name: string; email: string; phone: string; company: string } | null>(null);
-  const u = all?.users.find((x) => x.id === id);
-  if (!all || !u) return <Page title={t('العميل', 'Customer')}><Notice err={error} ok="" /><Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link></Page>;
-  const owner = (uid: string) => all.users.find((x) => x.id === uid)?.name ?? '-';
-  const mine = (res: string) => all.items[res].filter((x) => x.uid === u.id);
-  const tickets = all.tickets.filter((x) => x.uid === u.id);
-  const dueTotal = mine('invoices').filter((i) => i.status === 'due').reduce((s, i) => s + num(i.amount), 0);
-  const paidTotal = mine('invoices').filter((i) => i.status === 'paid').reduce((s, i) => s + num(i.amount), 0);
-  const services = SECTIONS.filter((x) => x.res !== 'invoices').reduce((n, x) => n + mine(x.res).length, 0);
-  const move = (res: string, itemId: string) => { const it = all.items[res].find((x) => x.id === itemId); if (it) void run(() => post('admin/item-save', { item: { ...it, uid: u.id } }, { res }), t('اتربط بالعميل.', 'Linked to the client.')).then(() => setPick({ ...pick, [res]: '' })); };
-  const section = SECTIONS.find((x) => x.key === tab);
-  return (
-    <Page title={u.name} action={<div className="row-actions">{u.role === 'client' && <button className={`btn btn-sm ${u.disabled ? 'btn-accent' : 'btn-ghost'}`} onClick={() => { if (u.disabled || window.confirm(t('توقف حساب العميل؟ مش هيقدر يدخل لحد ما تفعّله.', 'Suspend this account? The customer cannot sign in until you reactivate it.'))) void run(() => post('admin/user-update', { id: u.id, disabled: !u.disabled }), u.disabled ? t('اتفعّل الحساب.', 'Account activated.') : t('اتوقف الحساب.', 'Account suspended.')); }}>{u.disabled ? t('تفعيل الحساب', 'Activate account') : t('إيقاف الحساب', 'Suspend account')}</button>}<button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: u.name, email: u.email, phone: u.phone ?? '', company: u.company ?? '' })}>{t('تعديل', 'Edit')}</button><Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link></div>}>
-      <Notice err={err || error} ok={ok} />
-      <Strip items={[[t('الخدمات', 'Services'), <span className="latin">{services}</span>], [t('مدفوع', 'Paid'), <span className="latin">{paidTotal} {cur}</span>], [t('مستحق', 'Due'), <span className="latin">{dueTotal} {cur}</span>], [t('عميل من', 'Customer since'), <Ltr>{day(String(u.created ?? '')) || '-'}</Ltr>], [t('تذاكر', 'Tickets'), <span className="latin">{tickets.length}</span>]]} />
-      <div className="cust-layout">
-        <div>
-          <Tabs value={tab} onChange={setTab} tabs={[['overview', t('نظرة عامة', 'Overview')], ...SECTIONS.map((s) => [s.key, t(s.ar, s.en), mine(s.res).length] as [string, string, number]), ['tickets', t('التذاكر', 'Tickets'), tickets.length]]} />
-          {tab === 'overview' && (
-            <div className="card"><Kv rows={SECTIONS.map((s) => [t(s.ar, s.en), <button className="link" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => setTab(s.key)}><span className="latin">{mine(s.res).length}</span></button>] as [string, React.ReactNode])} />
-              <h3 style={{ marginTop: 18 }}>{t('الدومينات', 'Domains')}</h3><div className="linked">{mine('domains').slice(0, 5).map((d) => <div key={d.id}><Link className="link" to={`/admin/domains/${d.id}`}><Ltr>{String(d.name)}</Ltr></Link><StatusTag s={d.status as 'active'} /></div>)}{mine('domains').length === 0 && <p className="muted">{t('مفيش.', 'None.')}</p>}</div></div>
-          )}
-          {section && (
-            <>
-              <div className="linked">
-                {mine(section.res).map((it) => { const path = itemPath(section.res, it); return <div key={it.id}>{path ? <Link className="link" to={path}>{section.label(it)}</Link> : <span>{section.label(it)}</span>}{it.status ? <StatusTag s={it.status as 'active'} /> : null}</div>; })}
-                {mine(section.res).length === 0 && <p className="muted">{t('مفيش.', 'None.')}</p>}
-              </div>
-              <div className="inline-form" style={{ gridTemplateColumns: '1fr auto auto', marginTop: 12, marginBottom: 8 }}>
-                <div className="field"><label htmlFor={`lk-${section.res}`}>{t('ربط عنصر موجود بالعميل', 'Link an existing item to this client')}</label>
-                  <select id={`lk-${section.res}`} className="select" value={pick[section.res] ?? ''} onChange={(e) => setPick({ ...pick, [section.res]: e.target.value })}><option value="">…</option>{all.items[section.res].filter((x) => x.uid !== u.id).map((x) => <option key={x.id} value={x.id}>{section.label(x)} — {owner(x.uid)}</option>)}</select></div>
-                <button className="btn btn-primary btn-sm" disabled={!pick[section.res]} onClick={() => move(section.res, pick[section.res])}>{t('ربط', 'Link')}</button>
-                <Link className="btn btn-ghost btn-sm" to={section.to}>{t('+ جديد', '+ New')}</Link>
-              </div>
-            </>
-          )}
-          {tab === 'tickets' && <div className="linked">{tickets.map((x) => <div key={x.id}><Link className="link" to="/admin/tickets">{x.subject}</Link><span className="tag">{x.status}</span></div>)}{tickets.length === 0 && <p className="muted">{t('مفيش.', 'None.')}</p>}</div>}
-        </div>
-        <aside>
-          <SideCard title={t('بيانات التواصل', 'Contact information')}>
-            <a className="link latin" dir="ltr" href={`mailto:${u.email}`}>{u.email}</a>
-            {u.phone ? <a className="link latin" dir="ltr" href={`tel:${u.phone}`}>{u.phone}</a> : <p className="muted">{t('مفيش موبايل مسجّل.', 'No phone on file.')}</p>}
-            {u.phone && <a className="link" href={`https://wa.me/${u.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer">WhatsApp</a>}
-            {u.company && <p><b>{t('الشركة', 'Company')}:</b> {u.company}</p>}
-          </SideCard>
-          <SideCard title={t('الحساب', 'Account')}>
-            <p><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : t('عميل', 'Client')}</span> {u.source === 'signup' && <span className="tag">{t('سجّل من الموقع', 'Signed up on the website')}</span>}</p>
-            <p className="muted">{t('تاريخ التسجيل', 'Registered')}: <Ltr>{day(String(u.created ?? '')) || '-'}</Ltr></p>
-            <form className="inline-edit" onSubmit={(e) => { e.preventDefault(); void run(() => post('admin/user-update', { id: u.id, password: pass }), t('تم تغيير كلمة السر.', 'Password changed.')).then(() => setPass('')); }}>
-              <input className="input latin" type="password" minLength={8} required autoComplete="new-password" placeholder={t('كلمة سر جديدة (8+)', 'New password (8+)')} value={pass} onChange={(e) => setPass(e.target.value)} />
-              <button className="btn btn-ghost btn-sm" type="submit">{t('تغيير', 'Change')}</button>
-            </form>
-            <div className="row-actions">
-              <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/user-update', { id: u.id, role: u.role === 'admin' ? 'client' : 'admin' }), t('تم تغيير النوع.', 'Role changed.'))}>{u.role === 'admin' ? t('خفّض لعميل', 'Make client') : t('اجعله أدمن', 'Make admin')}</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف الحساب وكل خدماته وتذاكره؟', 'Delete the account with all its services and tickets?'))) void run(() => post('admin/user-delete', { id: u.id }), t('تم الحذف.', 'Deleted.')).then((r) => { if (r) nav('/admin/users'); }); }}>{t('حذف', 'Delete')}</button>
-            </div>
-          </SideCard>
-        </aside>
-      </div>
-      {edit && (
-        <Modal title={t('تعديل بيانات العميل', 'Edit customer')} onClose={() => setEdit(null)}>
-          <form className="form" onSubmit={(e: FormEvent) => { e.preventDefault(); void run(() => post('admin/user-update', { id: u.id, ...edit }), t('اتحفظ.', 'Saved.')).then((r) => { if (r) setEdit(null); }); }}>
-            <Field id="cu-n" label={t('الاسم', 'Name')}><input id="cu-n" className="input" required value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
-            <Field id="cu-e" label={t('الإيميل', 'Email')}><input id="cu-e" className="input latin" type="email" required value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></Field>
-            <Field id="cu-p" label={t('الموبايل', 'Phone')}><input id="cu-p" className="input latin" value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
-            <Field id="cu-c" label={t('الشركة', 'Company')}><input id="cu-c" className="input" value={edit.company} onChange={(e) => setEdit({ ...edit, company: e.target.value })} /></Field>
-            <button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button>
           </form>
         </Modal>
       )}

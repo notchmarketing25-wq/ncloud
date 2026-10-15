@@ -10,7 +10,7 @@ import { AdminAccount, AdminLayout, AdminOverview } from './admin/Admin';
 import { AdminUsers } from './admin/Customers';
 import { AdminUpdates } from './admin/Updates';
 import { AdminPlans } from './admin/Plans';
-import { AdminDomainDetail, AdminHostingDetail, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
+import { AdminDomainDetail, AdminHostingDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchaseDetail, AdminPurchases } from './admin/Providers';
 import { AdminActivity, AdminDomains, AdminHosting, AdminLeads, AdminMailboxes, AdminServers, AdminTickets } from './admin/Manage';
 import { AdminSettings } from './admin/Settings';
@@ -19,8 +19,9 @@ import { CatalogProvider } from './site/catalog';
 import { CartProvider } from './site/cart';
 import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
 import { AdminOrders } from './admin/Orders';
-import { ForgotPassword, PortalInvoice, RenewPage, ResetPassword } from './portal/Extras';
+import { ForgotPassword, PortalInvoice, PortalQuotes, RenewPage, ResetPassword } from './portal/Extras';
 import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
+import { AdminClient } from './admin/Client';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
@@ -65,7 +66,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="orders" element={<AdminOrders />} />
             <Route path="websites/:id" element={<AdminWebsiteDetail />} />
             <Route path="hosting/:id" element={<AdminHostingDetail />} />
-            <Route path="users/:id" element={<AdminUserDetail />} />
+            <Route path="users/:id" element={<AdminClient />} />
             <Route path="updates" element={<AdminUpdates />} />
             <Route path="email" element={<AdminMailboxes />} />
             <Route path="hosting" element={<AdminHosting />} />
@@ -95,6 +96,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="checkout" element={<Checkout />} />
             <Route path="orders" element={<PortalOrders />} />
             <Route path="invoices/:id" element={<PortalInvoice />} />
+            <Route path="quotes" element={<PortalQuotes />} />
             <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />
             <Route path="email" element={<PortalEmail />} />

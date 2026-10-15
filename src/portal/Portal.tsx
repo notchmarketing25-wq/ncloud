@@ -140,7 +140,7 @@ function BackendOffline({ problem, detail }: { problem: 'no-api' | 'not-installe
 export function PortalLayout() {
   const { t } = useI18n();
   const nav = useNavigate();
-  const { mode, user, logout } = useAuth();
+  const { mode, user, logout, impersonating, stopImpersonate } = useAuth();
   const [open, setOpen] = useState(false);
   if (mode === 'checking') return <div className="boot-loading" role="status">…</div>;
   if (!user) return <Navigate to={`/portal/login?next=${encodeURIComponent(window.location.hash.replace(/^#/, '') || window.location.pathname)}`} replace />;
@@ -152,6 +152,7 @@ export function PortalLayout() {
     { to: '/portal/websites', label: t('المواقع', 'Websites') },
     { to: '/portal/servers', label: t('السيرفرات', 'Servers') },
     { to: '/portal/orders', label: t('الطلبات', 'Orders') },
+    { to: '/portal/quotes', label: t('عروض الأسعار', 'Quotes') },
     { to: '/portal/billing', label: t('الفواتير', 'Billing') },
     { to: '/portal/support', label: t('الدعم', 'Support') },
   ];
@@ -171,6 +172,7 @@ export function PortalLayout() {
         </div>
       </aside>
       <div className="portal-main">
+        {impersonating && <div className="imp-bar" role="status"><span>{t('أنت بتشوف لوحة العميل بحسابه:', 'You are viewing the client area as')} <b>{user.name}</b></span><button className="btn btn-accent btn-sm" onClick={() => void stopImpersonate().then(() => nav('/admin'))}>{t('← الرجوع للإدارة', '← Back to admin')}</button></div>}
         <div className="portal-top">
           <button className="burger" onClick={() => setOpen(!open)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
           <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
@@ -278,7 +280,7 @@ export function PortalDomainDetail() {
         <div><dt>{t('بدأ في', 'Started')}</dt><dd><Ltr>{d.started || '-'}</Ltr></dd></div>
       </dl></div>
       <h2 className="sub">{t('سجلات DNS', 'DNS records')}</h2>
-      <DnsEditor records={d.dns} err={err}
+      <DnsEditor records={d.dns} err={err} readOnly={!!d.dnsOff}
         onAdd={async (r) => { setErr(''); try { await addDns(d.id, r); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }}
         onDelete={async (rid) => { setErr(''); try { await delDns(d.id, rid); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }} />
       <h2 className="sub">{t('الإيميلات', 'Mailboxes')}</h2>

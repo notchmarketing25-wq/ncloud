@@ -205,3 +205,53 @@ export function PortalInvoice() {
     </Page>
   );
 }
+
+
+/* ───────── quotes ───────── */
+export function QuoteTag({ s }: { s: string }) {
+  const { t } = useI18n();
+  const map: Record<string, [string, string, string]> = { draft: ['', 'مسودة', 'Draft'], delivered: ['warn', 'في انتظار ردك', 'Awaiting your answer'], accepted: ['ok', 'مقبول', 'Accepted'], declined: ['', 'مرفوض', 'Declined'], expired: ['bad', 'منتهي', 'Expired'] };
+  const [cls, ar, en] = map[s] ?? ['', s, s];
+  return <span className={`tag ${cls}`}>{t(ar, en)}</span>;
+}
+
+export function PortalQuotes() {
+  const { t, L } = useI18n();
+  const nav = useNavigate();
+  const cur = useCurrency();
+  const { data, reload } = usePortal();
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState('');
+  if (!data) return null;
+  const quotes = [...(data.quotes ?? [])].sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  const answer = async (id: string, accept: boolean) => {
+    setErr(''); setBusy(id);
+    try { const r = await post<{ invoice?: string }>('quotes/respond', { id, accept }); await reload(); if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); }
+    catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر الرد على العرض.', 'Could not answer the quote.')); } finally { setBusy(''); }
+  };
+  const f = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <Page title={t('عروض الأسعار', 'Quotes')}>
+      {err && <div className="form-error" role="alert">{err}</div>}
+      {quotes.length === 0 ? <div className="empty-note nt-hatch">{t('مفيش عروض أسعار.', 'No quotes.')}</div> : (
+        <div className="svc-list">
+          {quotes.map((q) => (
+            <div key={q.id} className="card">
+              <div className="row-actions" style={{ justifyContent: 'space-between' }}><h3 style={{ margin: 0 }}><span className="latin">{q.number}</span> · {q.subject}</h3><QuoteTag s={q.status} /></div>
+              <div className="table-wrap"><table className="tbl"><tbody>
+                {(q.items ?? []).map((i, k) => <tr key={k}><td>{L({ ar: i.descAr || i.desc, en: i.desc })}</td><td className="latin">{f(i.amount)}</td></tr>)}
+                {!!q.discount && <tr><td className="muted">{t('خصم', 'Discount')}</td><td className="latin">−{f(q.discount)}</td></tr>}
+                {(q.taxLines ?? []).map((x) => <tr key={x.name}><td className="muted">{x.name} {x.rate}%</td><td className="latin">{f(x.amount)}</td></tr>)}
+                <tr><td><b>{t('الإجمالي', 'Total')}</b></td><td className="latin"><b>{f(q.total ?? 0)} {cur}</b></td></tr>
+              </tbody></table></div>
+              <p className="muted">{q.validUntil ? <>{t('صالح لحد', 'Valid until')} <Ltr>{q.validUntil}</Ltr></> : null}</p>
+              {q.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{q.notes}</p>}
+              {q.status === 'delivered' && <div className="row-actions"><button className="btn btn-accent btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, true)}>{t('اقبل العرض', 'Accept the quote')}</button><button className="btn btn-ghost btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, false)}>{t('ارفض', 'Decline')}</button></div>}
+              {q.status === 'accepted' && q.invoiceId && <Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${q.invoiceId}`}>{t('افتح الفاتورة', 'Open the invoice')}</Link>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Page>
+  );
+}

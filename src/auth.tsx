@@ -10,7 +10,10 @@ type Mode = 'checking' | 'server' | 'demo' | 'offline';
 /** Why the backend is not connected: no api folder, installer not finished, or the API itself is failing. */
 export type Problem = 'no-api' | 'not-installed' | 'error';
 type Ctx = {
-  mode: Mode; problem: Problem | null; detail: string; user: User | null;
+  mode: Mode; problem: Problem | null; detail: string; user: User | null; impersonating: boolean;
+  /** "Login as owner": the admin becomes the client (and can return). */
+  impersonate: (uid: string) => Promise<void>;
+  stopImpersonate: () => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   /** Re-reads the signed-in user (after sign-up). */
@@ -31,6 +34,7 @@ const demoOn = () => { try { return localStorage.getItem(DEMO_KEY) === '1'; } ca
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<Mode>('checking');
   const [user, setUser] = useState<User | null>(null);
+  const [imp, setImp] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [detail, setDetail] = useState('');
 
@@ -52,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           throw e;
         }
-        const me = await api<{ user: User | null }>('auth/me');
-        if (alive) { setUser(me.user); setMode('server'); }
+        const me = await api<{ user: User | null; impersonating?: boolean }>('auth/me');
+        if (alive) { setUser(me.user); setImp(!!me.impersonating); setMode('server'); }
       } catch {
         if (!alive) return;
         if (demoAllowed()) { setUser(demoOn() ? demoUser : null); setMode('demo'); }
@@ -78,11 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     if (mode === 'server') { try { await post('auth/logout'); } catch { /* session already gone */ } }
     try { localStorage.removeItem(DEMO_KEY); } catch { /* ignore */ }
-    setUser(null);
+    setUser(null); setImp(false);
   }, [mode]);
 
   const refresh = useCallback(async () => { try { const me = await api<{ user: User | null }>('auth/me'); setUser(me.user); } catch { /* keep the current state */ } }, []);
-  const value = useMemo(() => ({ mode, problem, detail, user, login, logout, refresh }), [mode, problem, detail, user, login, logout, refresh]);
+  const impersonate = useCallback(async (uid: string) => { const r = await post<{ user: User }>('admin/impersonate', { uid }); setUser(r.user); setImp(true); }, []);
+  const stopImpersonate = useCallback(async () => { const r = await post<{ user: User }>('auth/stop-impersonate'); setUser(r.user); setImp(false); }, []);
+  const value = useMemo(() => ({ mode, problem, detail, user, impersonating: imp, impersonate, stopImpersonate, login, logout, refresh }), [mode, problem, detail, user, imp, impersonate, stopImpersonate, login, logout, refresh]);
   return <Auth.Provider value={value}>{children}</Auth.Provider>;
 }
 

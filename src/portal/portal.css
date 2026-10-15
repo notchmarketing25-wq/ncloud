@@ -322,3 +322,25 @@
 .inv-ledger { display: grid; gap: 6px; border-top: 1px dashed var(--nt-slate); padding-top: 12px; }
 .inv-ledger > div { display: flex; justify-content: space-between; gap: 12px; }
 .inv-total-row td { border-top: 2px solid var(--nt-black); }
+.imp-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--nt-volt, #ff5a36); color: #0a0a0a; padding: 10px 20px; position: sticky; top: 0; z-index: 40; }
+
+/* Client summary page */
+.client-flags { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 10px 16px; border: 1px dashed var(--nt-slate); border-radius: 12px; margin-bottom: 14px; background: rgba(120, 160, 255, .06); }
+.client-flags .link { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-decoration: underline; }
+.client-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; margin-top: 12px; }
+@media (max-width: 1200px) { .client-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .client-grid { grid-template-columns: minmax(0, 1fr); } }
+.cg-col { display: grid; gap: 14px; }
+.kv-list { margin: 0; display: grid; gap: 2px; }
+.kv-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; border-radius: 6px; font-size: .92rem; }
+.kv-list > div:nth-child(odd) { background: rgba(0, 0, 0, .035); }
+.kv-list dt { color: var(--nt-slate); margin: 0; }
+.kv-list dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+.cg-links { display: grid; gap: 6px; margin-top: 12px; }
+.cg-links .link, .side-card .link { background: none; border: 0; padding: 0; text-align: start; cursor: pointer; font: inherit; text-decoration: underline; }
+.danger-link, .danger-btn { color: #c0321b; }
+.bulk-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 4px; }
+.bulk-actions { background: rgba(0, 0, 0, .04); border-radius: 12px; padding: 12px 16px; }
+.tbl td .latin, .tbl td [dir="ltr"] { white-space: nowrap; }
+.tbl td .latin, .tbl td [dir="ltr"] { white-space: nowrap; }
+.svc-list > .card { min-width: 0; }

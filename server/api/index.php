@@ -22,17 +22,20 @@ const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb
 
 /** Resources an admin manages for clients: field => [type, max/options, 'req'?]. Every item also has id, uid (owner), created. */
 $SCHEMA = array(
-    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped', 'archived')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500), 'mail' => array('str', 20)),
-    'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date')),
-    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num')),
-    'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date')),
+    'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped', 'archived')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500), 'mail' => array('str', 20), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000), 'dnsOff' => array('bool'), 'emailFwd' => array('bool'), 'idProtect' => array('bool'), 'regYears' => array('num'), 'regDate' => array('date')),
+    'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
+    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
+    'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'dueDate' => array('date'), 'status' => array('enum', array('due', 'paid', 'void', 'draft', 'refunded', 'collections')), 'notes' => array('str', 1000), 'payMethod' => array('str', 40)),
     // Websites: each one is linked to a hosting plan and a domain (and, through the domain, to its mailboxes).
-    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num'), 'expires' => array('date')),
+    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num'), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
     // Public price list shown on the website (edited in Admin → Plans). Not owned by a client.
     'plans' => array('category' => array('enum', array('hosting', 'email', 'vps', 'site', 'bundle')), 'nameAr' => array('str', 80, 'req'), 'nameEn' => array('str', 80), 'price' => array('num', 'req'), 'per' => array('enum', array('month', 'year', 'once')), 'featured' => array('bool'), 'active' => array('bool'), 'sort' => array('num'), 'specs' => array('str', 700), 'features' => array('str', 900)),
     // Orders placed from the cart. Lines, number and totals are set by the server; admin edits status / payment fields only.
     'orders' => array('status' => array('enum', array('pending', 'paid', 'active', 'cancelled')), 'method' => array('str', 40), 'payRef' => array('str', 160), 'adminNote' => array('str', 1000)),
+    // One-off charges waiting to be put on an invoice, and quotes a client can accept (items and totals are set by the server).
+    'billable' => array('desc' => array('str', 200, 'req'), 'amount' => array('num', 'req'), 'taxed' => array('bool'), 'dueDate' => array('date'), 'status' => array('enum', array('pending', 'invoiced'))),
+    'quotes' => array('subject' => array('str', 160, 'req'), 'status' => array('enum', array('draft', 'delivered', 'accepted', 'declined', 'expired')), 'validUntil' => array('date'), 'notes' => array('str', 1000)),
     // What we owe the providers (hosting / domain purchases). Admin only: never owned by a client (uid is empty).
     'purchases' => array('item' => array('str', 160, 'req'), 'provider' => array('str', 30), 'ref' => array('str', 80), 'service' => array('str', 20), 'client' => array('str', 32), 'amount' => array('num', 'req'), 'period' => array('enum', array('monthly', 'yearly', 'once')), 'date' => array('date'), 'status' => array('enum', array('due', 'paid', 'void'))),
 );
@@ -193,7 +196,8 @@ function db_update($fn) {
 }
 
 /* ───────── helpers ───────── */
-function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0)); }
+function next_user_no($db) { $m = 0; foreach ($db['users'] as $x) { if (isset($x['no']) && (int) $x['no'] > $m) { $m = (int) $x['no']; } } return max($m, count($db['users'])) + 1; }
+function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0), 'no' => isset($u['no']) ? (int) $u['no'] : 0, 'group' => isset($u['group']) ? $u['group'] : '', 'notes' => isset($u['notes']) ? $u['notes'] : '', 'contacts' => isset($u['contacts']) && is_array($u['contacts']) ? $u['contacts'] : array(), 'taxExempt' => !empty($u['taxExempt']), 'noReminders' => !empty($u['noReminders']), 'addr' => isset($u['addr']) && is_array($u['addr']) ? $u['addr'] : new stdClass()); }
 function new_id() { return function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)); }
 function find_by($list, $key, $val) { foreach ($list as $i => $u) { if (isset($u[$key]) && $u[$key] === $val) { return $i; } } return -1; }
 function find_user($db, $key, $val) { return find_by($db['users'], $key, $val); }
@@ -379,7 +383,8 @@ function inv_taxes($db) {
     return $r > 0 ? array(array('name' => 'VAT', 'rate' => $r)) : array();
 }
 /** Totals for a list of items [{desc, amount, taxed}] and a discount. Prices are tax-inclusive unless Settings says otherwise. */
-function inv_calc($db, $items, $discount) {
+function inv_calc($db, $items, $discount, $exempt = false) {
+    if ($exempt) { $db['meta']['taxes'] = array(); $db['meta']['taxRate'] = 0; }
     $incl = (bool) meta_get($db, 'taxInclusive', true);
     $sub = 0; $taxed = 0;
     foreach ($items as $it) { $sub += (float) $it['amount']; if (!empty($it['taxed'])) { $taxed += (float) $it['amount']; } }
@@ -452,7 +457,7 @@ function credit_add(&$db, $ui, $amount, $note, $actor) {
 function inv_public($db, $inv) {
     $inv['items'] = inv_items($inv);
     $c = inv_calc($db, $inv['items'], isset($inv['discount']) ? $inv['discount'] : 0);
-    if (!empty($inv['taxLines'])) { $c['taxes'] = $inv['taxLines']; }
+    if (isset($inv['taxLines']) && is_array($inv['taxLines'])) { $c['taxes'] = $inv['taxLines']; }
     $inv['taxes'] = $c['taxes']; $inv['inclusive'] = isset($inv['inclusive']) ? $inv['inclusive'] : $c['inclusive'];
     $inv['paid'] = inv_paid($inv); $inv['balance'] = inv_balance($inv);
     if (!isset($inv['payments'])) { $inv['payments'] = array(); }
@@ -478,7 +483,8 @@ function nc_new_order(&$db, $u, $lines, $total, $o) {
     $summary = implode(' + ', array_map(function ($l) { return $l['nameEn']; }, $lines));
     $order = array('id' => new_id(), 'uid' => $u['id'], 'created' => $now, 'number' => 'ORD-' . $seq, 'status' => 'pending', 'method' => isset($o['method']) ? $o['method'] : '', 'methodName' => isset($o['mname']) ? $o['mname'] : '', 'payRef' => '', 'adminNote' => '', 'lines' => $lines, 'subtotal' => isset($o['subtotal']) ? $o['subtotal'] : $total, 'discount' => isset($o['discount']) ? $o['discount'] : 0, 'coupon' => isset($o['coupon']) ? $o['coupon'] : '', 'total' => $total, 'currency' => $cur, 'domain' => isset($o['domain']) ? $o['domain'] : '', 'note' => isset($o['note']) ? $o['note'] : '', 'summary' => nc_substr($summary, 160), 'provisioned' => false, 'auto' => !empty($o['auto']));
     $iitems = array_map(function ($l) { return array('desc' => $l['nameEn'], 'descAr' => $l['nameAr'], 'amount' => (float) $l['price'], 'taxed' => true); }, $lines);
-    $calc = inv_calc($db, $iitems, isset($o['discount']) ? $o['discount'] : 0);
+    $uix = find_user($db, 'id', $u['id']);
+    $calc = inv_calc($db, $iitems, isset($o['discount']) ? $o['discount'] : 0, $uix >= 0 && !empty($db['users'][$uix]['taxExempt']));
     $order['total'] = $calc['total'];
     $inv = array('id' => new_id(), 'uid' => $u['id'], 'created' => $now, 'number' => inv_next_number($db), 'item' => nc_substr('Order ' . $order['number'] . ': ' . $summary, 160), 'items' => $iitems, 'discount' => $calc['discount'], 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'amount' => $calc['total'], 'date' => gmdate('Y-m-d'), 'dueDate' => gmdate('Y-m-d', time() + 7 * 86400), 'status' => 'due', 'orderId' => $order['id'], 'payments' => array(), 'payMethod' => isset($o['mname']) ? $o['mname'] : '');
     $order['invoiceId'] = $inv['id'];
@@ -570,6 +576,7 @@ function nc_daily($force = false) {
                 $ui = find_user($db, 'id', $svc['uid']);
                 if ($ui < 0) { continue; }
                 $u = $db['users'][$ui];
+                if (!empty($u['noReminders'])) { continue; }
                 $ref = $res . ':' . $svc['id'];
                 $line = '';
                 if ($days <= 14 && (float) $svc['price'] > 0 && meta_get($db, 'autoRenewInvoices', true)) {
@@ -584,6 +591,8 @@ function nc_daily($force = false) {
                 $bucket = $days < 0 ? 0 : ($days <= 1 ? 1 : ($days <= 7 ? 7 : ($days <= 14 ? 14 : 30)));
                 if (!isset($svc['remind']) || (int) $svc['remind'] > $bucket) {
                     $db['items'][$res][$k]['remind'] = $bucket;
+                    $rl = isset($svc['remindLog']) && is_array($svc['remindLog']) ? $svc['remindLog'] : array(); array_unshift($rl, array('at' => gmdate('c'), 'days' => $days, 'to' => $u['email']));
+                    $db['items'][$res][$k]['remindLog'] = array_slice($rl, 0, 20);
                     $mails[] = array($u['email'], $days < 0 ? 'Expired: ' . $label : 'Renewal in ' . $days . ' days: ' . $label, ($days < 0 ? $label . ' expired on ' . $svc['expires'] . '.' : $label . ' expires on ' . $svc['expires'] . ' (' . $days . " days).") . $line . "\n\nRenew it any time from your client area.");
                 }
                 if ($days < 0 && $res === 'domains' && $svc['status'] === 'active') { $db['items'][$res][$k]['status'] = 'expiring'; }
@@ -597,6 +606,24 @@ function nc_daily($force = false) {
             $db['items']['invoices'][$k]['remindedAt'] = gmdate('c');
             list($sub, $txt) = inv_template($db, $inv, $db['users'][$ui], 'overdue');
             $mails[] = array($db['users'][$ui]['email'], $sub, $txt);
+        }
+        $sd = (int) meta_get($db, 'suspendAfterDays', 0);
+        if ($sd > 0) {
+            foreach (items_of($db, 'invoices') as $inv) {
+                if ($inv['status'] !== 'due' || empty($inv['dueDate']) || empty($inv['orderId']) || inv_balance($inv) <= 0) { continue; }
+                if ((strtotime($today) - strtotime($inv['dueDate'])) / 86400 < $sd) { continue; }
+                $oi = find_by(items_of($db, 'orders'), 'id', $inv['orderId']);
+                if ($oi < 0) { continue; }
+                foreach ($db['items']['orders'][$oi]['lines'] as $l) {
+                    if ($l['kind'] !== 'renew') { continue; }
+                    list($rs, $rid) = explode(':', $l['ref'] . ':');
+                    $k = find_by(items_of($db, $rs), 'id', $rid);
+                    if ($k < 0 || $db['items'][$rs][$k]['status'] !== 'active') { continue; }
+                    if (!empty($db['items'][$rs][$k]['noSuspendUntil']) && $db['items'][$rs][$k]['noSuspendUntil'] >= $today) { continue; }
+                    $db['items'][$rs][$k]['status'] = 'stopped';
+                    log_act($db, null, 'auto-suspend', $rs . ' ' . $rid . ' (invoice ' . $inv['number'] . ' overdue)');
+                }
+            }
         }
         return array('ran' => true, 'mails' => $mails, 'created' => $created, 'db' => $db);
     });
@@ -650,7 +677,7 @@ if (!is_file(NC_DATA . '/installed.lock')) {
 }
 start_session();
 // PHP keeps the session file locked until the script ends, so one slow request (a mail server that does not answer, a provider call) would freeze every other page for the same user. Only sign-in / sign-out need to write the session.
-if (!in_array($r, array('auth/login', 'auth/register', 'auth/logout'), true)) { session_write_close(); }
+if (!in_array($r, array('auth/login', 'auth/register', 'auth/logout', 'admin/impersonate', 'auth/stop-impersonate'), true)) { session_write_close(); }
 
 if ($r === 'admin/update' || $r === 'admin/update/restore') {
     require_once __DIR__ . '/update.php';
@@ -707,12 +734,10 @@ switch ($r) {
             rate_hit($db, 'lead:' . $ip);
             $db['leads'][] = $lead;
             if (count($db['leads']) > 1000) { array_shift($db['leads']); }
-            return array('to' => meta_get($db, 'contactEmail', ''));
+            return array('to' => meta_get($db, 'contactEmail', ''), 'db' => $db);
         });
         if (!empty($res['blocked'])) { fail('too many messages, try later', 429); }
-        if (!empty($res['to']) && function_exists('mail')) {
-            @mail($res['to'], '=?UTF-8?B?' . base64_encode('New request: ' . $name) . '?=', "Name: $name\nEmail: $email\nPhone: $phone\nService: $service\n\n$msg", "Content-Type: text/plain; charset=UTF-8\r\nReply-To: $email");
-        }
+        if (!empty($res['to'])) { nc_mail($res['db'], $res['to'], 'New request: ' . $name, "Name: $name\nEmail: $email\nPhone: $phone\nService: $service\n\n$msg", $email); }
         out(array('ok' => true), 201);
 
     case 'public/domain-search':
@@ -731,7 +756,7 @@ switch ($r) {
     /* ── auth ── */
     case 'auth/me':
         $u = current_user();
-        out(array('user' => $u ? public_user($u) : null));
+        out(array('user' => $u ? public_user($u) : null, 'impersonating' => !empty($_SESSION['admin_uid'])));
 
     case 'auth/login':
         require_post();
@@ -771,16 +796,15 @@ switch ($r) {
             if (rate_blocked($db, 'reg:' . $ip, 5, 3600)) { return 'rate'; }
             if (find_user($db, 'email', $user['email']) >= 0) { return 'dup'; }
             rate_hit($db, 'reg:' . $ip);
+            $user['no'] = next_user_no($db);
             $db['users'][] = $user;
             log_act($db, $user, 'signup', $user['email']);
-            return array('to' => meta_get($db, 'contactEmail', ''));
+            return array('to' => meta_get($db, 'contactEmail', ''), 'db' => $db);
         });
         if ($res === 'closed') { fail('new sign-ups are closed', 403); }
         if ($res === 'rate') { fail('too many attempts, try later', 429); }
         if ($res === 'dup') { fail('this email is already registered', 409); }
-        if (!empty($res['to']) && function_exists('mail')) {
-            @mail($res['to'], '=?UTF-8?B?' . base64_encode('New client: ' . $name) . '?=', "A new client signed up.\nName: $name\nEmail: $email\nPhone: $phone\nCompany: $company", "Content-Type: text/plain; charset=UTF-8\r\nReply-To: $email");
-        }
+        if (!empty($res['to'])) { nc_mail($res['db'], $res['to'], 'New client: ' . $name, "A new client signed up.\nName: $name\nEmail: $email\nPhone: $phone\nCompany: $company", $email); }
         session_regenerate_id(true);
         $_SESSION['uid'] = $user['id'];
         out(array('user' => public_user($user)), 201);
@@ -1014,11 +1038,12 @@ switch ($r) {
         $db = db_read();
         $o = array();
         foreach (array_keys($SCHEMA) as $res) {
-            if (res_unowned($res)) { continue; }
+            if (res_unowned($res) || $res === 'billable') { continue; }
             // Our cost and supplier are never shown to clients.
             $o[$res] = array_values(array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote']); return $it; }, array_filter(deco_list($res, mine($db, $res, $u['id'])), function ($it) { return !isset($it['status']) || $it['status'] !== 'archived'; })));
         }
         $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        $o['quotes'] = array_values(array_filter($o['quotes'], function ($q) { return $q['status'] !== 'draft'; }));
         $o['invoices'] = array_values(array_map(function ($v) use ($db) { return inv_public($db, $v); }, mine($db, 'invoices', $u['id'])));
         $o['credit'] = (float) (isset($u['credit']) ? $u['credit'] : 0);
         $o['transactions'] = array(); foreach ($o['invoices'] as $inv) { foreach ($inv['payments'] as $e) { $o['transactions'][] = array_merge($e, array('invoiceId' => $inv['id'], 'number' => $inv['number'])); } }
@@ -1049,7 +1074,7 @@ switch ($r) {
             $i = find_by(items_of($db, 'domains'), 'id', $id);
             if ($i < 0) { return 'missing'; }
             $d = $db['items']['domains'][$i];
-            if (!can_touch($u, $d)) { return 'forbidden'; }
+            if (!can_touch($u, $d) || ($u['role'] !== 'admin' && !empty($d['dnsOff']))) { return 'forbidden'; }
             $dns = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
             if (count($dns) >= 100) { return 'limit'; }
             foreach ($dns as $x) { if ($x['type'] === $rec['type'] && $x['host'] === $rec['host'] && dns_norm($x['value']) === dns_norm($rec['value'])) { return 'ok'; } }
@@ -1074,7 +1099,7 @@ switch ($r) {
             $i = find_by(items_of($db, 'domains'), 'id', $id);
             if ($i < 0) { return 'missing'; }
             $d = $db['items']['domains'][$i];
-            if (!can_touch($u, $d)) { return 'forbidden'; }
+            if (!can_touch($u, $d) || ($u['role'] !== 'admin' && !empty($d['dnsOff']))) { return 'forbidden'; }
             $dns = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array();
             $db['items']['domains'][$i]['dns'] = array_values(array_filter($dns, function ($x) use ($rid) { return $x['id'] !== $rid; }));
             log_act($db, $u, 'dns-delete', $d['name']);
@@ -1219,6 +1244,7 @@ switch ($r) {
         $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => $role, 'hash' => $hash, 'created' => gmdate('c'));
         $dup = db_update(function (&$db) use ($user, $me) {
             if (find_user($db, 'email', $user['email']) >= 0) { return true; }
+            $user['no'] = next_user_no($db);
             $db['users'][] = $user;
             log_act($db, $me, 'user-create', $user['email'] . ' (' . $user['role'] . ')');
             return false;
@@ -1240,8 +1266,15 @@ switch ($r) {
         $email = isset($b['email']) ? clean_email($b['email']) : null;
         if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         $disabled = isset($b['disabled']) ? !empty($b['disabled']) : null;
+        $extras = array();
+        if (isset($b['group'])) { $extras['group'] = clean_text($b['group'], 60); }
+        if (isset($b['notes'])) { $extras['notes'] = clean_text($b['notes'], 4000); }
+        if (isset($b['taxExempt'])) { $extras['taxExempt'] = !empty($b['taxExempt']); }
+        if (isset($b['noReminders'])) { $extras['noReminders'] = !empty($b['noReminders']); }
+        if (isset($b['addr']) && is_array($b['addr'])) { $ad = array(); foreach (array('address1', 'address2', 'city', 'state', 'zip', 'country', 'taxId') as $k) { $ad[$k] = clean_text(isset($b['addr'][$k]) ? $b['addr'][$k] : '', 160); } $extras['addr'] = $ad; }
+        if (isset($b['contacts']) && is_array($b['contacts'])) { $cl = array(); foreach (array_slice($b['contacts'], 0, 30) as $c) { if (is_array($c) && clean_text(isset($c['name']) ? $c['name'] : '', 80) !== '') { $cl[] = array('id' => isset($c['id']) && preg_match('/^[a-z0-9]{4,20}$/', (string) $c['id']) ? $c['id'] : new_id(), 'name' => clean_text($c['name'], 80), 'email' => clean_email(isset($c['email']) ? $c['email'] : ''), 'phone' => clean_text(isset($c['phone']) ? $c['phone'] : '', 30), 'role' => clean_text(isset($c['role']) ? $c['role'] : '', 40)); } } $extras['contacts'] = $cl; }
         if ($disabled && $id === $me['id']) { fail('you cannot suspend your own account', 409); }
-        $res = db_update(function (&$db) use ($id, $name, $role, $hash, $me, $phone, $company, $email, $disabled) {
+        $res = db_update(function (&$db) use ($id, $name, $role, $hash, $me, $phone, $company, $email, $disabled, $extras) {
             $i = find_user($db, 'id', $id);
             if ($i < 0) { return 'missing'; }
             if ($email !== null && $email !== $db['users'][$i]['email']) {
@@ -1254,6 +1287,7 @@ switch ($r) {
             if ($name !== null && $name !== '') { $db['users'][$i]['name'] = $name; }
             if ($role !== null) { $db['users'][$i]['role'] = $role; }
             if ($hash !== null) { $db['users'][$i]['hash'] = $hash; }
+            foreach ($extras as $ek => $ev) { $db['users'][$i][$ek] = $ev; }
             if ($disabled !== null) { if ($disabled && $db['users'][$i]['role'] === 'admin') { return 'last-admin'; } $db['users'][$i]['disabled'] = $disabled; }
             log_act($db, $me, $disabled === true ? 'user-suspend' : ($disabled === false ? 'user-activate' : 'user-update'), $db['users'][$i]['email']);
             return 'ok';
@@ -1294,7 +1328,7 @@ switch ($r) {
     case 'admin/all':
         need_admin();
         $db = db_read();
-        $o = array('users' => array_map('public_user', $db['users']), 'items' => array(), 'tickets' => array());
+        $o = array('users' => array_map(function ($u, $k) { $p = public_user($u); if (!$p['no']) { $p['no'] = $k + 1; } return $p; }, $db['users'], array_keys($db['users'])), 'items' => array(), 'tickets' => array());
         foreach (array_keys($SCHEMA) as $res) { if (!res_unowned($res)) { $o['items'][$res] = $res === 'invoices' ? array_map(function ($v) use ($db) { return inv_public($db, $v); }, items_of($db, $res)) : deco_list($res, items_of($db, $res)); } }
         foreach ($db['tickets'] as $t) { $o['tickets'][] = array('id' => $t['id'], 'uid' => $t['uid'], 'subject' => $t['subject'], 'status' => $t['status'], 'updated' => isset($t['updated']) ? $t['updated'] : ''); }
         out($o);
@@ -1476,7 +1510,7 @@ switch ($r) {
                 'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
                 'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass()),
                 'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'),
-                'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
+                'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
                 'smtp' => smtp_public(meta_get($db, 'smtp', array())), 'gateways' => gw_public(meta_get($db, 'gateways', array())), 'coupons' => meta_get($db, 'coupons', array()),
                 'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false)));
         }
@@ -1506,6 +1540,7 @@ switch ($r) {
             foreach (array_slice($b['taxes'], 0, 6) as $t) { if (is_array($t) && isset($t['rate']) && (float) $t['rate'] > 0 && (float) $t['rate'] <= 100) { $tx[] = array('name' => clean_text(isset($t['name']) && $t['name'] !== '' ? $t['name'] : 'Tax', 40), 'rate' => round((float) $t['rate'], 2)); } }
             $extra['taxes'] = $tx; $extra['taxRate'] = 0;
         }
+        if (isset($b['suspendAfterDays'])) { $extra['suspendAfterDays'] = max(0, min(365, (int) $b['suspendAfterDays'])); }
         if (isset($b['taxInclusive'])) { $extra['taxInclusive'] = !empty($b['taxInclusive']); }
         if (isset($b['invoicePrefix'])) { $extra['invoicePrefix'] = preg_replace('/[^A-Za-z0-9 _\-]/', '', substr((string) $b['invoicePrefix'], 0, 12)); }
         if (isset($b['defaultLang'])) { $extra['defaultLang'] = $b['defaultLang'] === 'en' ? 'en' : 'ar'; }
@@ -1679,7 +1714,8 @@ switch ($r) {
         $disc = isset($b['discount']) ? max(0, (float) $b['discount']) : 0;
         $addFunds = !empty($b['addFunds']);
         $res = db_update(function (&$db) use ($id, $items, $date, $due, $status, $notes, $pm, $uid, $disc, $addFunds, $me) {
-            $calc = inv_calc($db, $items, $disc);
+            $uix = find_user($db, 'id', $id === '' ? $uid : (isset($db['items']['invoices'][find_by(items_of($db, 'invoices'), 'id', $id)]['uid']) ? $db['items']['invoices'][find_by(items_of($db, 'invoices'), 'id', $id)]['uid'] : ''));
+            $calc = inv_calc($db, $items, $disc, $uix >= 0 && !empty($db['users'][$uix]['taxExempt']));
             $title = nc_substr($items[0]['desc'] . (count($items) > 1 ? ' +' . (count($items) - 1) : ''), 160);
             if ($id === '') {
                 if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
@@ -1821,6 +1857,198 @@ switch ($r) {
             $db['items']['invoices'][$i]['viewedAt'] = gmdate('c');
         });
         out(array('ok' => true));
+
+    case 'admin/bulk':
+        // Bulk actions on a client's services: set status / payment method / "do not suspend until", put them on an invoice, delete.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $res = isset($b['res']) ? (string) $b['res'] : '';
+        if (!in_array($res, array('domains', 'hosting', 'websites', 'servers', 'mailboxes'), true)) { fail('unknown resource', 422); }
+        $ids = isset($b['ids']) && is_array($b['ids']) ? array_slice(array_map('strval', $b['ids']), 0, 200) : array();
+        $act = isset($b['action']) ? (string) $b['action'] : '';
+        $val = isset($b['value']) ? (string) $b['value'] : '';
+        if (!$ids) { fail('select at least one item', 422); }
+        $out = db_update(function (&$db) use ($res, $ids, $act, $val, $me) {
+            $n = 0; $invItems = array(); $uid = '';
+            foreach ($ids as $id) {
+                $i = find_by(items_of($db, $res), 'id', $id);
+                if ($i < 0) { continue; }
+                $it = $db['items'][$res][$i];
+                if ($act === 'status') { if (!in_array($val, array('active', 'pending', 'stopped', 'archived', 'expiring'), true)) { return array('err' => 'invalid status'); } $db['items'][$res][$i]['status'] = $val; }
+                elseif ($act === 'payMethod') { $db['items'][$res][$i]['payMethod'] = clean_text($val, 40); }
+                elseif ($act === 'noSuspendUntil') { if ($val !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) { return array('err' => 'invalid date'); } $db['items'][$res][$i]['noSuspendUntil'] = $val; }
+                elseif ($act === 'delete') { unset($db['items'][$res][$i]); $db['items'][$res] = array_values($db['items'][$res]); }
+                elseif ($act === 'invoice') {
+                    if ($uid !== '' && $uid !== $it['uid']) { return array('err' => 'pick services of one client only'); }
+                    $uid = $it['uid']; $price = (float) (isset($it['price']) ? $it['price'] : 0);
+                    $label = $res === 'domains' ? 'Domain ' . $it['name'] : ($res === 'hosting' ? 'Hosting ' . $it['plan'] . ($it['domain'] !== '' ? ' (' . $it['domain'] . ')' : '') : ($res === 'websites' ? 'Website ' . $it['name'] : ($res === 'servers' ? 'Server ' . $it['name'] : 'Mailbox ' . $it['address'])));
+                    $nd = !empty($it['nextDue']) ? $it['nextDue'] : (!empty($it['expires']) ? $it['expires'] : '');
+                    $invItems[] = array('desc' => $label . ($nd !== '' ? ' — due ' . $nd : ''), 'amount' => $price, 'taxed' => true);
+                }
+                $n++;
+            }
+            if ($act === 'invoice') {
+                if (!$invItems) { return array('err' => 'nothing to invoice'); }
+                $ui = find_user($db, 'id', $uid);
+                $calc = inv_calc($db, $invItems, 0, $ui >= 0 && !empty($db['users'][$ui]['taxExempt']));
+                $inv = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'number' => inv_next_number($db), 'item' => nc_substr($invItems[0]['desc'] . (count($invItems) > 1 ? ' +' . (count($invItems) - 1) : ''), 160), 'items' => $invItems, 'discount' => 0, 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'amount' => $calc['total'], 'date' => gmdate('Y-m-d'), 'dueDate' => gmdate('Y-m-d', time() + 7 * 86400), 'status' => 'due', 'payments' => array());
+                $db['items']['invoices'][] = $inv;
+                log_act($db, $me, 'invoice-create', $inv['number'] . ' (bulk)');
+                return array('count' => $n, 'invoice' => $inv['id']);
+            }
+            log_act($db, $me, 'bulk-' . $act, $res . ' ×' . $n);
+            return array('count' => $n);
+        });
+        if (isset($out['err'])) { fail($out['err'], 422); }
+        out($out);
+
+    case 'admin/billable-invoice':
+        // Puts the selected pending billable items of one client on a new invoice.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $uid = isset($b['uid']) ? (string) $b['uid'] : '';
+        $ids = isset($b['ids']) && is_array($b['ids']) ? array_map('strval', $b['ids']) : array();
+        $out = db_update(function (&$db) use ($uid, $ids, $me) {
+            $ui = find_user($db, 'id', $uid);
+            if ($ui < 0) { return array('err' => 'client not found'); }
+            $items = array(); $mark = array();
+            foreach (items_of($db, 'billable') as $k => $bi) { if ($bi['uid'] === $uid && $bi['status'] === 'pending' && in_array($bi['id'], $ids, true)) { $items[] = array('desc' => $bi['desc'], 'amount' => (float) $bi['amount'], 'taxed' => !empty($bi['taxed'])); $mark[] = $k; } }
+            if (!$items) { return array('err' => 'select pending items'); }
+            $calc = inv_calc($db, $items, 0, !empty($db['users'][$ui]['taxExempt']));
+            $inv = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'number' => inv_next_number($db), 'item' => nc_substr($items[0]['desc'] . (count($items) > 1 ? ' +' . (count($items) - 1) : ''), 160), 'items' => $items, 'discount' => 0, 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'amount' => $calc['total'], 'date' => gmdate('Y-m-d'), 'dueDate' => gmdate('Y-m-d', time() + 7 * 86400), 'status' => 'due', 'payments' => array());
+            $db['items']['invoices'][] = $inv;
+            foreach ($mark as $k) { $db['items']['billable'][$k]['status'] = 'invoiced'; $db['items']['billable'][$k]['invoiceId'] = $inv['id']; }
+            log_act($db, $me, 'invoice-create', $inv['number'] . ' (billable items)');
+            return array('invoice' => $inv['id']);
+        });
+        if (isset($out['err'])) { fail($out['err'], 422); }
+        out($out);
+
+    case 'admin/quote-save':
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $items = array();
+        foreach ((isset($b['items']) && is_array($b['items']) ? array_slice($b['items'], 0, 60) : array()) as $it) { if (is_array($it)) { $d = clean_text(isset($it['desc']) ? $it['desc'] : '', 200); $am = isset($it['amount']) && is_numeric($it['amount']) ? round((float) $it['amount'], 2) : 0; if ($d !== '' || $am != 0) { $items[] = array('desc' => $d, 'amount' => $am, 'taxed' => !empty($it['taxed'])); } } }
+        if (!$items) { fail('add at least one item', 422); }
+        $subject = clean_text(isset($b['subject']) ? $b['subject'] : '', 160);
+        if ($subject === '') { fail('subject is required', 422); }
+        $valid = isset($b['validUntil']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $b['validUntil']) ? $b['validUntil'] : '';
+        $status = isset($b['status']) && in_array($b['status'], array('draft', 'delivered', 'accepted', 'declined', 'expired'), true) ? $b['status'] : 'draft';
+        $notes = clean_text(isset($b['notes']) ? $b['notes'] : '', 1000); $uid = isset($b['uid']) ? (string) $b['uid'] : ''; $disc = isset($b['discount']) ? max(0, (float) $b['discount']) : 0;
+        $out = db_update(function (&$db) use ($id, $items, $subject, $valid, $status, $notes, $uid, $disc, $me) {
+            if ($id === '') {
+                if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+                $seq = (int) meta_get($db, 'quoteSeq', 0) + 1; $db['meta']['quoteSeq'] = $seq;
+                $db['items']['quotes'][] = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'number' => 'QUO-' . $seq);
+                $i = count($db['items']['quotes']) - 1;
+            } else { $i = find_by(items_of($db, 'quotes'), 'id', $id); if ($i < 0) { return array('err' => 'quote not found'); } }
+            $ui = find_user($db, 'id', $db['items']['quotes'][$i]['uid']);
+            $calc = inv_calc($db, $items, $disc, $ui >= 0 && !empty($db['users'][$ui]['taxExempt']));
+            $db['items']['quotes'][$i] = array_merge($db['items']['quotes'][$i], array('subject' => $subject, 'items' => $items, 'discount' => $calc['discount'], 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'total' => $calc['total'], 'validUntil' => $valid, 'status' => $status, 'notes' => $notes));
+            log_act($db, $me, $id === '' ? 'quote-create' : 'quote-update', $db['items']['quotes'][$i]['number']);
+            return array('quote' => $db['items']['quotes'][$i]);
+        });
+        if (isset($out['err'])) { fail($out['err'], 422); }
+        out($out, $id === '' ? 201 : 200);
+
+    case 'admin/quote-send':
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $db0 = db_read();
+        $qi = find_by(items_of($db0, 'quotes'), 'id', isset($b['id']) ? (string) $b['id'] : '');
+        if ($qi < 0) { fail('quote not found', 404); }
+        $q = $db0['items']['quotes'][$qi]; $ui = find_user($db0, 'id', $q['uid']);
+        if ($ui < 0) { fail('the quote has no client', 422); }
+        $link = site_link($db0, '/portal/quotes');
+        $cur = meta_get($db0, 'currency', '') ?: 'EGP';
+        $r2 = nc_mail($db0, $db0['users'][$ui]['email'], 'Quote ' . $q['number'] . ': ' . $q['subject'], "Hello " . $db0['users'][$ui]['name'] . ",\n\nWe prepared a quote for you: " . $q['subject'] . ' — ' . $q['total'] . ' ' . $cur . (!empty($q['validUntil']) ? ' (valid until ' . $q['validUntil'] . ')' : '') . ".\n" . ($link !== '' ? 'Review and accept it here: ' . $link : 'Open your client area → Quotes to review and accept it.') . "\n\nThank you.");
+        if ($r2 !== true) { fail($r2, 502); }
+        db_update(function (&$db) use ($q, $me) { $k = find_by(items_of($db, 'quotes'), 'id', $q['id']); if ($k >= 0) { if ($db['items']['quotes'][$k]['status'] === 'draft') { $db['items']['quotes'][$k]['status'] = 'delivered'; } $db['items']['quotes'][$k]['sentAt'] = gmdate('c'); log_act($db, $me, 'quote-sent', $q['number']); } });
+        out(array('ok' => true));
+
+    case 'quotes/respond':
+        // The client accepts (→ an unpaid invoice is created from the quote) or declines it.
+        $u = need_user();
+        require_post();
+        $b = body();
+        $accept = !empty($b['accept']); $qid = isset($b['id']) ? (string) $b['id'] : '';
+        $out = db_update(function (&$db) use ($u, $qid, $accept) {
+            $k = find_by(items_of($db, 'quotes'), 'id', $qid);
+            if ($k < 0 || $db['items']['quotes'][$k]['uid'] !== $u['id'] || $db['items']['quotes'][$k]['status'] !== 'delivered') { return array('err' => 'quote not found or already answered'); }
+            $q = $db['items']['quotes'][$k];
+            if (!empty($q['validUntil']) && $q['validUntil'] < gmdate('Y-m-d')) { $db['items']['quotes'][$k]['status'] = 'expired'; return array('err' => 'this quote has expired'); }
+            if (!$accept) { $db['items']['quotes'][$k]['status'] = 'declined'; log_act($db, $u, 'quote-declined', $q['number']); return array('ok' => true); }
+            $inv = array('id' => new_id(), 'uid' => $u['id'], 'created' => gmdate('c'), 'number' => inv_next_number($db), 'item' => nc_substr('Quote ' . $q['number'] . ': ' . $q['subject'], 160), 'items' => $q['items'], 'discount' => $q['discount'], 'taxLines' => $q['taxLines'], 'inclusive' => $q['inclusive'], 'amount' => $q['total'], 'date' => gmdate('Y-m-d'), 'dueDate' => gmdate('Y-m-d', time() + 7 * 86400), 'status' => 'due', 'payments' => array(), 'quoteId' => $q['id']);
+            $db['items']['invoices'][] = $inv;
+            $db['items']['quotes'][$k]['status'] = 'accepted'; $db['items']['quotes'][$k]['invoiceId'] = $inv['id'];
+            log_act($db, $u, 'quote-accepted', $q['number']);
+            return array('ok' => true, 'invoice' => $inv['id']);
+        });
+        if (isset($out['err'])) { fail($out['err'], 422); }
+        out($out);
+
+    case 'admin/client-email':
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $db0 = db_read();
+        $ui = find_user($db0, 'id', isset($b['uid']) ? (string) $b['uid'] : '');
+        if ($ui < 0) { fail('client not found', 404); }
+        $sub = clean_text(isset($b['subject']) ? $b['subject'] : '', 160); $msg = clean_text(isset($b['message']) ? $b['message'] : '', 5000);
+        if ($sub === '' || $msg === '') { fail('write a subject and a message', 422); }
+        $r2 = nc_mail($db0, $db0['users'][$ui]['email'], $sub, $msg, meta_get($db0, 'contactEmail', ''));
+        if ($r2 !== true) { fail($r2, 502); }
+        db_update(function (&$db) use ($me, $ui) { log_act($db, $me, 'client-email', $db['users'][$ui]['email']); });
+        out(array('ok' => true));
+
+    case 'admin/mail-log':
+        need_admin();
+        $db = db_read();
+        $to = isset($_GET['to']) ? clean_email($_GET['to']) : '';
+        $l = array_values(array_filter((array) meta_get($db, 'mailLog', array()), function ($e) use ($to) { return $to === '' || $e['to'] === $to; }));
+        out(array('log' => array_slice($l, 0, 200)));
+
+    case 'admin/client-export':
+        $me = need_admin();
+        $db = db_read();
+        $ui = find_user($db, 'id', isset($_GET['uid']) ? (string) $_GET['uid'] : '');
+        if ($ui < 0) { fail('client not found', 404); }
+        $u = $db['users'][$ui]; unset($u['hash'], $u['resetHash'], $u['resetExp']);
+        $x = array('exported' => gmdate('c'), 'client' => $u);
+        foreach (array_keys($SCHEMA) as $res) { if (!res_unowned($res)) { $x[$res] = array_values(array_filter(items_of($db, $res), function ($it) use ($u) { return $it['uid'] === $u['id']; })); } }
+        $x['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        header('Content-Disposition: attachment; filename="client-' . preg_replace('/[^a-z0-9]/i', '', $u['id']) . '.json"');
+        log_act($db, $me, 'client-export', $u['email']);
+        echo json_encode($x, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT); exit;
+
+    case 'admin/impersonate':
+        // "Login as owner": the admin sees the client area exactly as the client does, with a way back.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $db = db_read();
+        $ui = find_user($db, 'id', isset($b['uid']) ? (string) $b['uid'] : '');
+        if ($ui < 0 || $db['users'][$ui]['role'] === 'admin') { fail('client not found', 404); }
+        $_SESSION['admin_uid'] = $me['id'];
+        session_regenerate_id(true);
+        $_SESSION['uid'] = $db['users'][$ui]['id'];
+        db_update(function (&$d) use ($me, $db, $ui) { log_act($d, $me, 'impersonate', $db['users'][$ui]['email']); });
+        out(array('user' => public_user($db['users'][$ui])));
+
+    case 'auth/stop-impersonate':
+        require_post();
+        if (empty($_SESSION['admin_uid'])) { fail('not impersonating', 400); }
+        $adminId = $_SESSION['admin_uid'];
+        unset($_SESSION['admin_uid']);
+        session_regenerate_id(true);
+        $_SESSION['uid'] = $adminId;
+        $db = db_read(); $ai = find_user($db, 'id', $adminId);
+        out(array('user' => $ai >= 0 ? public_user($db['users'][$ai]) : null));
 
     case 'admin/activity':
         need_admin();

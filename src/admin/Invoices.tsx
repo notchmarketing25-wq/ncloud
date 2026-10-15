@@ -38,14 +38,14 @@ function calc(items: InvItem[], discount: number, taxes: Tax[], inclusive: boole
 }
 
 /* ───────── create / edit an invoice ───────── */
-export function InvoiceEditor({ inv, users, cfg, onClose, onSaved, presetUid }: { inv?: AInv; users: AllData['users']; cfg: Cfg; onClose: () => void; onSaved: (i: Invoice) => void; presetUid?: string }) {
+export function InvoiceEditor({ inv, users, cfg, onClose, onSaved, presetUid, presetAddFunds }: { inv?: AInv; users: AllData['users']; cfg: Cfg; onClose: () => void; onSaved: (i: Invoice) => void; presetUid?: string; presetAddFunds?: boolean }) {
   const { t } = useI18n();
   const cur = useCurrency();
   const [f, setF] = useState({
     uid: inv?.uid ?? presetUid ?? users.find((u) => u.role === 'client')?.id ?? '', date: inv?.date ?? today(), dueDate: inv?.dueDate ?? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10),
-    status: inv?.status === 'draft' ? 'draft' : inv?.status === 'void' ? 'void' : inv?.status === 'collections' ? 'collections' : 'due', notes: inv?.notes ?? '', payMethod: inv?.payMethod ?? '', discount: inv?.discount ?? 0, addFunds: !!inv?.addFunds,
+    status: inv?.status === 'draft' ? 'draft' : inv?.status === 'void' ? 'void' : inv?.status === 'collections' ? 'collections' : 'due', notes: inv?.notes ?? '', payMethod: inv?.payMethod ?? '', discount: inv?.discount ?? 0, addFunds: inv ? !!inv.addFunds : !!presetAddFunds,
   });
-  const [items, setItems] = useState<InvItem[]>(inv?.items?.length ? inv.items.map((i) => ({ ...i })) : [{ desc: '', amount: 0, taxed: true }]);
+  const [items, setItems] = useState<InvItem[]>(inv?.items?.length ? inv.items.map((i) => ({ ...i })) : [{ desc: presetAddFunds && !inv ? 'Add funds' : '', amount: 0, taxed: !presetAddFunds }]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const c = calc(items, f.discount, cfg.taxes ?? [], cfg.taxInclusive !== false);
