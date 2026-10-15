@@ -2,14 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { api, ApiError, post } from '../lib/api';
+import { ApiError, post } from '../lib/api';
 import type { Business, Invoice, Order, PayMethod } from '../lib/types';
 import { PayDetails } from '../site/CartPages';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency, useSite, assetUrl } from '../site/settings';
 import { InvoiceTag, Page, day } from '../ui';
 import { usePortal } from './PortalData';
-import { ClientLine, useAll } from '../admin/kit';
 
 /* ───────── password reset by email ───────── */
 function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
@@ -138,32 +137,46 @@ export function RenewButton({ res, id, expires }: { res: 'domains' | 'hosting'; 
 
 /* ───────── printable invoice (Print → Save as PDF) ───────── */
 type Line = { name: string; qty: string; price: number };
-function Sheet({ inv, lines, biz, taxRate, customer, order, methods = [], payLink }: { inv: Invoice; lines: Line[]; biz: Business; taxRate: number; customer: { name: string; email: string; phone?: string; company?: string }; order?: Order; methods?: PayMethod[]; payLink?: string }) {
-  const { t } = useI18n();
+export function Sheet({ inv, biz, customer, methods = [], payLink }: { inv: Invoice; lines?: Line[]; biz: Business; taxRate?: number; customer: { name: string; email: string; phone?: string; company?: string }; order?: Order; methods?: PayMethod[]; payLink?: string }) {
+  const { t, L } = useI18n();
   const { settings } = useSite();
   const cur = useCurrency();
-  const total = order ? order.total : inv.amount;
-  const net = taxRate > 0 ? total / (1 + taxRate / 100) : total;
-  const tax = total - net;
   const f = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const logo = settings.brand?.logo;
+  const items = inv.items ?? [{ desc: inv.item, amount: inv.amount, taxed: false }];
+  const taxes = inv.taxes ?? [];
+  const taxSum = taxes.reduce((n, x) => n + x.amount, 0);
+  const incl = inv.inclusive !== false;
+  const gross = items.reduce((n, i) => n + i.amount, 0);
+  const net = incl ? inv.amount - taxSum : gross - (inv.discount ?? 0); // "sub total" before tax
+  const paid = inv.paid ?? 0, bal = inv.balance ?? 0;
   return (
     <div className="invoice-sheet">
       <header className="inv-head">
         <div>{logo ? <img src={assetUrl(logo)} alt="" className="inv-logo" /> : <b className="inv-brand">{settings.site || 'Notch Cloud'}</b>}
           <div className="muted">{biz.legalName || settings.site}<br />{[biz.address, biz.address2].filter(Boolean).join(', ')}{(biz.city || biz.governorate) && <><br />{[biz.city, biz.governorate, biz.postalCode].filter(Boolean).join(', ')}</>}{biz.country && <><br />{biz.country}</>}{biz.taxId && <><br />{t('الرقم الضريبي', 'Tax ID')}: <Ltr>{biz.taxId}</Ltr></>}</div></div>
-        <div className="inv-meta"><h1>{t('فاتورة', 'INVOICE')}</h1><div className="latin"><b>{inv.number}</b></div><div className="muted"><Ltr>{day(inv.date)}</Ltr></div><InvoiceTag s={inv.status} /></div>
+        <div className="inv-meta"><h1>{t('فاتورة', 'INVOICE')}</h1><div className="latin"><b>{inv.number}</b></div><div className="muted"><Ltr>{day(inv.date)}</Ltr>{inv.dueDate && <> → <Ltr>{inv.dueDate}</Ltr></>}</div><InvoiceTag s={inv.status} /></div>
       </header>
       <section className="inv-bill"><span className="muted">{t('فاتورة إلى', 'Bill to')}</span><b>{customer.company || customer.name}</b>{customer.company && <span>{customer.name}</span>}<span className="latin">{customer.email}</span>{customer.phone && <span className="latin">{customer.phone}</span>}</section>
-      <table className="tbl inv-tbl"><thead><tr><th>{t('البند', 'Description')}</th><th>{t('الكمية', 'Qty')}</th><th>{t('المبلغ', 'Amount')}</th></tr></thead>
-        <tbody>{lines.map((l, i) => <tr key={i}><td>{l.name}</td><td>{l.qty}</td><td className="latin">{f(l.price)}</td></tr>)}</tbody></table>
+      <table className="tbl inv-tbl"><thead><tr><th>{t('البند', 'Description')}</th><th>{t('المبلغ', 'Amount')}</th></tr></thead>
+        <tbody>{items.map((l, i) => <tr key={i}><td>{L({ ar: l.descAr || l.desc, en: l.desc })}</td><td className="latin">{f(l.amount)}</td></tr>)}</tbody></table>
       <div className="inv-sum">
-        {order && !!order.discount && <div><span>{t('خصم', 'Discount')} {order.coupon && <Ltr>({order.coupon})</Ltr>}</span><b className="latin">−{f(order.discount)}</b></div>}
-        {taxRate > 0 && <><div><span>{t('الإجمالي قبل الضريبة', 'Subtotal (excl. tax)')}</span><b className="latin">{f(net)}</b></div><div><span>{t('ضريبة القيمة المضافة', 'VAT')} {taxRate}%</span><b className="latin">{f(tax)}</b></div></>}
-        <div className="inv-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{f(total)} {cur}</b></div>
-        {taxRate > 0 && <small className="muted">{t('الأسعار شاملة الضريبة.', 'Prices include tax.')}</small>}
+        {!!inv.discount && <div><span>{t('خصم', 'Discount')}</span><b className="latin">−{f(inv.discount)}</b></div>}
+        {taxes.length > 0 && <div><span>{t('الإجمالي قبل الضريبة', 'Sub total')}</span><b className="latin">{f(net)}</b></div>}
+        {taxes.map((x) => <div key={x.name}><span>{x.name} {x.rate}%</span><b className="latin">{f(x.amount)}</b></div>)}
+        <div className="inv-total"><span>{t('إجمالي الفاتورة', 'Invoice amount')}</span><b className="latin">{f(inv.amount)} {cur}</b></div>
+        {paid > 0 && <div><span>{t('المدفوع', 'Paid')}</span><b className="latin">{f(paid)}</b></div>}
+        {inv.status !== 'paid' && inv.status !== 'void' && inv.status !== 'draft' && <div><span><b>{t('المتبقي', 'Balance due')}</b></span><b className="latin">{f(bal)} {cur}</b></div>}
+        {taxes.length > 0 && <small className="muted">{incl ? t('الأسعار شاملة الضريبة.', 'Prices include tax.') : t('الضريبة مضافة على الأسعار.', 'Tax is added to the prices.')}</small>}
       </div>
-      {inv.status === 'due' && (
+      {(inv.payments ?? []).length > 0 && (
+        <section className="inv-ledger">
+          <h3>{t('الدفعات', 'Payments')}</h3>
+          {(inv.payments ?? []).map((e) => <div key={e.id}><span><Ltr>{(e.at || '').slice(0, 10)}</Ltr> · {e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')} · {e.method}{e.ref && <> · <Ltr>{e.ref}</Ltr></>}</span><b className="latin">{e.type === 'refund' ? '−' : ''}{f(e.amount)}</b></div>)}
+        </section>
+      )}
+      {inv.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{inv.notes}</p>}
+      {(inv.status === 'due' || inv.status === 'collections') && (
         <section className="inv-pay">
           <h3>{t('طرق الدفع', 'How to pay')}</h3>
           {payLink && <Link className="btn btn-accent btn-sm no-print" to={payLink}>{t('افتح الطلب وادفع', 'Open the order and pay')}</Link>}
@@ -175,11 +188,10 @@ function Sheet({ inv, lines, biz, taxRate, customer, order, methods = [], payLin
     </div>
   );
 }
-const toLines = (order: Order | undefined, inv: Invoice, locale: (a: string, b: string) => string, L: (b: { ar: string; en: string }) => string): Line[] =>
-  order ? order.lines.map((l) => ({ name: L({ ar: l.nameAr, en: l.nameEn }), qty: l.unit === 'once' ? '1' : `${l.qty} ${l.unit === 'year' ? locale('سنة', 'yr') : locale('شهر', 'mo')}`, price: l.price })) : [{ name: inv.item, qty: '1', price: inv.amount }];
+export const toLines = (_order: Order | undefined, _inv: Invoice, _locale: (a: string, b: string) => string, _L: (b: { ar: string; en: string }) => string): Line[] => [];
 
 export function PortalInvoice() {
-  const { t, L } = useI18n();
+  const { t } = useI18n();
   const { id } = useParams();
   const { data } = usePortal();
   useEffect(() => { if (id) void post('invoices/view', { id }).catch(() => undefined); }, [id]);
@@ -189,26 +201,7 @@ export function PortalInvoice() {
   const order = (data.orders ?? []).find((o) => o.id === (inv as Invoice & { orderId?: string }).orderId);
   return (
     <Page title={`${t('فاتورة', 'Invoice')} ${inv.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button><Link to="/portal/billing" className="btn btn-ghost btn-sm">{t('← الفواتير', '← Billing')}</Link></div>}>
-      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={data.business ?? {}} taxRate={data.taxRate ?? 0} customer={data.me ?? { name: '', email: '' }} order={order} methods={data.payments ?? []} payLink={order ? `/portal/orders/${order.id}` : undefined} />
-    </Page>
-  );
-}
-
-export function AdminInvoice() {
-  const { t, L } = useI18n();
-  const { id } = useParams();
-  const { all } = useAll();
-  const [set, setSet] = useState<{ business?: Business; taxRate?: number; payments?: PayMethod[] } | null>(null);
-  useEffect(() => { api<{ business?: Business; taxRate?: number; payments?: PayMethod[] }>('admin/settings').then(setSet).catch(() => setSet({})); }, []);
-  if (!all || !set) return null;
-  const inv = all.items.invoices?.find((x) => x.id === id) as unknown as Invoice & { uid: string; orderId?: string } | undefined;
-  if (!inv) return <Navigate to="/admin/invoices" replace />;
-  const order = (all.items.orders as unknown as Order[] | undefined)?.find((o) => o.id === inv.orderId);
-  const u = all.users.find((x) => x.id === inv.uid);
-  return (
-    <Page title={`${t('فاتورة', 'Invoice')} ${inv.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button><Link to="/admin/invoices" className="btn btn-ghost btn-sm">{t('← الفواتير', '← Invoices')}</Link></div>}>
-      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={set.business ?? {}} taxRate={set.taxRate ?? 0} methods={(set.payments ?? []).filter((m) => m.active)} customer={u ? { name: u.name, email: u.email, phone: u.phone, company: u.company } : { name: '-', email: '' }} order={order} />
-      {u && <p className="muted"><ClientLine users={all.users} uid={u.id} /></p>}
+      <Sheet inv={inv} biz={data.business ?? {}} customer={data.me ?? { name: '', email: '' }} methods={data.payments ?? []} payLink={order ? `/portal/orders/${order.id}` : undefined} />
     </Page>
   );
 }

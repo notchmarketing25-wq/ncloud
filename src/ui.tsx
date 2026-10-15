@@ -15,10 +15,10 @@ export function StatusTag({ s }: { s: Status }) {
   return <span className={`tag ${cls}`}>{s === 'active' && <i className="dot" />}{t(ar, en)}</span>;
 }
 
-export function InvoiceTag({ s }: { s: 'due' | 'paid' | 'void' }) {
+export function InvoiceTag({ s }: { s: 'draft' | 'due' | 'paid' | 'void' | 'refunded' | 'collections' }) {
   const { t } = useI18n();
-  const map = { paid: ['ok', 'مدفوعة', 'Paid'], due: ['bad', 'مستحقة', 'Due'], void: ['', 'ملغاة', 'Void'] } as const;
-  const [cls, ar, en] = map[s];
+  const map = { paid: ['ok', 'مدفوعة', 'Paid'], due: ['bad', 'غير مدفوعة', 'Unpaid'], void: ['', 'ملغاة', 'Cancelled'], draft: ['', 'مسودة', 'Draft'], refunded: ['warn', 'مستردة', 'Refunded'], collections: ['bad', 'تحصيل', 'Collections'] } as const;
+  const [cls, ar, en] = map[s] ?? ['', s, s];
   return <span className={`tag ${cls}`}>{t(ar, en)}</span>;
 }
 

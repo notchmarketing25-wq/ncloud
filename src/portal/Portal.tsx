@@ -489,22 +489,38 @@ export function PortalBilling() {
   const cur = useCurrency();
   const { data, demo } = usePortal();
   if (!data) return <Loading />;
-  const hasDue = data.invoices.some((i) => i.status === 'due');
+  const visible = data.invoices.filter((i) => i.status !== 'draft');
+  const due = visible.filter((i) => i.status === 'due' || i.status === 'collections');
+  const owed = due.reduce((n, i) => n + (i.balance ?? i.amount), 0);
+  const overdue = due.filter((i) => i.dueDate && i.dueDate < new Date().toISOString().slice(0, 10)).length;
+  const m = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <Page title={t('الفواتير', 'Billing')}>
-      {hasDue && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الطلب المرتبط بالفاتورة وادفع منه.', 'You have invoices due. Open the order behind the invoice and pay from there.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
-      {data.invoices.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
-        <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('الحالة', 'Status'), '']}>
-          {data.invoices.map((i) => (
+      {!demo && <div className="stat-strip">
+        <div><span>{t('المستحق', 'Amount due')}</span><b className="latin">{m(owed)} {cur}</b></div>
+        <div><span>{t('فواتير متأخرة', 'Overdue')}</span><b className="latin">{overdue}</b></div>
+        <div><span>{t('رصيدك', 'Credit balance')}</span><b className="latin">{m(data.credit ?? 0)} {cur}</b></div>
+      </div>}
+      {due.length > 0 && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الفاتورة وشوف طرق الدفع، أو الطلب المرتبط بيها وادفع منه.', 'You have invoices due. Open the invoice to see how to pay, or the order behind it.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
+      {visible.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
+        <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('الاستحقاق', 'Due'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('المتبقي', 'Balance'), t('الحالة', 'Status'), '']}>
+          {visible.map((i) => (
             <tr key={i.id}>
-              <td>{demo ? <Ltr>{i.number}</Ltr> : <Link className="link latin" to={`/portal/invoices/${i.id}`}>{i.number}</Link>}</td><td><Ltr>{day(i.date)}</Ltr></td><td>{i.item}</td>
+              <td>{demo ? <Ltr>{i.number}</Ltr> : <Link className="link latin" to={`/portal/invoices/${i.id}`}>{i.number}</Link>}</td><td><Ltr>{day(i.date)}</Ltr></td><td><Ltr>{i.dueDate || '-'}</Ltr></td><td>{i.item}</td>
               <td><b className="latin">{i.amount}</b> {cur} {demo && <Ph />}</td>
+              <td className="latin">{i.status === 'due' || i.status === 'collections' ? m(i.balance ?? i.amount) : '-'}</td>
               <td><InvoiceTag s={i.status} /></td>
-              <td>{demo && i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => demo.pay(i.id)}>{t('ادفع', 'Pay')}</button>}</td>
+              <td>{demo && i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => demo.pay(i.id)}>{t('ادفع', 'Pay')}</button>}{!demo && <Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${i.id}`}>{t('عرض', 'View')}</Link>}</td>
             </tr>
           ))}
         </Table>
       )}
+      {!demo && (data.transactions ?? []).length > 0 && <>
+        <h2 className="sub">{t('المعاملات', 'Transactions')}</h2>
+        <Table head={[t('التاريخ', 'Date'), t('الفاتورة', 'Invoice'), t('النوع', 'Type'), t('وسيلة الدفع', 'Method'), t('المرجع', 'Reference'), t('المبلغ', 'Amount')]}>
+          {(data.transactions ?? []).map((e) => <tr key={e.id}><td><Ltr>{(e.at || '').slice(0, 10)}</Ltr></td><td><Link className="link latin" to={`/portal/invoices/${e.invoiceId}`}>{e.number}</Link></td><td>{e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')}</td><td>{e.method || '-'}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin">{e.type === 'refund' ? '−' : ''}{m(e.amount)} {cur}</td></tr>)}
+        </Table>
+      </>}
     </Page>
   );
 }

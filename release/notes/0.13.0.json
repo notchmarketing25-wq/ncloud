@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Invoice engine like a billing system: itemised invoices (taxed / untaxed items, several taxes such as VAT + agency e-tax, tax-inclusive or added on top, discount, due date, number prefix), a ledger per invoice (payments with method / reference / fees, client credit, refunds to credit or outside), partial payments and balance, statuses (draft, unpaid, paid, cancelled, refunded, collections), invoice page with Summary / Add payment / Credit / Refund / Notes tabs, email templates (invoice, reminder, overdue, payment confirmation, refund), client credit balance and add-funds invoices, transactions page, overdue reminders in the daily job, email log. Clients see balance, credit, payments and transactions."
+ ],
+ "ar": [
+  "نظام فواتير كامل: فواتير ببنود (خاضع/غير خاضع للضريبة)، أكتر من ضريبة (القيمة المضافة + ضريبة الوكالة)، أسعار شاملة الضريبة أو مضافة فوقها، خصم، تاريخ استحقاق وبادئة لرقم الفاتورة؛ دفتر حساب لكل فاتورة (دفعات بوسيلة ومرجع ورسوم، رصيد العميل، استرداد للرصيد أو خارج النظام)، دفعات جزئية والمتبقي، حالات (مسودة، غير مدفوعة، مدفوعة، ملغاة، مستردة، تحصيل)، صفحة فاتورة بتبويبات ملخص / إضافة دفعة / رصيد / استرداد / ملاحظات، قوالب إيميل (الفاتورة، تذكير، متأخرة، تأكيد دفع، استرداد)، رصيد للعميل وفواتير إضافة رصيد، صفحة معاملات، تذكير بالفواتير المتأخرة في المهمة اليومية، وسجل للإيميلات. العميل بيشوف المتبقي والرصيد والدفعات والمعاملات."
+ ]
+}

@@ -12,14 +12,15 @@ import { AdminUpdates } from './admin/Updates';
 import { AdminPlans } from './admin/Plans';
 import { AdminDomainDetail, AdminHostingDetail, AdminUserDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchaseDetail, AdminPurchases } from './admin/Providers';
-import { AdminActivity, AdminDomains, AdminHosting, AdminInvoices, AdminLeads, AdminMailboxes, AdminServers, AdminTickets } from './admin/Manage';
+import { AdminActivity, AdminDomains, AdminHosting, AdminLeads, AdminMailboxes, AdminServers, AdminTickets } from './admin/Manage';
 import { AdminSettings } from './admin/Settings';
 import { SiteProvider } from './site/settings';
 import { CatalogProvider } from './site/catalog';
 import { CartProvider } from './site/cart';
 import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
 import { AdminOrders } from './admin/Orders';
-import { AdminInvoice, ForgotPassword, PortalInvoice, RenewPage, ResetPassword } from './portal/Extras';
+import { ForgotPassword, PortalInvoice, RenewPage, ResetPassword } from './portal/Extras';
+import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
@@ -71,6 +72,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="servers" element={<AdminServers />} />
             <Route path="invoices" element={<AdminInvoices />} />
             <Route path="invoices/:id" element={<AdminInvoice />} />
+            <Route path="transactions" element={<AdminTransactions />} />
             <Route path="tickets" element={<AdminTickets />} />
             <Route path="leads" element={<AdminLeads />} />
             <Route path="apps" element={<AdminApps />} />

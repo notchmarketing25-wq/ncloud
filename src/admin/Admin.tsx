@@ -38,6 +38,7 @@ export function AdminLayout() {
     { to: '/admin/servers', label: t('السيرفرات', 'Servers') },
     { to: '/admin/orders', label: t('الطلبات', 'Orders'), badge: badges.orders },
     { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
+    { to: '/admin/transactions', label: t('المعاملات', 'Transactions') },
     { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
     { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },
     { to: '/admin/plans', label: t('الباقات والأسعار', 'Plans') },

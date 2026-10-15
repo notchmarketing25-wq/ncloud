@@ -5,7 +5,7 @@ import { useCurrency } from '../site/settings';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
 import type { DnsRec, Lead, Ticket } from '../lib/types';
-import { day, InvoiceTag, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
+import { day, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
 import { StatusMenu } from './kit';
@@ -233,44 +233,6 @@ export const AdminServers = () => (
       { label: ['المواصفات', 'Spec'], render: (it) => <Ltr>{String(it.spec || '-')}</Ltr> }, { label: ['الحالة', 'Status'], render: status },
     ]} />
 );
-
-export function AdminInvoices() {
-  const { t } = useI18n();
-  const cur = useCurrency();
-  return (
-    <ResourcePage res="invoices" title={['الفواتير', 'Invoices']} newLabel={['+ فاتورة', '+ Invoice']} defaults={{ item: '', amount: 0, date: '', status: 'due' }}
-      fields={[
-        { key: 'item', label: ['البند', 'Item'], type: 'text', req: true }, { key: 'amount', label: ['المبلغ', 'Amount'], type: 'number', req: true }, { key: 'date', label: ['التاريخ', 'Date'], type: 'date' },
-        { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [['due', 'مستحقة', 'Due'], ['paid', 'مدفوعة', 'Paid'], ['void', 'ملغاة', 'Void']] },
-      ]}
-      columns={[
-        { label: ['الرقم', 'No.'], render: (it) => <Link className="link latin" to={`/admin/invoices/${it.id}`}>{String(it.number ?? '-')}</Link> }, { label: ['البند', 'Item'], render: (it) => String(it.item) },
-        { label: ['المبلغ', 'Amount'], render: (it) => <span><b className="latin">{num(it.amount)}</b> {cur}</span> }, { label: ['التاريخ', 'Date'], render: (it) => <Ltr>{day(String(it.date))}</Ltr> },
-        { label: ['الحالة', 'Status'], render: (it) => <InvoiceTag s={it.status as 'due'} /> },
-        { label: ['المتابعة', 'Follow-up'], render: (it) => <span className="sub-line">{it.sentAt ? <span className="tag">{String(it.sentVia) === 'whatsapp' ? 'WhatsApp' : 'Email'} · <Ltr>{day(String(it.sentAt))}</Ltr></span> : <span className="muted">{t('لم تُرسل', 'Not sent')}</span>}{it.viewedAt ? <span className="tag ok">{t('اتفتحت', 'Viewed')}</span> : null}</span> },
-      ]}
-      actions={(it, run) => (
-        <>
-          {it.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => void run(() => post('admin/invoice-status', { id: it.id, status: 'paid' }), t('تم تسجيل الدفع وتفعيل الخدمة المرتبطة.', 'Marked as paid; the linked service is activated.'))}>{t('تم الدفع', 'Mark paid')}</button>}
-          {it.status === 'paid' && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('ترجّعها مستحقة؟', 'Set it back to due?'))) void run(() => post('admin/invoice-status', { id: it.id, status: 'due' }), t('رجعت مستحقة.', 'Set back to due.')); }}>{t('تراجع', 'Undo')}</button>}
-          {it.status === 'due' && <>
-            <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/invoice-send', { id: it.id, via: 'email' }), t('اتبعتت للعميل بالإيميل.', 'Emailed to the client.'))}>{t('إيميل', 'Email')}</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => void run(async () => {
-              const r = await api<{ users: (User & { phone?: string })[] }>('admin/users');
-              const u = r.users.find((x) => x.id === it.uid);
-              let ph = (u?.phone ?? '').replace(/\D/g, '').replace(/^00/, '');
-              if (ph.startsWith('0')) ph = '20' + ph.slice(1);
-              if (!ph) throw new Error('this client has no phone number');
-              const link = `${window.location.href.split('#')[0]}#/portal/invoices/${it.id}`;
-              const msg = t(`أهلًا ${u?.name ?? ''}، فاتورتك ${String(it.number)} بمبلغ ${num(it.amount)} ${cur}: ${link}`, `Hello ${u?.name ?? ''}, your invoice ${String(it.number)} for ${num(it.amount)} ${cur}: ${link}`);
-              window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
-              await post('admin/invoice-send', { id: it.id, via: 'whatsapp' });
-            }, t('اتفتح واتساب واتسجّل الإرسال.', 'WhatsApp opened and the send was recorded.'))}>{t('واتساب', 'WhatsApp')}</button>
-          </>}
-        </>
-      )} />
-  );
-}
 
 /* ───────── Tickets ───────── */
 export function AdminTickets() {

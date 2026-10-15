@@ -80,3 +80,5 @@ export function StatusMenu({ res, item, run }: { res: string; item: Item; run: (
     </span>
   );
 }
+
+export const Field = ({ id, label, children, wide }: { id: string; label: string; children: ReactNode; wide?: boolean }) => <div className="field" style={wide ? { gridColumn: '1 / -1' } : undefined}><label htmlFor={id}>{label}</label>{children}</div>;

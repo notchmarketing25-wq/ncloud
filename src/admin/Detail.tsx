@@ -9,7 +9,7 @@ import { SvcCell } from '../site/svc';
 import { day, Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
-import { ClientLine, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
+import { ClientLine, Field, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
 
 export { AdminUpdates } from './Updates';
 
@@ -24,7 +24,6 @@ function useActions(load: () => void) {
   const run = async (fn: () => Promise<unknown>, done: string) => { setErr(''); setOk(''); try { await fn(); if (done) setOk(done); load(); return true; } catch (e) { setErr(errText(e, t)); return false; } };
   return { err, ok, setErr, setOk, run };
 }
-const Field = ({ id, label, children, wide }: { id: string; label: string; children: React.ReactNode; wide?: boolean }) => <div className="field" style={wide ? { gridColumn: '1 / -1' } : undefined}><label htmlFor={id}>{label}</label>{children}</div>;
 
 /* ───────── One domain ───────── */
 export function AdminDomainDetail() {

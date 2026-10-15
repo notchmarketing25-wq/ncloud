@@ -312,3 +312,13 @@
 .inv-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 @media print { .no-print { display: none !important; } }
 .boot-loading { display: grid; place-items: center; min-height: 100vh; font-size: 2rem; color: var(--nt-slate); }
+.inv-admin-top { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; margin: 12px 0 8px; align-items: start; }
+@media (max-width: 900px) { .inv-admin-top { grid-template-columns: minmax(0, 1fr); } }
+.inv-stamp { display: grid; gap: 12px; justify-items: start; }
+.inv-status .tag { font-size: 1.1rem; padding: 6px 16px; }
+.inv-edit-items { display: grid; gap: 8px; margin-bottom: 12px; }
+.inv-edit-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto auto; gap: 8px; align-items: center; }
+@media (max-width: 700px) { .inv-edit-row { grid-template-columns: minmax(0, 1fr) 110px; } }
+.inv-ledger { display: grid; gap: 6px; border-top: 1px dashed var(--nt-slate); padding-top: 12px; }
+.inv-ledger > div { display: flex; justify-content: space-between; gap: 12px; }
+.inv-total-row td { border-top: 2px solid var(--nt-black); }
