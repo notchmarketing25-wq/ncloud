@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { IdentityFields } from '../portal/Identity';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
@@ -23,7 +24,8 @@ export function AdminUsers() {
   const [q, setQ] = useState('');
   const [asc, setAsc] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', role: 'client', password: '' });
+  const blankForm = { name: '', email: '', role: 'client', password: '', phone: '', type: 'individual' as 'individual' | 'company', company: '', nationalId: '', commercialReg: '', taxId: '' };
+  const [form, setForm] = useState(blankForm);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const load = useCallback(() => { api<All>('admin/all').then(setAll).catch((e) => setErr(errText(e, t))); }, [t]);
@@ -47,7 +49,7 @@ export function AdminUsers() {
   const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}|${asc}`);
   const create = async (e: FormEvent) => {
     e.preventDefault(); setErr(''); setOk('');
-    try { await post('admin/users', form); setOk(t('تم إنشاء المستخدم.', 'User created.')); setForm({ name: '', email: '', role: 'client', password: '' }); setAdding(false); load(); } catch (x) { setErr(errText(x, t)); }
+    try { await post('admin/users', form); setOk(t('تم إنشاء المستخدم.', 'User created.')); setForm(blankForm); setAdding(false); load(); } catch (x) { setErr(errText(x, t)); }
   };
   const tabs: [Tab, string][] = [['all', t('الكل', 'All')], ['clients', t('عملاء', 'Clients')], ['admins', t('أدمن', 'Admins')], ['new', t('جدد (7 أيام)', 'New (7 days)')], ['empty', t('من غير خدمات', 'No services')]];
   return (
@@ -90,7 +92,9 @@ export function AdminUsers() {
       {adding && (
         <Modal title={t('إضافة عميل', 'Add customer')} onClose={() => setAdding(false)}>
           <form className="form" onSubmit={create}>
+            <div className="admin-form"><IdentityFields v={form} set={(p) => setForm({ ...form, ...p })} idp="nc" /></div>
             <div className="field"><label htmlFor="un">{t('الاسم', 'Name')}</label><input id="un" className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="field"><label htmlFor="nph">{t('الموبايل', 'Phone')}</label><input id="nph" className="input latin" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             <div className="field"><label htmlFor="ue">{t('الإيميل', 'Email')}</label><input id="ue" className="input latin" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="field"><label htmlFor="ur">{t('النوع', 'Role')}</label><select id="ur" className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="client">{t('عميل', 'Client')}</option><option value="admin">{t('أدمن', 'Admin')}</option></select></div>
             <div className="field"><label htmlFor="up">{t('كلمة السر', 'Password')}</label><input id="up" className="input latin" type="password" minLength={8} required autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>

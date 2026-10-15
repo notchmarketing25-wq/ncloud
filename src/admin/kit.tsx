@@ -82,3 +82,24 @@ export function StatusMenu({ res, item, run }: { res: string; item: Item; run: (
 }
 
 export const Field = ({ id, label, children, wide }: { id: string; label: string; children: ReactNode; wide?: boolean }) => <div className="field" style={wide ? { gridColumn: '1 / -1' } : undefined}><label htmlFor={id}>{label}</label>{children}</div>;
+
+/** What the provider itself reports about a site or server (kept when it was imported from Apps). */
+export function ProviderCard({ item, extra }: { item: Item; extra?: [string, ReactNode][] }) {
+  const { t } = useI18n();
+  const d = (item.providerData ?? {}) as Record<string, string>;
+  const rows: [string, ReactNode][] = [
+    ...(item.provider ? [[t('المزوّد', 'Provider'), String(item.provider)] as [string, ReactNode]] : []),
+    ...(item.appType ? [[t('نوع الموقع', 'Site type'), String(item.appType)] as [string, ReactNode]] : []),
+    ...(item.dataCenter ? [[t('مركز البيانات', 'Data center'), String(item.dataCenter)] as [string, ReactNode]] : []),
+    ...(item.username ? [[t('اسم المستخدم', 'Username'), <span className="latin">{String(item.username)}</span>] as [string, ReactNode]] : []),
+    ...(extra ?? []),
+  ];
+  const keys = Object.keys(d);
+  if (rows.length === 0 && keys.length === 0) return null;
+  return (
+    <SideCard title={t('تفاصيل المزوّد', 'Provider details')}>
+      {rows.map(([k, v]) => <p key={k} style={{ margin: '4px 0' }}><span className="muted">{k}:</span> {v}</p>)}
+      {keys.length > 0 && <details><summary className="muted">{t('كل البيانات من المزوّد', 'Everything the provider returned')}</summary><dl className="kv-list">{keys.map((k) => <div key={k}><dt className="latin">{k}</dt><dd className="latin">{d[k]}</dd></div>)}</dl></details>}
+    </SideCard>
+  );
+}

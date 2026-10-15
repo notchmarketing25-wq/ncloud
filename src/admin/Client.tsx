@@ -5,6 +5,7 @@ import { Ltr, useI18n } from '../i18n';
 import { api, apiUrl, post } from '../lib/api';
 import type { Invoice, InvItem, LedgerEntry, PayMethod, Quote } from '../lib/types';
 import { QuoteTag } from '../portal/Extras';
+import { IdentityFields, idOf, KycDocs, useTerms, termsAccepted } from '../portal/Identity';
 import { useCurrency } from '../site/settings';
 import { DomainName } from '../site/svc';
 import { day, InvoiceTag, Modal, Page, StatusTag, Table } from '../ui';
@@ -152,6 +153,18 @@ function QuoteEditor({ q, uid, onClose, onSaved }: { q?: Quote; uid: string; onC
   );
 }
 
+function TermsCard({ u, onAttest }: { u: U; onAttest: () => void }) {
+  const { t } = useI18n();
+  const terms = useTerms();
+  const ok = termsAccepted(terms, u.terms);
+  return (
+    <SideCard title={t('الشروط والأحكام', 'Terms & conditions')}>
+      {u.terms ? <p>{ok ? <span className="tag ok">{t('وافق على النسخة الحالية', 'Accepted the current version')}</span> : <span className="tag warn">{t('نسخة قديمة', 'Older version')}</span>} <span className="muted">v{u.terms.version} · <Ltr>{u.terms.at.slice(0, 16).replace('T', ' ')}</Ltr> · {u.terms.by === 'admin' ? t('سجّلتها الإدارة', 'recorded by admin') : t('وافق بنفسه', 'accepted by the client')}{u.terms.ip ? ` · ${u.terms.ip}` : ''}</span></p> : <p><span className="tag bad">{t('لم يوافق', 'Not accepted')}</span></p>}
+      {terms && (terms.ar || terms.en) && !ok && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تسجّل إن العميل وافق على الشروط (مثلًا على ورق أو واتساب)؟', 'Record that the client accepted the terms (e.g. on paper or WhatsApp)?'))) onAttest(); }}>{t('سجّل موافقة العميل', 'Record client acceptance')}</button>}
+    </SideCard>
+  );
+}
+
 /* ───────── the client page ───────── */
 export function AdminClient() {
   const { t } = useI18n();
@@ -173,7 +186,7 @@ export function AdminClient() {
   const [notes, setNotes] = useState<string | null>(null);
   const [bill, setBill] = useState({ desc: '', amount: '', taxed: true });
   const [billSel, setBillSel] = useState<Record<string, boolean>>({});
-  const [prof, setProf] = useState<(Partial<U> & { addr: Record<string, string> }) | null>(null);
+  const [prof, setProf] = useState<(Partial<U> & Partial<ReturnType<typeof idOf>> & { addr: Record<string, string> }) | null>(null);
   const [pass, setPass] = useState('');
   const [credit, setCredit] = useState({ amount: '', note: '' });
   const [contact, setContact] = useState<Contact | null>(null);
@@ -224,7 +237,7 @@ export function AdminClient() {
         <div className="client-grid">
           <div className="cg-col">
             <SideCard title={t('بيانات العميل', 'Client information')}>
-              {kv([[t('الاسم', 'Name'), u.name], [t('الشركة', 'Company'), u.company || '-'], [t('الإيميل', 'Email'), <a className="link latin" dir="ltr" href={`mailto:${u.email}`}>{u.email}</a>], [t('الموبايل', 'Phone'), u.phone ? <a className="link latin" dir="ltr" href={`tel:${u.phone}`}>{u.phone}</a> : '-'], [t('العنوان', 'Address'), [addr.address1, addr.address2].filter(Boolean).join(', ') || '-'], [t('المدينة', 'City'), addr.city || '-'], [t('البلد', 'Country'), addr.country || '-'], [t('الرقم الضريبي', 'Tax ID'), addr.taxId || '-']])}
+              {kv([[t('الاسم', 'Name'), u.name], [t('النوع', 'Type'), u.kyc?.type === 'company' ? t('شركة', 'Company') : t('شخص', 'Individual')], [t('الشركة', 'Company'), u.company || '-'], ...(u.kyc?.type === 'company' ? [[t('السجل التجاري', 'Commercial reg.'), u.kyc.commercialReg || '-'] as [string, ReactNode]] : [[t('الرقم القومي', 'National ID'), u.kyc?.nationalId || '-'] as [string, ReactNode]]), [t('الرقم الضريبي', 'Tax number'), u.kyc?.taxId || addr.taxId || '-'], [t('الإيميل', 'Email'), <a className="link latin" dir="ltr" href={`mailto:${u.email}`}>{u.email}</a>], [t('الموبايل', 'Phone'), u.phone ? <a className="link latin" dir="ltr" href={`tel:${u.phone}`}>{u.phone}</a> : '-'], [t('العنوان', 'Address'), [addr.address1, addr.address2].filter(Boolean).join(', ') || '-'], [t('المدينة', 'City'), addr.city || '-'], [t('البلد', 'Country'), addr.country || '-'], [t('الرقم الضريبي', 'Tax ID'), addr.taxId || '-']])}
               {u.role === 'client' && <button className="link" onClick={() => void impersonate(u.id).then(() => nav('/portal'))}>{t('دخول بحساب العميل', 'Login as owner')} ↗</button>}
             </SideCard>
             <SideCard title={t('جهات الاتصال', 'Contacts')}>
@@ -284,15 +297,15 @@ export function AdminClient() {
       )}
 
       {tab === 'profile' && (() => {
-        const p = prof ?? { name: u.name, email: u.email, phone: u.phone ?? '', company: u.company ?? '', group: u.group ?? '', addr: { ...addr } };
+        const p = prof ?? { name: u.name, email: u.email, phone: u.phone ?? '', ...idOf(u), group: u.group ?? '', addr: { ...addr } };
         const set = (patch: Record<string, unknown>) => setProf({ ...p, ...patch } as typeof p);
         const setA = (k: string, v: string) => setProf({ ...p, addr: { ...p.addr, [k]: v } });
         return (
           <div className="cust-layout">
-            <form className="card form" onSubmit={(e) => { e.preventDefault(); void setUser({ name: p.name, email: p.email, phone: p.phone, company: p.company, group: p.group, addr: p.addr }, t('اتحفظ.', 'Saved.')).then(() => setProf(null)); }}>
+            <form className="card form" onSubmit={(e) => { e.preventDefault(); void setUser({ name: p.name, email: p.email, phone: p.phone, company: p.company, group: p.group, addr: p.addr, kyc: { type: (p as ReturnType<typeof idOf>).type, nationalId: (p as ReturnType<typeof idOf>).nationalId, commercialReg: (p as ReturnType<typeof idOf>).commercialReg, taxId: (p as ReturnType<typeof idOf>).taxId } }, t('اتحفظ.', 'Saved.')).then(() => setProf(null)); }}>
               <div className="admin-form">
+                <IdentityFields v={p as never} set={(patch) => set(patch)} idp="cf" />
                 <Field id="pf-n" label={t('الاسم', 'Name')}><input id="pf-n" className="input" required value={p.name} onChange={(e) => set({ name: e.target.value })} /></Field>
-                <Field id="pf-c" label={t('الشركة', 'Company')}><input id="pf-c" className="input" value={p.company} onChange={(e) => set({ company: e.target.value })} /></Field>
                 <Field id="pf-e" label={t('الإيميل', 'Email')}><input id="pf-e" className="input latin" type="email" required value={p.email} onChange={(e) => set({ email: e.target.value })} /></Field>
                 <Field id="pf-p" label={t('الموبايل', 'Phone')}><input id="pf-p" className="input latin" value={p.phone} onChange={(e) => set({ phone: e.target.value })} /></Field>
                 <Field id="pf-a1" label={t('العنوان 1', 'Address 1')}><input id="pf-a1" className="input" value={p.addr.address1 ?? ''} onChange={(e) => setA('address1', e.target.value)} /></Field>
@@ -307,6 +320,10 @@ export function AdminClient() {
               <button className="btn btn-accent" type="submit">{t('حفظ التغييرات', 'Save changes')}</button>
             </form>
             <aside>
+              <SideCard title={t('مستندات الهوية', 'Identity documents')}>
+                <KycDocs kyc={u.kyc} admin uid={u.id} onChange={load} />
+              </SideCard>
+              <TermsCard u={u} onAttest={() => void setUser({ termsAccepted: true }, t('اتسجّلت موافقة العميل.', 'The client’s acceptance was recorded.'))} />
               <SideCard title={t('رصيد العميل', 'Credit balance')}>
                 <p><b className="latin">{m2(num(u.credit))} {cur}</b></p>
                 <form className="form" onSubmit={(e) => { e.preventDefault(); void run(() => post('admin/credit', { uid: u.id, amount: Number(credit.amount), note: credit.note }), t('اتعدّل الرصيد.', 'Credit updated.')).then((r) => { if (r) setCredit({ amount: '', note: '' }); }); }}>

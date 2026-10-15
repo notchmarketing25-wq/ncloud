@@ -12,7 +12,7 @@ import { usePaged } from './pager';
 type Field = { key: string; label: string; secret: boolean; value: string; set: boolean };
 type Provider = { id: string; name: string; caps: string[]; help: [string, string]; fields: Field[]; sandbox: boolean; useSandbox: boolean; baseUrl: string; connected: boolean; test: { ok: boolean; message: string; at: string } | null };
 type PDomain = { name: string; expires: string; status: string; autoRenew: boolean; imported: boolean };
-type PHost = { ref: string; kind: string; plan: string; domain: string; status: string; expires: string; cost: number; billing: 'monthly' | 'yearly'; currency: string; costStore: number; imported: boolean };
+type PHost = { name?: string; ip?: string; spec?: string; appType?: string; dataCenter?: string; username?: string; created?: string; details?: Record<string, string>; ref: string; kind: string; plan: string; domain: string; status: string; expires: string; cost: number; billing: 'monthly' | 'yearly'; currency: string; costStore: number; imported: boolean };
 
 const money = (n: number) => (Math.round(n * 100) / 100).toLocaleString('en-US');
 
@@ -21,7 +21,7 @@ function Notice({ err, ok }: { err: string; ok: string }) {
 }
 
 /* ───────── Apps: connect Hostinger / Namecheap / ResellerClub, then pull their domains, hosting and websites ───────── */
-type Tab = 'connect' | 'domains' | 'hosting' | 'websites';
+type Tab = 'connect' | 'domains' | 'hosting' | 'websites' | 'servers' | 'manual';
 
 export function AdminApps() {
   const { t } = useI18n();
@@ -78,13 +78,14 @@ export function AdminApps() {
       {open && current && (
         <Modal title={current.name} wide onClose={() => setOpen(null)}>
           <div className="tabs" role="tablist">
-            {([['connect', t('الربط', 'Connection')], ...(current.connected ? [['domains', t('الدومينات', 'Domains')], ...(current.caps.includes('hosting') ? [['hosting', t('الاستضافات', 'Hosting')], ['websites', t('المواقع', 'Websites')]] : [])] : [])] as [Tab, string][]).map(([k, label]) => (
+            {([['connect', t('الربط', 'Connection')], ...(current.connected ? [['domains', t('الدومينات', 'Domains')], ...(current.caps.includes('hosting') ? [['hosting', t('الاستضافات', 'Hosting')], ['websites', t('المواقع', 'Websites')]] : []), ...(current.caps.includes('vps') ? [['servers', t('VPS', 'VPS')]] : []), ...(!current.caps.includes('hosting') ? [['manual', t('استضافة وVPS (يدوي)', 'Hosting & VPS (manual)')]] : [])] : [])] as [Tab, string][]).map(([k, label]) => (
               <button key={k} role="tab" aria-selected={open.tab === k} className={open.tab === k ? 'on' : ''} onClick={() => setOpen({ id: open.id, tab: k })}>{label}</button>
             ))}
           </div>
           <Notice err={err} ok="" />
           {open.tab === 'connect'
             ? <ConnectForm key={current.id} p={current} onChange={(msg) => { setOk(msg); setErr(''); load(); }} onError={setErr} onGone={() => setOpen(null)} />
+            : open.tab === 'manual' ? <ManualAdd p={current} onDone={(m) => { setOk(m); setOpen(null); }} onError={setErr} />
             : <ImportPanel key={`${current.id}-${open.tab}`} p={current} kind={open.tab} onDone={(m) => { setOk(m); setOpen(null); }} onError={setErr} />}
         </Modal>
       )}
@@ -130,7 +131,7 @@ function ConnectForm({ p, onChange, onError, onGone }: { p: Provider; onChange: 
   );
 }
 
-function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains' | 'hosting' | 'websites'; onDone: (m: string) => void; onError: (e: string) => void }) {
+function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains' | 'hosting' | 'websites' | 'servers'; onDone: (m: string) => void; onError: (e: string) => void }) {
   const { t } = useI18n();
   const cur = useCurrency();
   const [users, setUsers] = useState<User[]>([]);
@@ -139,6 +140,7 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
   const [pick, setPick] = useState<Record<string, boolean>>({});
   const [own, setOwn] = useState<Record<string, string>>({});
   const [bills, setBills] = useState(kind !== 'websites');
+  const [more, setMore] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const key = (r: PDomain | PHost) => ('ref' in r ? r.ref : r.name);
   useEffect(() => {
@@ -146,7 +148,7 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
     api<{ users: User[] }>('admin/users').then((r) => { setUsers(r.users); setUid((u) => u || r.users.find((x) => x.role === 'client')?.id || r.users[0]?.id || ''); }).catch(() => undefined);
     const src = kind === 'domains' ? 'domains' : 'hosting';
     api<Record<string, (PDomain | PHost)[]>>(`admin/providers/${src}`, undefined, { id: p.id })
-      .then((r) => setRows(kind === 'domains' ? r.domains : (r.hosting as PHost[]).filter((h) => (kind === 'websites') === (h.kind === 'website'))))
+      .then((r) => setRows(kind === 'domains' ? r.domains : (r.hosting as PHost[]).filter((h) => (kind === 'websites' ? h.kind === 'website' : kind === 'servers' ? h.kind === 'vps' : h.kind !== 'website' && h.kind !== 'vps'))))
       .catch((e) => { onError(errText(e, t)); setRows([]); });
   }, [p.id, kind, onError, t]);
   const free = useMemo(() => (rows ?? []).filter((r) => !r.imported), [rows]);
@@ -169,15 +171,22 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
           <select id="imp-uid" className="select" value={uid} onChange={(e) => setUid(e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}</select></div>
         {kind !== 'websites' && <label className="check"><input type="checkbox" checked={bills} onChange={(e) => setBills(e.target.checked)} /> {t('إصدار فواتير شراء', 'Create purchase bills')}</label>}
       </div>
-      <Table head={[kind === 'domains' ? t('الدومين', 'Domain') : kind === 'websites' ? t('الموقع', 'Website') : t('الخطة', 'Plan'), t('ينتهي', 'Expires'), ...(kind === 'hosting' ? [t('التكلفة', 'Cost')] : []), t('العميل', 'Client')]}>
+      <Table head={[kind === 'domains' ? t('الدومين', 'Domain') : kind === 'websites' ? t('الموقع', 'Website') : kind === 'servers' ? t('السيرفر', 'Server') : t('الخطة', 'Plan'), t('ينتهي', 'Expires'), ...(kind === 'hosting' || kind === 'servers' ? [t('التكلفة', 'Cost')] : []), t('العميل', 'Client')]}>
         {rows.map((r) => (
           <tr key={key(r)}>
             <td>
               <label className="check"><input type="checkbox" disabled={r.imported} checked={r.imported || !!pick[key(r)]} onChange={(e) => setPick({ ...pick, [key(r)]: e.target.checked })} />
-                {'ref' in r ? (kind === 'websites' ? <Ltr>{r.domain}</Ltr> : r.plan) : <Ltr>{r.name}</Ltr>} {r.imported && <span className="tag">{t('موجود', 'Imported')}</span>}</label>
+                {'ref' in r ? (kind === 'websites' ? <Ltr>{r.domain}</Ltr> : kind === 'servers' ? <Ltr>{r.name}</Ltr> : r.plan) : <Ltr>{r.name}</Ltr>} {r.imported && <span className="tag">{t('موجود', 'Imported')}</span>}</label>
+              {'ref' in r && (kind === 'websites' || kind === 'servers') && (
+                <div className="sub-line muted">
+                  {r.appType && <span className="tag">{r.appType}</span>}{r.plan && <span>{r.plan}</span>}{r.ip && <span className="latin">{r.ip}</span>}{r.spec && <span className="latin">{r.spec}</span>}{r.dataCenter && <span className="latin">{r.dataCenter}</span>}{r.created && <span className="latin">{r.created}</span>}
+                  {r.details && Object.keys(r.details).length > 0 && <button type="button" className="link" onClick={() => setMore(more === key(r) ? null : key(r))}>{more === key(r) ? t('إخفاء التفاصيل', 'Hide details') : t('التفاصيل', 'Details')}</button>}
+                </div>
+              )}
+              {'ref' in r && more === key(r) && r.details && <dl className="kv-list" style={{ marginTop: 6 }}>{Object.entries(r.details).map(([k, v]) => <div key={k}><dt className="latin">{k}</dt><dd className="latin">{v}</dd></div>)}</dl>}
             </td>
             <td><Ltr>{r.expires || '-'}</Ltr></td>
-            {kind === 'hosting' && 'ref' in r && <td><span className="latin">{money(r.costStore)} {cur}</span> <span className="muted">/ {r.billing === 'yearly' ? t('سنة', 'yr') : t('شهر', 'mo')}</span></td>}
+            {(kind === 'hosting' || kind === 'servers') && 'ref' in r && <td><span className="latin">{money(r.costStore)} {cur}</span> <span className="muted">/ {r.billing === 'yearly' ? t('سنة', 'yr') : t('شهر', 'mo')}</span></td>}
             <td>{r.imported ? '-' : <select className="select" aria-label={t('العميل', 'Client')} value={own[key(r)] ?? ''} onChange={(e) => setOwn({ ...own, [key(r)]: e.target.value })}><option value="">{t('الافتراضي', 'Default')}</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</td>
           </tr>
         ))}
@@ -186,6 +195,35 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
         <button className="btn btn-ghost btn-sm" onClick={() => setPick(all ? {} : Object.fromEntries(free.map((r) => [key(r), true])))}>{all ? t('إلغاء التحديد', 'Clear selection') : t('تحديد الكل', 'Select all')}</button>
         <button className="btn btn-accent" onClick={() => void go()} disabled={busy || chosen.length === 0 || !uid}>{t(`جلب (${chosen.length})`, `Import (${chosen.length})`)}</button>
       </div>
+    </>
+  );
+}
+
+
+/** Providers with no hosting / VPS API (Namecheap): add them by hand, one per line. */
+function ManualAdd({ p, onDone, onError }: { p: Provider; onDone: (m: string) => void; onError: (e: string) => void }) {
+  const { t } = useI18n();
+  const [users, setUsers] = useState<User[]>([]);
+  const [uid, setUid] = useState('');
+  const [kind, setKind] = useState<'hosting' | 'servers'>('hosting');
+  const [mode, setMode] = useState<'dedicated' | 'shared'>('dedicated');
+  const [lines, setLines] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api<{ users: User[] }>('admin/users').then((r) => { setUsers(r.users); setUid(r.users.find((x) => x.role === 'client')?.id ?? r.users[0]?.id ?? ''); }).catch(() => undefined); }, []);
+  const go = async () => {
+    setBusy(true); onError('');
+    try { const r = await post<{ added: number }>('admin/bulk-add', { kind, provider: p.id, uid, mode, lines }); onDone(t(`اتضاف ${r.added}.`, `Added ${r.added}.`)); } catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <p className="muted">{t(`${p.name} مبيوفرش API لجلب الاستضافة أو الـ VPS، فالدومينات بس بتتجلب أوتوماتيك. أضف الباقي هنا: سطر لكل خدمة بالشكل`, `${p.name} has no API for hosting or VPS, so only domains are fetched automatically. Add the rest here, one per line:`)} <code className="latin" dir="ltr">{kind === 'hosting' ? 'plan, domain, 2027-05-01, cost' : 'name, ip, 2027-05-01, cost'}</code></p>
+      <div className="admin-form">
+        <div className="field"><label htmlFor="ma-k">{t('النوع', 'Type')}</label><select id="ma-k" className="select" value={kind} onChange={(e) => setKind(e.target.value as 'hosting' | 'servers')}><option value="hosting">{t('استضافة', 'Hosting')}</option><option value="servers">VPS</option></select></div>
+        <div className="field"><label htmlFor="ma-u">{t('العميل', 'Client')}</label><select id="ma-u" className="select" value={uid} onChange={(e) => setUid(e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}</select></div>
+        {kind === 'hosting' && <div className="field"><label htmlFor="ma-m">{t('الاستضافة دي', 'This hosting is')}</label><select id="ma-m" className="select" value={mode} onChange={(e) => setMode(e.target.value as 'dedicated' | 'shared')}><option value="dedicated">{t('ملك العميل لوحده', 'Dedicated to this client')}</option><option value="shared">{t('مشتركة بين عملاء', 'Shared between clients')}</option></select></div>}
+      </div>
+      <textarea className="textarea latin" dir="ltr" rows={7} value={lines} onChange={(e) => setLines(e.target.value)} placeholder={kind === 'hosting' ? 'Stellar Plus, example.com, 2027-05-01, 40\nStellar Biz, , 2027-06-01, 60' : 'vps-1, 203.0.113.5, 2027-01-01, 20'} />
+      <div className="row-actions"><button className="btn btn-accent" disabled={busy || !lines.trim() || !uid} onClick={() => void go()}>{t('إضافة', 'Add')}</button></div>
     </>
   );
 }

@@ -14,7 +14,7 @@ function prov_defs() {
     return array(
         'hostinger' => array(
             'name' => 'Hostinger',
-            'caps' => array('domains', 'tlds', 'check', 'hosting', 'dns'),
+            'caps' => array('domains', 'tlds', 'check', 'hosting', 'vps', 'dns'),
             'base' => 'https://developers.hostinger.com',
             'fields' => array('token' => array('API token', true)),
             'help' => array('hPanel → Account → API → create a token', 'hPanel ← Account ← API ← أنشئ Token'),
@@ -169,6 +169,18 @@ function hostinger_check_parse($st, $raw, $name, $tlds) {
     }
     return $o;
 }
+/** First of several possible field names. */
+function prov_pick($a, $keys, $default) { foreach ($keys as $k) { if (isset($a[$k]) && $a[$k] !== '' && $a[$k] !== null && !is_array($a[$k])) { return $a[$k]; } } return $default; }
+/** The provider's own record, reduced to short scalar fields, for the "provider details" card. */
+function prov_details($a) {
+    $o = array();
+    foreach ((array) $a as $k => $v) {
+        if (count($o) >= 24) { break; }
+        if (is_scalar($v) && $v !== '' && !preg_match('/token|secret|password|key/i', (string) $k)) { $o[(string) $k] = is_bool($v) ? ($v ? 'true' : 'false') : clean_text((string) $v, 160); }
+        elseif (is_array($v) && !empty($v) && count($v) <= 4) { $flat = array(); foreach ($v as $x) { if (is_scalar($x)) { $flat[] = (string) $x; } elseif (is_array($x)) { $y = reset($x); if (is_scalar($y)) { $flat[] = (string) $y; } } } if ($flat) { $o[(string) $k] = clean_text(implode(', ', $flat), 160); } }
+    }
+    return $o;
+}
 function hostinger_hosting($cfg) {
     $o = array();
     foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/billing/v1/subscriptions')) as $s) {
@@ -181,14 +193,41 @@ function hostinger_hosting($cfg) {
             'status' => (isset($s['status']) && strtolower($s['status']) === 'active') ? 'active' : 'pending', 'expires' => prov_date(isset($s['next_billing_at']) ? $s['next_billing_at'] : (isset($s['expires_at']) ? $s['expires_at'] : '')),
             'cost' => $price === null ? 0 : round($price / 100, 2), 'billing' => $months >= 12 ? 'yearly' : 'monthly', 'currency' => strtoupper(isset($s['currency_code']) ? $s['currency_code'] : 'USD'));
     }
+    $subs = array(); foreach ($o as $r) { if ($r['kind'] === 'subscription') { $subs[$r['ref']] = $r; } }
     try {
         foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/hosting/v1/websites')) as $w) {
             if (!is_array($w) || empty($w['domain'])) { continue; }
             $usedB = null;
             foreach (array('disk_usage', 'disk_usage_bytes', 'disk_space_used', 'used_disk_space') as $k) { if (isset($w[$k]) && is_numeric($w[$k])) { $usedB = (float) $w[$k]; break; } }
-            $o[] = array('usedGb' => $usedB === null ? null : round($usedB / 1073741824, 2), 'ref' => 'site:' . $w['domain'], 'kind' => 'website', 'plan' => 'Website', 'domain' => strtolower($w['domain']), 'status' => (isset($w['is_enabled']) && !$w['is_enabled']) ? 'stopped' : 'active', 'expires' => '', 'cost' => 0, 'billing' => 'monthly', 'currency' => 'USD');
+            $type = strtolower(clean_text(prov_pick($w, array('type', 'website_type', 'app_type', 'application', 'platform', 'kind'), ''), 30));
+            $order = (string) prov_pick($w, array('order_id', 'subscription_id', 'hosting_id'), '');
+            $plan = $order !== '' && isset($subs[$order]) ? $subs[$order]['plan'] : 'Website';
+            $o[] = array('usedGb' => $usedB === null ? null : round($usedB / 1073741824, 2), 'ref' => 'site:' . $w['domain'], 'kind' => 'website', 'plan' => $plan, 'domain' => strtolower($w['domain']),
+                'status' => (isset($w['is_enabled']) && !$w['is_enabled']) ? 'stopped' : 'active', 'expires' => $order !== '' && isset($subs[$order]) ? $subs[$order]['expires'] : '', 'cost' => 0, 'billing' => 'monthly', 'currency' => 'USD',
+                'appType' => $type, 'username' => clean_text(prov_pick($w, array('username', 'user', 'ftp_username'), ''), 60), 'dataCenter' => clean_text(prov_pick($w, array('data_center', 'datacenter', 'datacenter_code', 'region', 'location'), ''), 40),
+                'orderRef' => $order, 'created' => prov_date(prov_pick($w, array('created_at', 'created', 'date_created'), '')), 'details' => prov_details($w));
         }
     } catch (Exception $e) { /* websites are a bonus: subscriptions alone are still useful */ }
+    // VPS servers
+    try {
+        foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/vps/v1/virtual-machines')) as $v) {
+            if (!is_array($v) || empty($v['id'])) { continue; }
+            $ip = '';
+            $ipv4 = isset($v['ipv4']) ? $v['ipv4'] : (isset($v['ip_address']) ? $v['ip_address'] : '');
+            if (is_array($ipv4)) { $first = reset($ipv4); $ip = is_array($first) ? (string) prov_pick($first, array('address', 'ip', 'ip_address'), '') : (string) $first; } else { $ip = (string) $ipv4; }
+            $cpus = (int) prov_pick($v, array('cpus', 'cpu', 'vcpus'), 0);
+            $memMb = (float) prov_pick($v, array('memory', 'ram', 'memory_mb'), 0);
+            $diskMb = (float) prov_pick($v, array('disk', 'storage', 'disk_mb'), 0);
+            $state = strtolower((string) prov_pick($v, array('state', 'status'), ''));
+            $sub = (string) prov_pick($v, array('subscription_id', 'order_id'), '');
+            $plan = clean_text(prov_pick($v, array('plan', 'plan_name'), 'VPS'), 60);
+            $spec = trim(($cpus ? $cpus . ' vCPU' : '') . ($memMb ? ' · ' . round($memMb / 1024, 1) . ' GB RAM' : '') . ($diskMb ? ' · ' . round($diskMb / 1024) . ' GB' : ''), ' ·');
+            $o[] = array('ref' => 'vps:' . $v['id'], 'kind' => 'vps', 'plan' => $plan, 'name' => clean_text(prov_pick($v, array('hostname', 'name'), 'vps-' . $v['id']), 60), 'domain' => '', 'ip' => $ip, 'spec' => $spec !== '' ? $spec : $plan, 'cpus' => $cpus,
+                'status' => in_array($state, array('running', 'active', 'started'), true) ? 'active' : (in_array($state, array('stopped', 'stopping', 'off', 'suspended'), true) ? 'stopped' : 'pending'),
+                'expires' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['expires'] : '', 'cost' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['cost'] : 0, 'billing' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['billing'] : 'monthly', 'currency' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['currency'] : 'USD',
+                'dataCenter' => clean_text(prov_pick($v, array('data_center', 'datacenter', 'data_center_id'), ''), 40), 'orderRef' => $sub, 'created' => prov_date(prov_pick($v, array('created_at', 'created'), '')), 'details' => prov_details($v));
+        }
+    } catch (Exception $e) { /* not every account has VPS */ }
     return $o;
 }
 
@@ -767,14 +806,14 @@ function prov_route($r, $me) {
             need_admin(); $id = prov_id(); $db = db_read();
             if (!in_array('hosting', prov_defs()[$id]['caps'], true)) { fail('this provider has no hosting API', 422); }
             try { $list = prov_run($id, 'hosting', $db); } catch (Exception $e) { fail($e->getMessage(), 502); }
-            $have = array(); foreach (array_merge(items_of($db, 'hosting'), items_of($db, 'websites')) as $h) { if (!empty($h['ref'])) { $have[$h['ref']] = true; } }
+            $have = array(); foreach (array_merge(items_of($db, 'hosting'), items_of($db, 'websites'), items_of($db, 'servers')) as $h) { if (!empty($h['ref'])) { $have[$h['ref']] = true; } }
             foreach ($list as $k => $h) { $list[$k]['imported'] = isset($have[$h['ref']]); $list[$k]['costStore'] = prov_to_store($db, $h['cost'], $h['currency']); }
             out(array('hosting' => $list, 'currency' => meta_get($db, 'currency', '') ?: 'EGP'));
 
         case 'admin/providers/import':
             require_post();
             $b = body(); $_GET['id'] = isset($b['id']) ? $b['id'] : ''; $id = prov_id();
-            $kind = isset($b['kind']) && in_array($b['kind'], array('hosting', 'websites'), true) ? $b['kind'] : 'domains';
+            $kind = isset($b['kind']) && in_array($b['kind'], array('hosting', 'websites', 'servers'), true) ? $b['kind'] : 'domains';
             $uid = isset($b['uid']) ? (string) $b['uid'] : '';
             $items = isset($b['items']) && is_array($b['items']) ? array_slice($b['items'], 0, 200) : array();
             $bills = !empty($b['bills']);
@@ -807,10 +846,23 @@ function prov_route($r, $me) {
                         // Link it: the longest domain it sits under, and the provider's first hosting plan of that client.
                         $domainId = ''; $best = 0;
                         foreach (items_of($db, 'domains') as $d) { $dn = strtolower($d['name']); if (($host === $dn || substr($host, -strlen($dn) - 1) === '.' . $dn) && strlen($dn) > $best) { $best = strlen($dn); $domainId = $d['id']; } }
-                        $hostingId = '';
-                        foreach (items_of($db, 'hosting') as $h) { if (isset($h['provider']) && $h['provider'] === $id && $h['uid'] === $uid) { $hostingId = $h['id']; break; } }
+                        $hostingId = ''; $orderRef = isset($it['orderRef']) ? (string) $it['orderRef'] : '';
+                        foreach (items_of($db, 'hosting') as $h) { if ($orderRef !== '' && isset($h['ref']) && $h['ref'] === $orderRef) { $hostingId = $h['id']; break; } }
+                        if ($hostingId === '') { foreach (items_of($db, 'hosting') as $h) { if (isset($h['provider']) && $h['provider'] === $id && $h['uid'] === $uid) { $hostingId = $h['id']; break; } } }
                         $db['items']['websites'][] = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'name' => $host, 'url' => $host, 'status' => in_array(isset($it['status']) ? $it['status'] : '', array('active', 'pending', 'stopped'), true) ? $it['status'] : 'active',
-                            'domainId' => $domainId, 'hostingId' => $hostingId, 'provider' => $id, 'ref' => $ref, 'notes' => '', 'diskGb' => 0, 'usedGb' => isset($it['usedGb']) && is_numeric($it['usedGb']) ? (float) $it['usedGb'] : 0);
+                            'domainId' => $domainId, 'hostingId' => $hostingId, 'provider' => $id, 'ref' => $ref, 'notes' => '', 'diskGb' => 0, 'usedGb' => isset($it['usedGb']) && is_numeric($it['usedGb']) ? (float) $it['usedGb'] : 0,
+                            'appType' => clean_text(isset($it['appType']) ? $it['appType'] : '', 30), 'username' => clean_text(isset($it['username']) ? $it['username'] : '', 60), 'dataCenter' => clean_text(isset($it['dataCenter']) ? $it['dataCenter'] : '', 40),
+                            'providerData' => isset($it['details']) && is_array($it['details']) ? array_slice(array_map(function ($x) { return clean_text((string) $x, 160); }, $it['details']), 0, 24, true) : array());
+                    } elseif ($kind === 'servers') {
+                        $ref = clean_text(isset($it['ref']) ? $it['ref'] : '', 80);
+                        foreach (items_of($db, 'servers') as $sv) { if ($ref !== '' && isset($sv['ref']) && $sv['ref'] === $ref) { continue 2; } }
+                        $costStore = prov_to_store($db, (float) (isset($it['cost']) ? $it['cost'] : 0), isset($it['currency']) ? $it['currency'] : 'USD');
+                        $rec = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'name' => clean_text(isset($it['name']) ? $it['name'] : 'vps', 60), 'ip' => clean_text(isset($it['ip']) ? $it['ip'] : '', 64), 'spec' => clean_text(isset($it['spec']) ? $it['spec'] : '', 120), 'cpu' => 0, 'ram' => 0,
+                            'status' => in_array(isset($it['status']) ? $it['status'] : '', array('active', 'pending', 'stopped'), true) ? $it['status'] : 'active', 'snapshots' => 0, 'provider' => $id, 'ref' => $ref, 'cost' => $costStore, 'billing' => isset($it['billing']) && $it['billing'] === 'yearly' ? 'yearly' : 'monthly',
+                            'expires' => prov_date(isset($it['expires']) ? $it['expires'] : ''), 'price' => 0, 'dataCenter' => clean_text(isset($it['dataCenter']) ? $it['dataCenter'] : '', 40),
+                            'providerData' => isset($it['details']) && is_array($it['details']) ? array_slice(array_map(function ($x) { return clean_text((string) $x, 160); }, $it['details']), 0, 24, true) : array());
+                        $db['items']['servers'][] = $rec;
+                        if ($bills && $costStore > 0) { prov_add_bill($db, array('provider' => $id, 'ref' => $ref, 'item' => 'VPS ' . $rec['name'], 'amount' => $costStore, 'period' => $rec['billing'], 'service' => 'server', 'client' => $uid, 'date' => $rec['expires'])); }
                     } else {
                         $ref = clean_text(isset($it['ref']) ? $it['ref'] : '', 80);
                         foreach (items_of($db, 'hosting') as $h) { if ($ref !== '' && isset($h['ref']) && $h['ref'] === $ref) { continue 2; } }

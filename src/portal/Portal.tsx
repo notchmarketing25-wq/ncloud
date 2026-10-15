@@ -9,6 +9,7 @@ import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { OrderButton } from '../site/CartPages';
 import { RenewButton } from './Extras';
+import { IdentityFields, TermsBox, TermsGate, useTerms } from './Identity';
 import { DomainName, SubLine, SvcCard } from '../site/svc';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
@@ -73,7 +74,10 @@ export function Register() {
   const { mode, problem, detail, user, refresh } = useAuth();
   const [qs] = useSearchParams();
   const next = qs.get('next') && qs.get('next')!.startsWith('/portal') ? qs.get('next')! : '/portal';
-  const [f, setF] = useState({ name: '', company: '', email: '', phone: '', password: '' });
+  const [f, setF] = useState({ name: '', company: '', email: '', phone: '', password: '', type: 'individual' as 'individual' | 'company', nationalId: '', commercialReg: '', taxId: '' });
+  const [agree, setAgree] = useState(false);
+  const terms = useTerms();
+  const needTerms = !!terms && terms.required && !!(terms.ar || terms.en);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   if (mode === 'offline') return <BackendOffline problem={problem} detail={detail} />;
@@ -81,7 +85,7 @@ export function Register() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(''); setBusy(true);
-    try { await post('auth/register', { ...f, email: f.email.trim() }); await refresh(); nav(next); }
+    try { await post('auth/register', { ...f, email: f.email.trim(), acceptTerms: agree }); await refresh(); nav(next); }
     catch (err) {
       const m = err instanceof ApiError ? err.message : '';
       setError(m === 'this email is already registered' ? t('الإيميل ده مسجّل قبل كده. سجّل دخول.', 'This email is already registered. Sign in instead.')
@@ -101,13 +105,14 @@ export function Register() {
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle /></div>
         <h2>{t('إنشاء حساب', 'Create an account')}</h2>
         {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): التسجيل بيشتغل بس بعد تثبيت الموقع على استضافة PHP.', 'Demo build (no server): sign-up works once the site is installed on a PHP host.')}</p>}
+        <IdentityFields v={f} set={(p) => setF({ ...f, ...p })} idp="rg" />
         <div className="field"><label htmlFor="rn">{t('الاسم', 'Full name')}</label><input id="rn" className="input" required maxLength={80} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-        <div className="field"><label htmlFor="rc">{t('اسم الشركة (اختياري)', 'Company (optional)')}</label><input id="rc" className="input" maxLength={80} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} /></div>
         <div className="field"><label htmlFor="re">{t('الإيميل', 'Email')}</label><input id="re" className="input latin" type="email" autoComplete="username" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
         <div className="field"><label htmlFor="rp">{t('الموبايل (اختياري)', 'Phone (optional)')}</label><input id="rp" className="input latin" maxLength={30} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
         <div className="field"><label htmlFor="rw">{t('كلمة السر (8 حروف على الأقل)', 'Password (8+ characters)')}</label><input id="rw" className="input latin" type="password" autoComplete="new-password" minLength={8} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
+        {needTerms && <><TermsBox terms={terms} /><label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> {t('قرأت الشروط والأحكام وأوافق عليها', 'I have read and accept the terms and conditions')}</label></>}
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn btn-primary" type="submit" disabled={busy || mode !== 'server'}>{busy ? '…' : t('إنشاء الحساب', 'Create account')}</button>
+        <button className="btn btn-primary" type="submit" disabled={busy || mode !== 'server' || (needTerms && !agree)}>{busy ? '…' : t('إنشاء الحساب', 'Create account')}</button>
         <p className="muted">{t('عندك حساب؟', 'Already have an account?')} <Link className="link" to="/portal/login">{t('سجّل دخول', 'Sign in')}</Link></p>
         <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
       </form>
@@ -154,6 +159,7 @@ export function PortalLayout() {
     { to: '/portal/orders', label: t('الطلبات', 'Orders') },
     { to: '/portal/quotes', label: t('عروض الأسعار', 'Quotes') },
     { to: '/portal/billing', label: t('الفواتير', 'Billing') },
+    { to: '/portal/profile', label: t('بياناتي', 'My profile') },
     { to: '/portal/support', label: t('الدعم', 'Support') },
   ];
   const signOut = async () => { await logout(); nav('/portal/login'); };
@@ -178,7 +184,7 @@ export function PortalLayout() {
           <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
           {mode !== 'server' && <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>}
         </div>
-        <div className="portal-body"><PortalDataProvider><Outlet /></PortalDataProvider></div>
+        <div className="portal-body"><PortalDataProvider><TermsGate><Outlet /></TermsGate></PortalDataProvider></div>
       </div>
     </div>
   );
@@ -452,7 +458,7 @@ export function PortalWebsiteDetail() {
       </div>
       <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
       {tab === 'overview' && <div className="card"><dl className="kv"><div><dt>{t('الرابط', 'URL')}</dt><dd><Ltr>{w.url || w.name}</Ltr></dd></div><div><dt>{t('ملاحظات', 'Notes')}</dt><dd>{w.notes || '-'}</dd></div></dl>{(w.diskGb ?? 0) > 0 && <><h3 style={{ marginTop: 16 }}>{t('المساحة', 'Disk')}</h3><p className="muted latin">{Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} /></>}</div>}
-      {tab === 'hosting' && (host ? <div className="card"><h3><Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link></h3><p className="muted latin">{host.usedGb} / {host.diskGb} GB</p><Meter value={pct(host.usedGb, host.diskGb)} /></div> : <p className="muted">{t('مفيش استضافة مربوطة.', 'No hosting linked.')}</p>)}
+      {tab === 'hosting' && (host ? <div className="card"><h3><Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link></h3><p className="muted latin">{host.usedGb} / {host.diskGb} GB</p><Meter value={pct(host.usedGb, host.diskGb)} /></div> : (data.sharedHosting ?? []).find((x) => x.id === w.hostingId) ? <div className="card"><h3>{(data.sharedHosting ?? []).find((x) => x.id === w.hostingId)!.plan}</h3><p className="muted">{t('موقعك على استضافة مشتركة بتديرها نوتش.', 'Your site runs on shared hosting managed by us.')}</p></div> : <p className="muted">{t('مفيش استضافة مربوطة.', 'No hosting linked.')}</p>)}
       {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومين الموقع.', 'No mailboxes on the website’s domain.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{m.address}</Ltr></td><td className="latin">{m.usedGb} / {m.quotaGb} GB</td></tr>)}</Table>}
     </Page>
   );

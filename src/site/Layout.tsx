@@ -113,7 +113,7 @@ function Footer() {
           </div>
           <div><h5>{t('الخدمات', 'Services')}</h5><Link to="/domains">{t('دومينات', 'Domains')}</Link><Link to="/email">{t('إيميلات', 'Email')}</Link><Link to="/websites">{t('مواقع', 'Websites')}</Link><Link to="/hosting">{t('استضافة', 'Hosting')}</Link><Link to="/cloud">{t('كلاود وVPS', 'Cloud & VPS')}</Link></div>
           <div><h5>{t('الشركة', 'Company')}</h5><Link to="/pricing">{t('الأسعار', 'Pricing')}</Link><Link to="/status">{t('حالة الخدمات', 'Status')}</Link><Link to="/contact">{t('تواصل معنا', 'Contact')}</Link></div>
-          <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal/register">{t('إنشاء حساب', 'Create account')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link></div>
+          <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal/register">{t('إنشاء حساب', 'Create account')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link><Link to="/terms">{t('الشروط والأحكام', 'Terms & conditions')}</Link></div>
         </div>
         <div className="footer-word" aria-hidden>NOTCH</div>
         <div className="footer-bottom latin"><span>© {new Date().getFullYear()} {settings.site ? settings.site.toUpperCase() : 'NOTCH CLOUD SERVICES'}</span>{settings.placeholder && <span>PLACEHOLDER CONTENT</span>}</div>

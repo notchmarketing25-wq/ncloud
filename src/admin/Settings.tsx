@@ -27,7 +27,7 @@ export function AdminSettings() {
   useEffect(() => { api<Full>('admin/settings').then((r) => { setSaved(r); setS(r); }).catch((e) => setErr(errText(e, t))); }, [t]);
 
   const groups = useMemo<{ title: string; items: { id: string; label: string; to?: string }[] }[]>(() => [
-    { title: t('الشركة', 'Company'), items: [{ id: 'general', label: t('عام', 'General') }, { id: 'branding', label: t('الهوية البصرية', 'Branding') }, { id: 'accounts', label: t('حسابات العملاء', 'Customer accounts') }, { id: 'store', label: t('المتجر والضريبة', 'Store & tax') }] },
+    { title: t('الشركة', 'Company'), items: [{ id: 'general', label: t('عام', 'General') }, { id: 'branding', label: t('الهوية البصرية', 'Branding') }, { id: 'accounts', label: t('حسابات العملاء', 'Customer accounts') }, { id: 'store', label: t('المتجر والضريبة', 'Store & tax') }, { id: 'terms', label: t('الشروط والأحكام', 'Terms & conditions') }] },
     { title: t('المبيعات', 'Sales'), items: [{ id: 'plans', label: t('الباقات والأسعار', 'Plans & prices'), to: '/admin/plans' }, { id: 'orders', label: t('الطلبات', 'Orders'), to: '/admin/orders' }, { id: 'payments', label: t('وسائل الدفع', 'Payment methods') }, { id: 'coupons', label: t('كوبونات الخصم', 'Coupons') }, { id: 'renewals', label: t('التجديد والمزوّدين', 'Renewals & providers') }, { id: 'tld', label: t('أسعار الدومينات', 'TLD pricing'), to: '/admin/pricing' }, { id: 'purchases', label: t('فواتير الشراء', 'Purchases'), to: '/admin/purchases' }] },
     { title: t('التطبيقات', 'Apps & tools'), items: [{ id: 'apps', label: t('التطبيقات', 'Apps'), to: '/admin/apps' }, { id: 'email', label: t('الإيميل (SMTP)', 'Email (SMTP)') }, { id: 'system', label: t('فحص النظام', 'System check') }, { id: 'updates', label: t('التحديثات', 'Updates'), to: '/admin/updates' }, { id: 'activity', label: t('سجل النشاط', 'Activity'), to: '/admin/activity' }] },
     { title: t('الحساب', 'Account'), items: [{ id: 'account', label: t('حسابي', 'My account'), to: '/admin/account' }] },
@@ -166,6 +166,16 @@ export function AdminSettings() {
               </>)}
               {card(t('عرض الموقع', 'Website display'), null, <>
                 <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.placeholder} onChange={(e) => set({ placeholder: e.target.checked })} /> {t('اعرض علامة "تجريبي" على الأسعار والأرقام', 'Show the "placeholder" marks on prices and numbers')}</label>
+              </>)}
+            </>
+          )}
+
+          {section === 'terms' && (
+            <>
+              {card(t('الشروط والأحكام', 'Terms & conditions'), t('بتظهر في صفحة /terms وعند التسجيل وفي ملف العميل. لو عدّلت النص، النسخة بتزيد والعملاء بيتطلب منهم الموافقة من جديد.', 'Shown on the /terms page, at sign-up and in the client profile. When you change the text the version goes up and clients are asked to accept again.'), <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!s.terms?.required} onChange={(e) => set({ terms: { ar: s.terms?.ar ?? '', en: s.terms?.en ?? '', version: s.terms?.version ?? '1', required: e.target.checked } })} /> {t('الموافقة إجبارية (عند التسجيل وقبل أي طلب)', 'Acceptance is required (at sign-up and before any order)')}</label>
+                {field('tm-ar', t('النص بالعربي', 'Text (Arabic)'), <textarea id="tm-ar" className="textarea" rows={10} maxLength={30000} value={s.terms?.ar ?? ''} onChange={(e) => set({ terms: { ar: e.target.value, en: s.terms?.en ?? '', version: s.terms?.version ?? '1', required: !!s.terms?.required } })} />)}
+                {field('tm-en', t('النص بالإنجليزي', 'Text (English)'), <textarea id="tm-en" className="textarea latin" dir="ltr" rows={10} maxLength={30000} value={s.terms?.en ?? ''} onChange={(e) => set({ terms: { ar: s.terms?.ar ?? '', en: e.target.value, version: s.terms?.version ?? '1', required: !!s.terms?.required } })} />, t(`النسخة الحالية: ${s.terms?.version ?? '1'}`, `Current version: ${s.terms?.version ?? '1'}`))}
               </>)}
             </>
           )}

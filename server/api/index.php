@@ -24,11 +24,11 @@ const NC_DUMMY_HASH = '$2y$10$8Y16n8v4IzI3OW35lCBnoODimb31iLg1sMQ/8idOIoa4jptGzb
 $SCHEMA = array(
     'domains' => array('name' => array('str', 253, 'req'), 'status' => array('enum', array('active', 'pending', 'expiring', 'stopped', 'archived')), 'expires' => array('date'), 'autoRenew' => array('bool'), 'provider' => array('str', 30), 'cost' => array('num'), 'price' => array('num'), 'notes' => array('str', 500), 'mail' => array('str', 20), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000), 'dnsOff' => array('bool'), 'emailFwd' => array('bool'), 'idProtect' => array('bool'), 'regYears' => array('num'), 'regDate' => array('date')),
     'mailboxes' => array('address' => array('str', 254, 'req'), 'quotaGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
-    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
-    'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
+    'hosting' => array('plan' => array('str', 60, 'req'), 'domain' => array('str', 253), 'diskGb' => array('num'), 'usedGb' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000), 'mode' => array('enum', array('dedicated', 'shared'))),
+    'servers' => array('name' => array('str', 60, 'req'), 'ip' => array('str', 64), 'spec' => array('str', 120), 'cpu' => array('num'), 'ram' => array('num'), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000), 'provider' => array('str', 30), 'ref' => array('str', 80), 'cost' => array('num'), 'billing' => array('enum', array('monthly', 'yearly')), 'dataCenter' => array('str', 40)),
     'invoices' => array('item' => array('str', 160, 'req'), 'amount' => array('num', 'req'), 'date' => array('date'), 'dueDate' => array('date'), 'status' => array('enum', array('due', 'paid', 'void', 'draft', 'refunded', 'collections')), 'notes' => array('str', 1000), 'payMethod' => array('str', 40)),
     // Websites: each one is linked to a hosting plan and a domain (and, through the domain, to its mailboxes).
-    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num'), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000)),
+    'websites' => array('name' => array('str', 120, 'req'), 'url' => array('str', 253), 'status' => array('enum', array('active', 'pending', 'stopped', 'archived')), 'domainId' => array('str', 32), 'hostingId' => array('str', 32), 'provider' => array('str', 30), 'ref' => array('str', 80), 'notes' => array('str', 500), 'diskGb' => array('num'), 'usedGb' => array('num'), 'expires' => array('date'), 'price' => array('num'), 'nextDue' => array('date'), 'firstAmount' => array('num'), 'promo' => array('str', 40), 'subRef' => array('str', 80), 'payMethod' => array('str', 40), 'noSuspendUntil' => array('date'), 'adminNotes' => array('str', 1000), 'appType' => array('str', 30), 'dataCenter' => array('str', 40), 'username' => array('str', 60)),
     // Public price list shown on the website (edited in Admin → Plans). Not owned by a client.
     'plans' => array('category' => array('enum', array('hosting', 'email', 'vps', 'site', 'bundle')), 'nameAr' => array('str', 80, 'req'), 'nameEn' => array('str', 80), 'price' => array('num', 'req'), 'per' => array('enum', array('month', 'year', 'once')), 'featured' => array('bool'), 'active' => array('bool'), 'sort' => array('num'), 'specs' => array('str', 700), 'features' => array('str', 900)),
     // Orders placed from the cart. Lines, number and totals are set by the server; admin edits status / payment fields only.
@@ -197,7 +197,7 @@ function db_update($fn) {
 
 /* ───────── helpers ───────── */
 function next_user_no($db) { $m = 0; foreach ($db['users'] as $x) { if (isset($x['no']) && (int) $x['no'] > $m) { $m = (int) $x['no']; } } return max($m, count($db['users'])) + 1; }
-function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0), 'no' => isset($u['no']) ? (int) $u['no'] : 0, 'group' => isset($u['group']) ? $u['group'] : '', 'notes' => isset($u['notes']) ? $u['notes'] : '', 'contacts' => isset($u['contacts']) && is_array($u['contacts']) ? $u['contacts'] : array(), 'taxExempt' => !empty($u['taxExempt']), 'noReminders' => !empty($u['noReminders']), 'addr' => isset($u['addr']) && is_array($u['addr']) ? $u['addr'] : new stdClass()); }
+function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0), 'no' => isset($u['no']) ? (int) $u['no'] : 0, 'group' => isset($u['group']) ? $u['group'] : '', 'notes' => isset($u['notes']) ? $u['notes'] : '', 'contacts' => isset($u['contacts']) && is_array($u['contacts']) ? $u['contacts'] : array(), 'taxExempt' => !empty($u['taxExempt']), 'noReminders' => !empty($u['noReminders']), 'addr' => isset($u['addr']) && is_array($u['addr']) ? $u['addr'] : new stdClass(), 'kyc' => kyc_public($u), 'terms' => isset($u['terms']) && is_array($u['terms']) ? $u['terms'] : null); }
 function new_id() { return function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)); }
 function find_by($list, $key, $val) { foreach ($list as $i => $u) { if (isset($u[$key]) && $u[$key] === $val) { return $i; } } return -1; }
 function find_user($db, $key, $val) { return find_by($db['users'], $key, $val); }
@@ -297,6 +297,44 @@ function deco_item($res, $it) {
     return $it;
 }
 function deco_list($res, $list) { return array_map(function ($it) use ($res) { return deco_item($res, $it); }, $list); }
+
+/* ───────── client identity (individual / company), ID documents and terms & conditions ───────── */
+function kyc_clean($in) {
+    $in = is_array($in) ? $in : array();
+    return array('type' => isset($in['type']) && $in['type'] === 'company' ? 'company' : 'individual', 'nationalId' => preg_replace('/[^0-9A-Za-z\-]/', '', substr((string) (isset($in['nationalId']) ? $in['nationalId'] : ''), 0, 24)),
+        'commercialReg' => clean_text(isset($in['commercialReg']) ? $in['commercialReg'] : '', 40), 'taxId' => clean_text(isset($in['taxId']) ? $in['taxId'] : '', 40));
+}
+function kyc_public($u) {
+    $k = isset($u['kyc']) && is_array($u['kyc']) ? $u['kyc'] : array(); $f = isset($k['files']) && is_array($k['files']) ? $k['files'] : array();
+    return array('type' => isset($k['type']) ? $k['type'] : 'individual', 'nationalId' => isset($k['nationalId']) ? $k['nationalId'] : '', 'commercialReg' => isset($k['commercialReg']) ? $k['commercialReg'] : '', 'taxId' => isset($k['taxId']) ? $k['taxId'] : '',
+        'front' => !empty($f['front']), 'back' => !empty($f['back']), 'tax' => !empty($f['tax']));
+}
+function terms_cfg($db) { $t = meta_get($db, 'terms', array()); return array('ar' => isset($t['ar']) ? $t['ar'] : '', 'en' => isset($t['en']) ? $t['en'] : '', 'version' => isset($t['version']) ? (string) $t['version'] : '1', 'required' => !empty($t['required'])); }
+function terms_ok($db, $u) { $t = terms_cfg($db); if (!$t['required'] || ($t['ar'] === '' && $t['en'] === '')) { return true; } return !empty($u['terms']) && $u['terms']['version'] === $t['version']; }
+function terms_stamp($db, $by) { $t = terms_cfg($db); return array('version' => $t['version'], 'at' => gmdate('c'), 'by' => $by, 'ip' => isset($_SERVER['REMOTE_ADDR']) ? substr(preg_replace('/[^0-9a-fA-F:.]/', '', $_SERVER['REMOTE_ADDR']), 0, 45) : ''); }
+function kyc_dir() { $d = NC_DATA . '/kyc'; if (!is_dir($d)) { @mkdir($d, 0755, true); @file_put_contents($d . '/.htaccess', "Require all denied\n"); @file_put_contents($d . '/index.html', ''); } return $d; }
+/** Saves an uploaded ID / tax card (image or PDF, up to 3 MB) privately, outside the web folders, and returns array(ok, name|error). */
+function kyc_store($uid, $side, $old) {
+    if (!in_array($side, array('front', 'back', 'tax'), true)) { return array(false, 'invalid side'); }
+    if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'])) { return array(false, 'no file received'); }
+    if ($_FILES['file']['size'] > 3000000) { return array(false, 'the file is larger than 3 MB'); }
+    $bytes = file_get_contents($_FILES['file']['tmp_name']);
+    $kinds = array("\x89PNG" => 'png', "\xFF\xD8\xFF" => 'jpg', 'RIFF' => 'webp', '%PDF' => 'pdf');
+    $ext = ''; foreach ($kinds as $sig => $e) { if (strncmp($bytes, $sig, strlen($sig)) === 0) { $ext = $e; } }
+    if ($ext === 'webp' && substr($bytes, 8, 4) !== 'WEBP') { $ext = ''; }
+    if ($ext === '') { return array(false, 'use a JPG, PNG, WebP or PDF file'); }
+    $name = preg_replace('/[^a-z0-9]/i', '', $uid) . '-' . $side . '-' . substr(bin2hex(function_exists('random_bytes') ? random_bytes(6) : md5(uniqid('', true))), 0, 12) . '.' . $ext;
+    if (@file_put_contents(kyc_dir() . '/' . $name, $bytes) === false) { return array(false, 'could not save the file'); }
+    if ($old && preg_match('/^[A-Za-z0-9.\-]+$/', $old) && is_file(kyc_dir() . '/' . $old)) { @unlink(kyc_dir() . '/' . $old); }
+    return array(true, $name);
+}
+function kyc_send($u, $side) {
+    $f = isset($u['kyc']['files'][$side]) ? $u['kyc']['files'][$side] : '';
+    if (!$f || !preg_match('/^[A-Za-z0-9.\-]+$/', $f) || !is_file(kyc_dir() . '/' . $f)) { fail('no file', 404); }
+    $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION)); $types = array('png' => 'image/png', 'jpg' => 'image/jpeg', 'webp' => 'image/webp', 'pdf' => 'application/pdf');
+    header('Content-Type: ' . (isset($types[$ext]) ? $types[$ext] : 'application/octet-stream')); header('Cache-Control: private, no-store'); header('X-Content-Type-Options: nosniff'); header('Content-Disposition: inline; filename="' . $side . '.' . $ext . '"');
+    readfile(kyc_dir() . '/' . $f); exit;
+}
 /** Payment methods set in Admin → Settings → Payments. Details (account numbers…) are only sent to signed-in clients. */
 function pay_methods($db, $withDetails) {
     $o = array();
@@ -789,8 +827,12 @@ switch ($r) {
         if ($name === '') { fail('name is required', 422); }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         check_password(isset($b['password']) ? $b['password'] : '');
+        $dbT = db_read();
+        if (terms_cfg($dbT)['required'] && (terms_cfg($dbT)['ar'] !== '' || terms_cfg($dbT)['en'] !== '') && empty($b['acceptTerms'])) { fail('you must accept the terms and conditions', 422); }
+        $kyc = kyc_clean($b);
+        if ($kyc['type'] === 'company' && $company === '') { fail('enter the company name', 422); }
         $ip = client_ip();
-        $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => 'client', 'hash' => password_hash($b['password'], PASSWORD_DEFAULT), 'created' => gmdate('c'), 'phone' => $phone, 'company' => $company, 'source' => 'signup');
+        $user = array('kyc' => $kyc, 'terms' => !empty($b['acceptTerms']) ? terms_stamp($dbT, 'client') : null, 'id' => new_id(), 'name' => $name, 'email' => $email, 'role' => 'client', 'hash' => password_hash($b['password'], PASSWORD_DEFAULT), 'created' => gmdate('c'), 'phone' => $phone, 'company' => $company, 'source' => 'signup');
         $res = db_update(function (&$db) use ($user, $ip) {
             if (!meta_get($db, 'allowRegistration', true)) { return 'closed'; }
             if (rate_blocked($db, 'reg:' . $ip, 5, 3600)) { return 'rate'; }
@@ -828,6 +870,7 @@ switch ($r) {
         $note = clean_text(isset($b['note']) ? $b['note'] : '', 2000);
         $domain = strtolower(clean_text(isset($b['domain']) ? $b['domain'] : '', 253));
         $db0 = db_read();
+        if (!terms_ok($db0, $u)) { fail('terms', 403); }
         $cur = meta_get($db0, 'currency', '') ?: 'EGP';
         $methods = pay_methods($db0, true);
         $method = isset($b['method']) ? (string) $b['method'] : '';
@@ -1043,6 +1086,13 @@ switch ($r) {
             $o[$res] = array_values(array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote']); return $it; }, array_filter(deco_list($res, mine($db, $res, $u['id'])), function ($it) { return !isset($it['status']) || $it['status'] !== 'archived'; })));
         }
         $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        // Sites of this client that sit on somebody else's (shared) hosting: only the plan name is shown.
+        $o['sharedHosting'] = array(); $seenH = array();
+        foreach ($o['websites'] as $w) {
+            if (empty($w['hostingId']) || isset($seenH[$w['hostingId']])) { continue; }
+            $hi = find_by(items_of($db, 'hosting'), 'id', $w['hostingId']);
+            if ($hi >= 0 && $db['items']['hosting'][$hi]['uid'] !== $u['id']) { $seenH[$w['hostingId']] = true; $o['sharedHosting'][] = array('id' => $w['hostingId'], 'plan' => $db['items']['hosting'][$hi]['plan'], 'mode' => 'shared'); }
+        }
         $o['quotes'] = array_values(array_filter($o['quotes'], function ($q) { return $q['status'] !== 'draft'; }));
         $o['invoices'] = array_values(array_map(function ($v) use ($db) { return inv_public($db, $v); }, mine($db, 'invoices', $u['id'])));
         $o['credit'] = (float) (isset($u['credit']) ? $u['credit'] : 0);
@@ -1241,7 +1291,7 @@ switch ($r) {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         check_password(isset($b['password']) ? $b['password'] : '');
         $hash = password_hash($b['password'], PASSWORD_DEFAULT);
-        $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => $role, 'hash' => $hash, 'created' => gmdate('c'));
+        $user = array('id' => new_id(), 'name' => $name, 'email' => $email, 'role' => $role, 'hash' => $hash, 'created' => gmdate('c'), 'phone' => clean_text(isset($b['phone']) ? $b['phone'] : '', 30), 'company' => clean_text(isset($b['company']) ? $b['company'] : '', 80), 'kyc' => kyc_clean($b));
         $dup = db_update(function (&$db) use ($user, $me) {
             if (find_user($db, 'email', $user['email']) >= 0) { return true; }
             $user['no'] = next_user_no($db);
@@ -1271,6 +1321,8 @@ switch ($r) {
         if (isset($b['notes'])) { $extras['notes'] = clean_text($b['notes'], 4000); }
         if (isset($b['taxExempt'])) { $extras['taxExempt'] = !empty($b['taxExempt']); }
         if (isset($b['noReminders'])) { $extras['noReminders'] = !empty($b['noReminders']); }
+        if (isset($b['kyc']) && is_array($b['kyc'])) { $extras['kyc_in'] = kyc_clean($b['kyc']); }
+        if (!empty($b['termsAccepted'])) { $extras['terms_attest'] = true; }
         if (isset($b['addr']) && is_array($b['addr'])) { $ad = array(); foreach (array('address1', 'address2', 'city', 'state', 'zip', 'country', 'taxId') as $k) { $ad[$k] = clean_text(isset($b['addr'][$k]) ? $b['addr'][$k] : '', 160); } $extras['addr'] = $ad; }
         if (isset($b['contacts']) && is_array($b['contacts'])) { $cl = array(); foreach (array_slice($b['contacts'], 0, 30) as $c) { if (is_array($c) && clean_text(isset($c['name']) ? $c['name'] : '', 80) !== '') { $cl[] = array('id' => isset($c['id']) && preg_match('/^[a-z0-9]{4,20}$/', (string) $c['id']) ? $c['id'] : new_id(), 'name' => clean_text($c['name'], 80), 'email' => clean_email(isset($c['email']) ? $c['email'] : ''), 'phone' => clean_text(isset($c['phone']) ? $c['phone'] : '', 30), 'role' => clean_text(isset($c['role']) ? $c['role'] : '', 40)); } } $extras['contacts'] = $cl; }
         if ($disabled && $id === $me['id']) { fail('you cannot suspend your own account', 409); }
@@ -1287,7 +1339,11 @@ switch ($r) {
             if ($name !== null && $name !== '') { $db['users'][$i]['name'] = $name; }
             if ($role !== null) { $db['users'][$i]['role'] = $role; }
             if ($hash !== null) { $db['users'][$i]['hash'] = $hash; }
-            foreach ($extras as $ek => $ev) { $db['users'][$i][$ek] = $ev; }
+            foreach ($extras as $ek => $ev) {
+                if ($ek === 'kyc_in') { $old = isset($db['users'][$i]['kyc']) && is_array($db['users'][$i]['kyc']) ? $db['users'][$i]['kyc'] : array(); $db['users'][$i]['kyc'] = array_merge($old, $ev); }
+                elseif ($ek === 'terms_attest') { $db['users'][$i]['terms'] = terms_stamp($db, 'admin'); }
+                else { $db['users'][$i][$ek] = $ev; }
+            }
             if ($disabled !== null) { if ($disabled && $db['users'][$i]['role'] === 'admin') { return 'last-admin'; } $db['users'][$i]['disabled'] = $disabled; }
             log_act($db, $me, $disabled === true ? 'user-suspend' : ($disabled === false ? 'user-activate' : 'user-update'), $db['users'][$i]['email']);
             return 'ok';
@@ -1316,6 +1372,7 @@ switch ($r) {
         });
         if ($res === 'missing') { fail('user not found', 404); }
         if ($res === 'last-admin') { fail('there must be at least one admin', 409); }
+        foreach ((array) glob(kyc_dir() . '/' . preg_replace('/[^a-z0-9]/i', '', $id) . '-*') as $kf) { @unlink($kf); }
         out(array('ok' => true));
 
     /* ── admin: client services ── */
@@ -1348,6 +1405,10 @@ switch ($r) {
         if (res_unowned($res)) { $uid = ''; }
         $saved = db_update(function (&$db) use ($res, $clean, $uid, $id, $me) {
             if (!res_unowned($res) && find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            if ($res === 'websites' && !empty($clean['hostingId'])) {
+                $hi = find_by(items_of($db, 'hosting'), 'id', (string) $clean['hostingId']);
+                if ($hi >= 0 && $db['items']['hosting'][$hi]['uid'] !== $uid && (!isset($db['items']['hosting'][$hi]['mode']) || $db['items']['hosting'][$hi]['mode'] !== 'shared')) { return array('err' => 'this hosting belongs to one client only: set it to "shared" first to put another client\'s site on it'); }
+            }
             if (!isset($db['items'][$res]) || !is_array($db['items'][$res])) { $db['items'][$res] = array(); }
             $i = $id === '' ? -1 : find_by($db['items'][$res], 'id', $id);
             if ($id !== '' && $i < 0) { return array('err' => 'item not found'); }
@@ -1510,7 +1571,7 @@ switch ($r) {
                 'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
                 'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass()),
                 'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'),
-                'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
+                'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
                 'smtp' => smtp_public(meta_get($db, 'smtp', array())), 'gateways' => gw_public(meta_get($db, 'gateways', array())), 'coupons' => meta_get($db, 'coupons', array()),
                 'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false)));
         }
@@ -1539,6 +1600,12 @@ switch ($r) {
             $tx = array();
             foreach (array_slice($b['taxes'], 0, 6) as $t) { if (is_array($t) && isset($t['rate']) && (float) $t['rate'] > 0 && (float) $t['rate'] <= 100) { $tx[] = array('name' => clean_text(isset($t['name']) && $t['name'] !== '' ? $t['name'] : 'Tax', 40), 'rate' => round((float) $t['rate'], 2)); } }
             $extra['taxes'] = $tx; $extra['taxRate'] = 0;
+        }
+        if (isset($b['terms']) && is_array($b['terms'])) {
+            $old = terms_cfg($db);
+            $nt = array('ar' => clean_text(isset($b['terms']['ar']) ? $b['terms']['ar'] : '', 30000), 'en' => clean_text(isset($b['terms']['en']) ? $b['terms']['en'] : '', 30000), 'required' => !empty($b['terms']['required']));
+            $nt['version'] = ($nt['ar'] !== $old['ar'] || $nt['en'] !== $old['en']) ? (string) ((int) $old['version'] + 1) : $old['version']; // a changed text asks everybody to accept again
+            $extra['terms'] = $nt;
         }
         if (isset($b['suspendAfterDays'])) { $extra['suspendAfterDays'] = max(0, min(365, (int) $b['suspendAfterDays'])); }
         if (isset($b['taxInclusive'])) { $extra['taxInclusive'] = !empty($b['taxInclusive']); }
@@ -2049,6 +2116,117 @@ switch ($r) {
         $_SESSION['uid'] = $adminId;
         $db = db_read(); $ai = find_user($db, 'id', $adminId);
         out(array('user' => $ai >= 0 ? public_user($db['users'][$ai]) : null));
+
+    case 'admin/bulk-add':
+        // For services a provider has no API for (e.g. Namecheap VPS / hosting): paste one per line — "name or plan, domain, expiry date, your cost".
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $kind = isset($b['kind']) && $b['kind'] === 'servers' ? 'servers' : 'hosting';
+        $pid = isset($b['provider']) && in_array($b['provider'], array('hostinger', 'namecheap', 'resellerclub', ''), true) ? $b['provider'] : '';
+        $uid = isset($b['uid']) ? (string) $b['uid'] : '';
+        $mode = isset($b['mode']) && $b['mode'] === 'shared' ? 'shared' : 'dedicated';
+        $lines = preg_split('/\r?\n/', (string) (isset($b['lines']) ? $b['lines'] : ''));
+        $out = db_update(function (&$db) use ($kind, $pid, $uid, $mode, $lines, $me) {
+            if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
+            $n = 0;
+            foreach (array_slice($lines, 0, 200) as $ln) {
+                $c = array_map('trim', str_getcsv($ln));
+                if (!$c || $c[0] === '') { continue; }
+                $exp = isset($c[2]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $c[2]) ? $c[2] : '';
+                $cost = isset($c[3]) && is_numeric($c[3]) ? (float) $c[3] : 0;
+                if ($kind === 'servers') { $it = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'name' => clean_text($c[0], 60), 'ip' => clean_text(isset($c[1]) ? $c[1] : '', 64), 'spec' => '', 'cpu' => 0, 'ram' => 0, 'status' => 'active', 'snapshots' => 0, 'provider' => $pid, 'ref' => '', 'cost' => $cost, 'billing' => 'monthly', 'expires' => $exp, 'price' => 0); }
+                else { $it = array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'plan' => clean_text($c[0], 60), 'domain' => clean_text(isset($c[1]) ? $c[1] : '', 253), 'diskGb' => 0, 'usedGb' => 0, 'status' => 'active', 'provider' => $pid, 'ref' => '', 'cost' => $cost, 'billing' => 'yearly', 'expires' => $exp, 'price' => 0, 'mode' => $mode); }
+                $db['items'][$kind][] = $it; $n++;
+            }
+            log_act($db, $me, 'bulk-add', $kind . ' x' . $n);
+            return array('added' => $n);
+        });
+        if (isset($out['err'])) { fail($out['err'], 422); }
+        out($out);
+
+    case 'public/terms':
+        $db = db_read();
+        out(terms_cfg($db));
+
+    case 'me/profile':
+        // The client edits their own details (not email / role).
+        $u = need_user();
+        require_post();
+        $b = body();
+        $name = isset($b['name']) ? clean_name($b['name']) : '';
+        $company = clean_text(isset($b['company']) ? $b['company'] : '', 80);
+        $kyc = kyc_clean($b);
+        if ($name === '') { fail('name is required', 422); }
+        if ($kyc['type'] === 'company' && $company === '') { fail('enter the company name', 422); }
+        $addr = array(); foreach (array('address1', 'address2', 'city', 'state', 'zip', 'country') as $k) { $addr[$k] = clean_text(isset($b['addr'][$k]) ? $b['addr'][$k] : '', 160); }
+        $res = db_update(function (&$db) use ($u, $b, $name, $company, $kyc, $addr) {
+            $i = find_user($db, 'id', $u['id']);
+            if ($i < 0) { return false; }
+            $db['users'][$i]['name'] = $name; $db['users'][$i]['company'] = $company; $db['users'][$i]['phone'] = clean_text(isset($b['phone']) ? $b['phone'] : '', 30);
+            $old = isset($db['users'][$i]['kyc']) && is_array($db['users'][$i]['kyc']) ? $db['users'][$i]['kyc'] : array();
+            $db['users'][$i]['kyc'] = array_merge($old, $kyc); $db['users'][$i]['addr'] = array_merge(isset($db['users'][$i]['addr']) && is_array($db['users'][$i]['addr']) ? $db['users'][$i]['addr'] : array(), $addr);
+            if (!empty($b['acceptTerms']) && !terms_ok($db, $db['users'][$i])) { $db['users'][$i]['terms'] = terms_stamp($db, 'client'); }
+            log_act($db, $u, 'profile-update', $db['users'][$i]['email']);
+            return public_user($db['users'][$i]);
+        });
+        if (!$res) { fail('not found', 404); }
+        out(array('user' => $res));
+
+    case 'me/accept-terms':
+        $u = need_user();
+        require_post();
+        db_update(function (&$db) use ($u) { $i = find_user($db, 'id', $u['id']); if ($i >= 0) { $db['users'][$i]['terms'] = terms_stamp($db, 'client'); log_act($db, $u, 'terms-accepted', $db['users'][$i]['email']); } });
+        $db = db_read(); $i = find_user($db, 'id', $u['id']);
+        out(array('user' => public_user($db['users'][$i])));
+
+    case 'kyc/upload':
+        $u = need_user();
+        require_post();
+        $side = isset($_POST['side']) ? (string) $_POST['side'] : '';
+        $old = isset($u['kyc']['files'][$side]) ? $u['kyc']['files'][$side] : '';
+        list($ok2, $name) = kyc_store($u['id'], $side, $old);
+        if (!$ok2) { fail($name, 422); }
+        db_update(function (&$db) use ($u, $side, $name) { $i = find_user($db, 'id', $u['id']); if ($i >= 0) { $db['users'][$i]['kyc']['files'][$side] = $name; log_act($db, $u, 'kyc-upload', $side); } });
+        out(array('ok' => true));
+
+    case 'kyc/remove':
+        $u = need_user();
+        require_post();
+        $b = body(); $side = isset($b['side']) ? (string) $b['side'] : '';
+        $old = isset($u['kyc']['files'][$side]) ? $u['kyc']['files'][$side] : '';
+        if ($old && preg_match('/^[A-Za-z0-9.\-]+$/', $old)) { @unlink(kyc_dir() . '/' . $old); }
+        db_update(function (&$db) use ($u, $side) { $i = find_user($db, 'id', $u['id']); if ($i >= 0 && isset($db['users'][$i]['kyc']['files'][$side])) { unset($db['users'][$i]['kyc']['files'][$side]); } });
+        out(array('ok' => true));
+
+    case 'kyc/image':
+        $u = need_user();
+        kyc_send($u, isset($_GET['side']) ? (string) $_GET['side'] : '');
+
+    case 'admin/kyc-image':
+        need_admin();
+        $db = db_read(); $i = find_user($db, 'id', isset($_GET['uid']) ? (string) $_GET['uid'] : '');
+        if ($i < 0) { fail('client not found', 404); }
+        kyc_send($db['users'][$i], isset($_GET['side']) ? (string) $_GET['side'] : '');
+
+    case 'admin/kyc-upload':
+        $me = need_admin();
+        require_post();
+        $uid = isset($_POST['uid']) ? (string) $_POST['uid'] : ''; $side = isset($_POST['side']) ? (string) $_POST['side'] : '';
+        $db0 = db_read(); $i0 = find_user($db0, 'id', $uid);
+        if ($i0 < 0) { fail('client not found', 404); }
+        $old = isset($db0['users'][$i0]['kyc']['files'][$side]) ? $db0['users'][$i0]['kyc']['files'][$side] : '';
+        list($ok2, $name) = kyc_store($uid, $side, $old);
+        if (!$ok2) { fail($name, 422); }
+        db_update(function (&$db) use ($uid, $side, $name, $me) { $i = find_user($db, 'id', $uid); if ($i >= 0) { $db['users'][$i]['kyc']['files'][$side] = $name; log_act($db, $me, 'kyc-upload', $db['users'][$i]['email'] . ' ' . $side); } });
+        out(array('ok' => true));
+
+    case 'admin/kyc-remove':
+        $me = need_admin();
+        require_post();
+        $b = body(); $uid = isset($b['uid']) ? (string) $b['uid'] : ''; $side = isset($b['side']) ? (string) $b['side'] : '';
+        db_update(function (&$db) use ($uid, $side, $me) { $i = find_user($db, 'id', $uid); if ($i >= 0 && isset($db['users'][$i]['kyc']['files'][$side])) { $f = $db['users'][$i]['kyc']['files'][$side]; if (preg_match('/^[A-Za-z0-9.\-]+$/', $f)) { @unlink(kyc_dir() . '/' . $f); } unset($db['users'][$i]['kyc']['files'][$side]); log_act($db, $me, 'kyc-remove', $db['users'][$i]['email'] . ' ' . $side); } });
+        out(array('ok' => true));
 
     case 'admin/activity':
         need_admin();

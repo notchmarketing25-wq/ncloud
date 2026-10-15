@@ -10,7 +10,7 @@ import { SvcFields } from './SvcEdit';
 import { Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
-import { ClientLine, Field, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
+import { ClientLine, Field, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, ProviderCard, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
 
 export { AdminUpdates } from './Updates';
 
@@ -237,10 +237,12 @@ function WebsiteForm({ all, form, setForm, mine, onSave }: { all: NonNullable<Re
       <Field id="w-url" label={t('الرابط / الدومين', 'URL / domain')}><input id="w-url" className="input latin" value={String(form.url ?? '')} onChange={(e) => set('url', e.target.value)} /></Field>
       <Field id="w-st" label={t('الحالة', 'Status')}><select id="w-st" className="select" value={String(form.status)} onChange={(e) => set('status', e.target.value)}>{STATUS.filter((s) => s[0] !== 'expiring').map(([v, ar, en]) => <option key={v} value={v}>{t(ar, en)}</option>)}</select></Field>
       <Field id="w-dom" label={t('الدومين المرتبط', 'Linked domain')}><select id="w-dom" className="select" value={String(form.domainId ?? '')} onChange={(e) => set('domainId', e.target.value)}><option value="">{t('بدون', 'None')}</option>{mine('domains', form.uid).map((x) => <option key={x.id} value={x.id}>{String(x.name)}</option>)}</select></Field>
-      <Field id="w-host" label={t('الاستضافة المرتبطة', 'Linked hosting')}><select id="w-host" className="select" value={String(form.hostingId ?? '')} onChange={(e) => set('hostingId', e.target.value)}><option value="">{t('بدون', 'None')}</option>{mine('hosting', form.uid).map((x) => <option key={x.id} value={x.id}>{String(x.plan)}{x.domain ? ` · ${x.domain}` : ''}</option>)}</select></Field>
+      <Field id="w-host" label={t('الاستضافة المرتبطة', 'Linked hosting')}><select id="w-host" className="select" value={String(form.hostingId ?? '')} onChange={(e) => set('hostingId', e.target.value)}><option value="">{t('بدون', 'None')}</option>{all.items.hosting.filter((x) => x.uid === form.uid || x.mode === 'shared').map((x) => <option key={x.id} value={x.id}>{String(x.plan)}{x.domain ? ` · ${x.domain}` : ''}{x.uid !== form.uid ? ` — ${all.users.find((u) => u.id === x.uid)?.name ?? ''} (${t('مشتركة', 'shared')})` : x.mode === 'shared' ? ` (${t('مشتركة', 'shared')})` : ''}</option>)}</select></Field>
       <Field id="w-disk" label={t('المساحة المخصصة (GB)', 'Allotted space (GB)')}><input id="w-disk" className="input latin" type="number" min={0} step="any" value={String(form.diskGb ?? '')} onChange={numIn('diskGb')} /></Field>
       <Field id="w-used" label={t('المستخدم (GB)', 'Used (GB)')}><input id="w-used" className="input latin" type="number" min={0} step="any" value={String(form.usedGb ?? '')} onChange={numIn('usedGb')} /></Field>
       <Field id="w-nt" label={t('ملاحظات', 'Notes')} wide><input id="w-nt" className="input" value={String(form.notes ?? '')} onChange={(e) => set('notes', e.target.value)} /></Field>
+      <Field id="w-at" label={t('نوع الموقع (WordPress / PHP / Node.js …)', 'Site type (WordPress / PHP / Node.js …)')}><input id="w-at" className="input latin" maxLength={30} value={String(form.appType ?? '')} onChange={(e) => set('appType', e.target.value)} /></Field>
+      <Field id="w-dc" label={t('مركز البيانات', 'Data center')}><input id="w-dc" className="input latin" maxLength={40} value={String(form.dataCenter ?? '')} onChange={(e) => set('dataCenter', e.target.value)} /></Field>
       <SvcFields kind="websites" v={form} put={set} />
       <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
     </form>
@@ -281,7 +283,8 @@ export function AdminWebsiteDetail() {
         </div>
         <aside>
           <SideCard title={t('العميل', 'Client')}><ClientLine users={all.users} uid={w.uid} /></SideCard>
-          {host && <SideCard title={t('الاستضافة', 'Hosting')}><Link className="link" to={`/admin/hosting/${host.id}`}>{String(host.plan)}</Link><p className="muted latin">{gb(host.usedGb)} / {gb(host.diskGb)}</p></SideCard>}
+          {host && <SideCard title={t('الاستضافة', 'Hosting')}><Link className="link" to={`/admin/hosting/${host.id}`}>{String(host.plan)}</Link> {host.mode === 'shared' ? <span className="tag volt">{t('مشتركة', 'Shared')}</span> : <span className="tag">{t('خاصة', 'Dedicated')}</span>}<p className="muted latin">{gb(host.usedGb)} / {gb(host.diskGb)}</p></SideCard>}
+          <ProviderCard item={w} />
         </aside>
       </div>
       {edit && <Modal title={t('تعديل الموقع', 'Edit website')} wide onClose={() => setEdit(null)}><WebsiteForm all={all} form={edit} setForm={setEdit} mine={mine} onSave={() => run(() => post('admin/item-save', { item: edit }, { res: 'websites' }), t('اتحفظ.', 'Saved.')).then((r) => { if (r) setEdit(null); })} /></Modal>}
@@ -303,7 +306,9 @@ export function AdminHostingDetail() {
   const h = all?.items.hosting.find((x) => x.id === id);
   if (!all || !h) return <Page title={t('الاستضافة', 'Hosting')}><Notice err={error} ok="" /><Link to="/admin/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link></Page>;
   const sites = all.items.websites.filter((w) => w.hostingId === h.id);
-  const free = all.items.websites.filter((w) => w.uid === h.uid && w.hostingId !== h.id);
+  const shared = h.mode === 'shared';
+  const free = all.items.websites.filter((w) => (shared || w.uid === h.uid) && w.hostingId !== h.id);
+  const owners = Array.from(new Set(sites.map((w) => w.uid)));
   const doms = all.items.domains.filter((d) => sites.some((w) => w.domainId === d.id) || under(h.domain, d.name));
   const mails = all.items.mailboxes.filter((m) => doms.some((d) => String(m.address).toLowerCase().endsWith('@' + String(d.name).toLowerCase())));
   const used = pctUsed(h);
@@ -314,7 +319,7 @@ export function AdminHostingDetail() {
   return (
     <Page title={String(h.plan)} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => setEdit({ ...h })}>{t('تعديل', 'Edit')}</button><Link to="/admin/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link></div>}>
       <Notice err={err || error} ok={ok} />
-      <Strip items={[[t('الحالة', 'Status'), <StatusTag s={h.status as 'active'} />], [t('المساحة', 'Disk'), <span className="latin">{gb(h.usedGb)} / {gb(h.diskGb)}</span>], [t('المواقع', 'Websites'), <span className="latin">{sites.length}</span>], [t('تكلفة → بيع', 'Cost → price'), <span className="latin">{num(h.cost)} → {num(h.price)} {cur}</span>], [t('التجديد', 'Renews'), <Ltr>{String(h.expires || '-')}</Ltr>]]} />
+      <Strip items={[[t('الحالة', 'Status'), <StatusTag s={h.status as 'active'} />], [t('المساحة', 'Disk'), <span className="latin">{gb(h.usedGb)} / {gb(h.diskGb)}</span>], [t('المواقع', 'Websites'), <span className="latin">{sites.length}</span>], [t('تكلفة → بيع', 'Cost → price'), <span className="latin">{num(h.cost)} → {num(h.price)} {cur}</span>], [t('التجديد', 'Renews'), <Ltr>{String(h.expires || '-')}</Ltr>], [t('النوع', 'Type'), shared ? <span className="tag volt">{t(`مشتركة (${owners.length} عميل)`, `Shared (${owners.length} clients)`)}</span> : <span className="tag">{t('خاصة بالعميل', 'Dedicated')}</span>]]} />
       <div className="cust-layout">
         <div>
           <Tabs value={tab} onChange={setTab} tabs={[['overview', t('نظرة عامة', 'Overview')], ['websites', t('المواقع', 'Websites'), sites.length], ['domains', t('الدومينات', 'Domains'), doms.length], ['email', t('الإيميلات', 'Email'), mails.length], ['billing', t('الفواتير والتكلفة', 'Billing')]]} />
@@ -335,10 +340,10 @@ export function AdminHostingDetail() {
           {tab === 'websites' && (
             <>
               <div className="linked">
-                {sites.map((w) => <div key={w.id}><Link className="link" to={`/admin/websites/${w.id}`}><Ltr>{String(w.name)}</Ltr></Link><span><span className="latin muted">{gb(w.usedGb)} / {gb(w.diskGb)}</span> <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/item-save', { item: { ...w, hostingId: '' } }, { res: 'websites' }), t('اتفكّ الربط.', 'Unlinked.'))}>{t('فك الربط', 'Unlink')}</button></span></div>)}
+                {sites.map((w) => <div key={w.id}><span><Link className="link" to={`/admin/websites/${w.id}`}><Ltr>{String(w.name)}</Ltr></Link> <span className="muted">· {all.users.find((u) => u.id === w.uid)?.name ?? '-'}</span></span><span><span className="latin muted">{gb(w.usedGb)} / {gb(w.diskGb)}</span> <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/item-save', { item: { ...w, hostingId: '' } }, { res: 'websites' }), t('اتفكّ الربط.', 'Unlinked.'))}>{t('فك الربط', 'Unlink')}</button></span></div>)}
                 {sites.length === 0 && <p className="muted">{t('مفيش مواقع مربوطة.', 'No websites linked.')}</p>}
               </div>
-              {free.length > 0 && <div className="inline-form" style={{ gridTemplateColumns: '1fr auto', marginTop: 12 }}><div className="field"><label htmlFor="hl">{t('اربط موقع للعميل ده', 'Link one of this client’s websites')}</label><select id="hl" className="select" value={link} onChange={(e) => setLink(e.target.value)}><option value="">…</option>{free.map((w) => <option key={w.id} value={w.id}>{String(w.name)}</option>)}</select></div>
+              {free.length > 0 && <div className="inline-form" style={{ gridTemplateColumns: '1fr auto', marginTop: 12 }}><div className="field"><label htmlFor="hl">{t('اربط موقع للعميل ده', 'Link one of this client’s websites')}</label><select id="hl" className="select" value={link} onChange={(e) => setLink(e.target.value)}><option value="">…</option>{free.map((w) => <option key={w.id} value={w.id}>{all.users.find((u) => u.id === w.uid)?.name} · {String(w.name)}</option>)}</select></div>
                 <button className="btn btn-primary" disabled={!link} onClick={() => { const w = free.find((x) => x.id === link)!; void run(() => post('admin/item-save', { item: { ...w, hostingId: h.id } }, { res: 'websites' }), t('اتربط.', 'Linked.')).then(() => setLink('')); }}>{t('ربط', 'Link')}</button></div>}
             </>
           )}
@@ -384,6 +389,7 @@ export function AdminHostingDetail() {
             <Field id="hd-co" label={`${t('تكلفتك', 'Your cost')} · ${cur}`}><input id="hd-co" className="input latin" type="number" min={0} step="any" value={String(edit.cost ?? '')} onChange={(e) => setEdit({ ...edit, cost: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
             <Field id="hd-pr" label={`${t('سعر العميل', 'Client price')} · ${cur}`}><input id="hd-pr" className="input latin" type="number" min={0} step="any" value={String(edit.price ?? '')} onChange={(e) => setEdit({ ...edit, price: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
             <Field id="hd-ex" label={t('التجديد القادم', 'Next renewal')}><input id="hd-ex" className="input" type="date" value={String(edit.expires ?? '')} onChange={(e) => setEdit({ ...edit, expires: e.target.value })} /></Field>
+            <Field id="hd-mode" label={t('نوع الاستضافة', 'Hosting type')} wide><select id="hd-mode" className="select" value={String(edit.mode || 'dedicated')} onChange={(e) => setEdit({ ...edit, mode: e.target.value })}><option value="dedicated">{t('ملك العميل لوحده (مواقعه بس)', 'Dedicated: this client only')}</option><option value="shared">{t('مشتركة: أكتر من عميل ممكن يحط موقعه عليها', 'Shared: several clients can host sites on it')}</option></select></Field>
             <SvcFields kind="hosting" v={edit} put={(k, val) => setEdit({ ...edit, [k]: val })} />
             <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
           </form>

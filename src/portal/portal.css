@@ -344,3 +344,12 @@
 .tbl td .latin, .tbl td [dir="ltr"] { white-space: nowrap; }
 .tbl td .latin, .tbl td [dir="ltr"] { white-space: nowrap; }
 .svc-list > .card { min-width: 0; }
+
+.seg { display: inline-flex; border: 1px solid var(--nt-fog); border-radius: 999px; overflow: hidden; }
+.seg button { padding: 8px 20px; background: none; border: 0; cursor: pointer; font: inherit; }
+.seg button.on { background: var(--nt-black); color: #fff; }
+.kyc-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.kyc-doc { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px dashed var(--nt-slate); border-radius: 14px; }
+.kyc-docs > p { grid-column: 1 / -1; margin: 0; }
+.kyc-img { max-width: 100%; max-height: 150px; border-radius: 8px; border: 1px solid var(--nt-fog); background: #fff; }
+.terms-box { max-height: 280px; overflow: auto; white-space: pre-wrap; padding: 14px; border: 1px solid var(--nt-fog); border-radius: 12px; background: var(--nt-paper, #fff); line-height: 1.8; }

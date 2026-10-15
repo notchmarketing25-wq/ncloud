@@ -8,7 +8,7 @@ import type { DnsRec, Lead, Ticket } from '../lib/types';
 import { day, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
-import { StatusMenu } from './kit';
+import { ProviderCard, StatusMenu } from './kit';
 
 type Item = { id: string; uid: string; [k: string]: unknown };
 type Opt = [string, string, string]; // value, ar, en
@@ -215,11 +215,18 @@ export const AdminHosting = () => (
     ]}
     columns={[
       { label: ['الخطة', 'Plan'], render: (it) => <Link className="link" to={`/admin/hosting/${it.id}`}>{String(it.plan)}</Link> }, { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.domain || '-')}</Ltr> },
-      { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
+      { label: ['النوع', 'Type'], render: (it) => it.mode === 'shared' ? <span className="tag volt">Shared</span> : <span className="tag">Dedicated</span> }, { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
       { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
       { label: ['التجديد', 'Renews'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> },
     ]} />
 );
+
+function ServerDetails({ it }: { it: Item }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (!it.provider && !it.providerData) return null;
+  return <><button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>{t('تفاصيل', 'Details')}</button>{open && <Modal title={String(it.name)} onClose={() => setOpen(false)}><ProviderCard item={it} extra={[[t('مواصفات', 'Spec'), <span className="latin">{String(it.spec || '-')}</span>], [t('عنوان IP', 'IP'), <span className="latin">{String(it.ip || '-')}</span>]]} /></Modal>}</>;
+}
 
 export const AdminServers = () => (
   <ResourcePage res="servers" title={['السيرفرات', 'Servers']} newLabel={['+ سيرفر', '+ Server']} defaults={{ name: '', ip: '', spec: '1 vCPU · 2 GB · 40 GB', cpu: 0, ram: 0, status: 'active' }}
@@ -231,7 +238,7 @@ export const AdminServers = () => (
     columns={[
       { label: ['الاسم', 'Name'], render: (it) => <Ltr>{String(it.name)}</Ltr> }, { label: ['IP', 'IP'], render: (it) => <Ltr>{String(it.ip || '-')}</Ltr> },
       { label: ['المواصفات', 'Spec'], render: (it) => <Ltr>{String(it.spec || '-')}</Ltr> }, { label: ['الحالة', 'Status'], render: status },
-    ]} />
+    ]} actions={(it) => <ServerDetails it={it} />} />
 );
 
 /* ───────── Tickets ───────── */

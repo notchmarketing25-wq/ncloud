@@ -19,6 +19,7 @@ import { CatalogProvider } from './site/catalog';
 import { CartProvider } from './site/cart';
 import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
 import { AdminOrders } from './admin/Orders';
+import { PortalProfile, TermsPage } from './portal/Identity';
 import { ForgotPassword, PortalInvoice, PortalQuotes, RenewPage, ResetPassword } from './portal/Extras';
 import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
 import { AdminClient } from './admin/Client';
@@ -50,6 +51,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="status" element={<Status />} />
             <Route path="contact" element={<Contact />} />
             <Route path="cart" element={<CartPage />} />
+            <Route path="terms" element={<TermsPage />} />
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="portal/login" element={<Login />} />
@@ -97,6 +99,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="orders" element={<PortalOrders />} />
             <Route path="invoices/:id" element={<PortalInvoice />} />
             <Route path="quotes" element={<PortalQuotes />} />
+            <Route path="profile" element={<PortalProfile />} />
             <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />
             <Route path="email" element={<PortalEmail />} />

@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Hostinger sync now also fetches VPS servers and every kind of website with its details (site type such as WordPress / PHP / Node.js, data center, username, plan, creation date and everything else the provider returns), linking each site to its hosting plan; Namecheap has no hosting/VPS API so those are added by hand in bulk (one line each). Hosting can be Dedicated (one client's sites only) or Shared (sites of several clients), enforced when a site is attached. Client identity: individual or company, national ID or commercial register + tax number, private ID card / tax card uploads (JPG/PNG/PDF), create and edit from the admin, the client profile page and sign-up. Terms & conditions: editable text with versions, acceptance required at sign-up and before ordering, a /terms page, acceptance record (version, date, IP) and admin 'record acceptance'."
+ ],
+ "ar": [
+  "مزامنة Hostinger بقت بتجيب كمان سيرفرات VPS وكل أنواع المواقع بتفاصيلها (نوع الموقع: WordPress / PHP / Node.js، مركز البيانات، اسم المستخدم، الخطة، تاريخ الإنشاء وكل اللي بيرجعه المزوّد) وبتربط كل موقع باستضافته؛ Namecheap مفيهوش API للاستضافة والـ VPS فبتتضاف يدويًا بالجملة (سطر لكل خدمة). الاستضافة ممكن تكون خاصة (مواقع عميل واحد) أو مشتركة (مواقع أكتر من عميل) والنظام بيمنع ربط موقع عميل تاني بالاستضافة الخاصة. هوية العميل: شخص أو شركة، رقم قومي أو سجل تجاري + رقم ضريبي، رفع صورة البطاقة والبطاقة الضريبية بشكل خاص (JPG/PNG/PDF)، إضافة وتعديل من الأدمن ومن صفحة بيانات العميل ومن التسجيل. الشروط والأحكام: نص قابل للتعديل بنسخ، موافقة إجبارية عند التسجيل وقبل الطلب، صفحة /terms، سجل الموافقة (النسخة والتاريخ والـ IP) وزر 'سجّل موافقة العميل' للأدمن."
+ ]
+}
