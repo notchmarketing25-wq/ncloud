@@ -225,7 +225,7 @@ export function PortalOrderDetail() {
     <Page title={`${t('طلب', 'Order')} ${o.number}`} action={<div className="row-actions"><button className="btn btn-ghost btn-sm" onClick={() => window.print()}>{t('طباعة', 'Print')}</button><Link to="/portal/orders" className="btn btn-ghost btn-sm">{t('← كل الطلبات', '← All orders')}</Link></div>}>
       <div className="cust-layout">
         <div>
-          <div className="card">
+          <div className="card print-sheet">
             <div className="row-actions" style={{ justifyContent: 'space-between' }}><OrderTag s={o.status} />{inv && <span className="muted">{t('فاتورة', 'Invoice')} <Ltr>{inv.number}</Ltr> <InvoiceTag s={inv.status} /></span>}</div>
             <Table head={[t('البند', 'Item'), t('المدة', 'Term'), t('السعر', 'Price')]}>
               {o.lines.map((l, i) => <tr key={i}><td>{L({ ar: l.nameAr, en: l.nameEn })}</td><td>{unitLabel(l.unit, l.qty, t)}</td><td className="latin">{l.price.toLocaleString('en-US')}</td></tr>)}

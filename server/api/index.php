@@ -285,7 +285,7 @@ function can_touch($u, $item) { return $u['role'] === 'admin' || (isset($item['u
 function res_name() { global $SCHEMA; $r = isset($_GET['res']) ? (string) $_GET['res'] : ''; if (!isset($SCHEMA[$r])) { fail('unknown resource', 404); } return $r; }
 /** Records that belong to the company, not to a client (purchase bills, the public plans). */
 /** A DNS value in a comparable form: no case, no trailing dot, single spaces. */
-function dns_norm($v) { return rtrim(strtolower(trim(preg_replace('/\s+/', ' ', (string) $v))), '.'); }
+function dns_norm($v) { return rtrim(strtolower(trim(preg_replace('/\s+/', ' ', str_replace(array('"', "\xE2\x80\x9C", "\xE2\x80\x9D"), '', (string) $v)))), '.'); } // quotes never make two records different: a provider returns "v=spf1 …" where we stored v=spf1 …
 
 /** Every service gets a stable subscription ID (derived from its id, so it never changes) and a start date. */
 function sub_prefix($res) { $p = array('domains' => 'DOM', 'hosting' => 'HST', 'websites' => 'WEB', 'servers' => 'SRV', 'mailboxes' => 'MBX'); return isset($p[$res]) ? $p[$res] : ''; }
@@ -296,6 +296,8 @@ function deco_item($res, $it) {
     $it['started'] = isset($it['created']) ? substr($it['created'], 0, 10) : '';
     return $it;
 }
+function imap_cfg($db) { $c = meta_get($db, 'imap', array()); return array('host' => !empty($c['host']) ? $c['host'] : 'imap.hostinger.com', 'port' => !empty($c['port']) ? (int) $c['port'] : 993, 'secure' => isset($c['secure']) && $c['secure'] === 'none' ? 'none' : 'ssl'); }
+function with_pass($db, $list) { $sec = meta_get($db, 'mailSecrets', array()); return array_map(function ($m) use ($sec) { $m['hasPass'] = !empty($sec[$m['id']]); return $m; }, $list); }
 function deco_list($res, $list) { return array_map(function ($it) use ($res) { return deco_item($res, $it); }, $list); }
 
 /* ───────── client identity (individual / company), ID documents and terms & conditions ───────── */
@@ -1380,13 +1382,13 @@ switch ($r) {
         need_admin();
         $res = res_name();
         $db = db_read();
-        out(array('items' => $res === 'invoices' ? array_map(function ($v) use ($db) { return inv_public($db, $v); }, items_of($db, $res)) : deco_list($res, items_of($db, $res))));
+        out(array('items' => $res === 'invoices' ? array_map(function ($v) use ($db) { return inv_public($db, $v); }, items_of($db, $res)) : ($res === 'mailboxes' ? with_pass($db, deco_list($res, items_of($db, $res))) : deco_list($res, items_of($db, $res)))));
 
     case 'admin/all':
         need_admin();
         $db = db_read();
         $o = array('users' => array_map(function ($u, $k) { $p = public_user($u); if (!$p['no']) { $p['no'] = $k + 1; } return $p; }, $db['users'], array_keys($db['users'])), 'items' => array(), 'tickets' => array());
-        foreach (array_keys($SCHEMA) as $res) { if (!res_unowned($res)) { $o['items'][$res] = $res === 'invoices' ? array_map(function ($v) use ($db) { return inv_public($db, $v); }, items_of($db, $res)) : deco_list($res, items_of($db, $res)); } }
+        foreach (array_keys($SCHEMA) as $res) { if (!res_unowned($res)) { $o['items'][$res] = $res === 'invoices' ? array_map(function ($v) use ($db) { return inv_public($db, $v); }, items_of($db, $res)) : ($res === 'mailboxes' ? with_pass($db, deco_list($res, items_of($db, $res))) : deco_list($res, items_of($db, $res))); } }
         foreach ($db['tickets'] as $t) { $o['tickets'][] = array('id' => $t['id'], 'uid' => $t['uid'], 'subject' => $t['subject'], 'status' => $t['status'], 'updated' => isset($t['updated']) ? $t['updated'] : ''); }
         out($o);
 
@@ -1571,7 +1573,7 @@ switch ($r) {
                 'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
                 'brand' => meta_get($db, 'brand', new stdClass()), 'business' => meta_get($db, 'business', new stdClass()),
                 'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'),
-                'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
+                'imap' => imap_cfg($db), 'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
                 'smtp' => smtp_public(meta_get($db, 'smtp', array())), 'gateways' => gw_public(meta_get($db, 'gateways', array())), 'coupons' => meta_get($db, 'coupons', array()),
                 'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false)));
         }
@@ -1607,6 +1609,7 @@ switch ($r) {
             $nt['version'] = ($nt['ar'] !== $old['ar'] || $nt['en'] !== $old['en']) ? (string) ((int) $old['version'] + 1) : $old['version']; // a changed text asks everybody to accept again
             $extra['terms'] = $nt;
         }
+        if (isset($b['imap']) && is_array($b['imap'])) { $extra['imap'] = array('host' => preg_replace('/[^A-Za-z0-9.\-]/', '', (string) (isset($b['imap']['host']) ? $b['imap']['host'] : '')), 'port' => max(1, min(65535, (int) (isset($b['imap']['port']) ? $b['imap']['port'] : 993))), 'secure' => isset($b['imap']['secure']) && $b['imap']['secure'] === 'none' ? 'none' : 'ssl'); }
         if (isset($b['suspendAfterDays'])) { $extra['suspendAfterDays'] = max(0, min(365, (int) $b['suspendAfterDays'])); }
         if (isset($b['taxInclusive'])) { $extra['taxInclusive'] = !empty($b['taxInclusive']); }
         if (isset($b['invoicePrefix'])) { $extra['invoicePrefix'] = preg_replace('/[^A-Za-z0-9 _\-]/', '', substr((string) $b['invoicePrefix'], 0, 12)); }
@@ -2227,6 +2230,50 @@ switch ($r) {
         $b = body(); $uid = isset($b['uid']) ? (string) $b['uid'] : ''; $side = isset($b['side']) ? (string) $b['side'] : '';
         db_update(function (&$db) use ($uid, $side, $me) { $i = find_user($db, 'id', $uid); if ($i >= 0 && isset($db['users'][$i]['kyc']['files'][$side])) { $f = $db['users'][$i]['kyc']['files'][$side]; if (preg_match('/^[A-Za-z0-9.\-]+$/', $f)) { @unlink(kyc_dir() . '/' . $f); } unset($db['users'][$i]['kyc']['files'][$side]); log_act($db, $me, 'kyc-remove', $db['users'][$i]['email'] . ' ' . $side); } });
         out(array('ok' => true));
+
+    case 'admin/mailbox-secret':
+        // Stores (encrypted) the password of a mailbox so the admin can read it here. The connection is tested first.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : '';
+        $pw = isset($b['password']) ? (string) $b['password'] : '';
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        $mi = find_by(items_of($db0, 'mailboxes'), 'id', $id);
+        if ($mi < 0) { fail('mailbox not found', 404); }
+        if ($pw !== '') {
+            try { $im = new NcImap(imap_cfg($db0), $db0['items']['mailboxes'][$mi]['address'], $pw); $im->close(); $sealed = mail_seal($pw); }
+            catch (Exception $e) { fail($e->getMessage(), 422); }
+        } else { $sealed = ''; }
+        db_update(function (&$db) use ($id, $sealed, $me) { $m = meta_get($db, 'mailSecrets', array()); if ($sealed === '') { unset($m[$id]); } else { $m[$id] = $sealed; } $db['meta']['mailSecrets'] = $m; log_act($db, $me, $sealed === '' ? 'mailbox-password-removed' : 'mailbox-password-saved', $id); });
+        out(array('ok' => true));
+
+    case 'admin/mail-folders':
+    case 'admin/mail-list':
+    case 'admin/mail-read':
+        need_admin();
+        require_once __DIR__ . '/providers.php';
+        $db0 = db_read();
+        $id = isset($_GET['id']) ? (string) $_GET['id'] : '';
+        $mi = find_by(items_of($db0, 'mailboxes'), 'id', $id);
+        if ($mi < 0) { fail('mailbox not found', 404); }
+        $sec = meta_get($db0, 'mailSecrets', array());
+        if (empty($sec[$id])) { fail('no password saved for this mailbox', 409); }
+        try {
+            $im = new NcImap(imap_cfg($db0), $db0['items']['mailboxes'][$mi]['address'], mail_unseal($sec[$id]));
+            if ($r === 'admin/mail-folders') { $o = array('folders' => $im->folders()); $im->close(); out($o); }
+            $folder = isset($_GET['folder']) && $_GET['folder'] !== '' ? (string) $_GET['folder'] : 'INBOX';
+            $total = $im->examine($folder);
+            if ($r === 'admin/mail-list') {
+                $size = 25; $page = max(1, (int) (isset($_GET['page']) ? $_GET['page'] : 1));
+                $to = $total - ($page - 1) * $size; $from = max(1, $to - $size + 1);
+                $msgs = $to >= 1 ? $im->headers($from, $to) : array();
+                $im->close(); out(array('total' => $total, 'page' => $page, 'size' => $size, 'messages' => $msgs));
+            }
+            $msg = $im->message(isset($_GET['uid']) ? (int) $_GET['uid'] : 0);
+            $im->close(); out($msg);
+        } catch (Exception $e) { fail($e->getMessage(), 502); }
 
     case 'admin/activity':
         need_admin();

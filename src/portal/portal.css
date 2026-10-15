@@ -353,3 +353,18 @@
 .kyc-docs > p { grid-column: 1 / -1; margin: 0; }
 .kyc-img { max-width: 100%; max-height: 150px; border-radius: 8px; border: 1px solid var(--nt-fog); background: #fff; }
 .terms-box { max-height: 280px; overflow: auto; white-space: pre-wrap; padding: 14px; border: 1px solid var(--nt-fog); border-radius: 12px; background: var(--nt-paper, #fff); line-height: 1.8; }
+
+.mailview { display: grid; grid-template-columns: 150px minmax(240px, 1fr) minmax(0, 1.4fr); gap: 14px; min-height: 420px; }
+@media (max-width: 900px) { .mailview { grid-template-columns: minmax(0, 1fr); } }
+.mv-folders { display: grid; gap: 4px; align-content: start; }
+.mv-folders button { text-align: start; padding: 8px 12px; border-radius: 10px; background: none; border: 0; cursor: pointer; font: inherit; }
+.mv-folders button.on { background: var(--nt-black); color: #fff; }
+.mv-list { display: grid; gap: 4px; align-content: start; max-height: 520px; overflow: auto; }
+.mv-row { display: grid; gap: 2px; text-align: start; padding: 8px 10px; border: 1px solid var(--nt-fog); border-radius: 10px; background: none; cursor: pointer; font: inherit; }
+.mv-row.on { background: rgba(0, 0, 0, .06); }
+.mv-row.unread .mv-sub { font-weight: 700; }
+.mv-from { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-date { color: var(--nt-slate); font-size: .8rem; }
+.mv-read { display: grid; gap: 10px; align-content: start; min-width: 0; max-height: 520px; overflow: auto; }
+.mv-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; padding: 12px; border: 1px solid var(--nt-fog); border-radius: 12px; background: var(--nt-paper, #fff); }

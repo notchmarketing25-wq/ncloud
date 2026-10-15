@@ -215,6 +215,11 @@ export function AdminSettings() {
                 {field('sm-f', t('إيميل المرسِل', 'From address'), <input id="sm-f" className="input latin" dir="ltr" placeholder="no-reply@yourdomain.com" value={smtp.from} onChange={(e) => setSmtp({ from: e.target.value })} />, undefined, false)}
                 {field('sm-n', t('اسم المرسِل', 'From name'), <input id="sm-n" className="input" value={smtp.fromName} onChange={(e) => setSmtp({ fromName: e.target.value })} />, undefined, false)}
               </>)}
+              {card(t('قراءة الصناديق (IMAP)', 'Reading mailboxes (IMAP)'), t('سيرفر الإيميل اللي بنقرا منه رسايل الصناديق في صفحة الدومين والموقع. الافتراضي Hostinger.', 'The mail server used to read mailboxes on the domain and website pages. Default: Hostinger.'), <>
+                {field('im-h', t('السيرفر', 'Host'), <input id="im-h" className="input latin" dir="ltr" placeholder="imap.hostinger.com" value={s.imap?.host ?? ''} onChange={(e) => set({ imap: { host: e.target.value, port: s.imap?.port ?? 993, secure: s.imap?.secure ?? 'ssl' } })} />, undefined, false)}
+                {field('im-p', t('المنفذ', 'Port'), <input id="im-p" className="input latin" type="number" value={s.imap?.port ?? 993} onChange={(e) => set({ imap: { host: s.imap?.host ?? '', port: Number(e.target.value), secure: s.imap?.secure ?? 'ssl' } })} />, undefined, false)}
+                {field('im-s', t('التشفير', 'Encryption'), <select id="im-s" className="select" value={s.imap?.secure ?? 'ssl'} onChange={(e) => set({ imap: { host: s.imap?.host ?? '', port: s.imap?.port ?? 993, secure: e.target.value as 'ssl' | 'none' } })}><option value="ssl">SSL (993)</option><option value="none">{t('بدون', 'None')}</option></select>, undefined, false)}
+              </>)}
               <div className="set-card"><div className="row-actions"><button type="button" className="btn btn-accent btn-sm" disabled={dirty} onClick={testMail}>{t('ابعت إيميل تجريبي', 'Send a test email')}</button><span className="muted">{dirty ? t('احفظ الأول وبعدين جرّب.', 'Save first, then test.') : t('بيتبعت لإيميلك كأدمن.', 'Goes to your own admin email.')}</span></div></div>
             </>
           )}

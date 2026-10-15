@@ -752,7 +752,18 @@ function prov_route($r, $me) {
                 $n = 0;
                 foreach ($want as $w) {
                     $has = false;
-                    foreach ($dns as $r) { if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && dns_norm($r['value']) === dns_norm($w['value'])) { $has = true; } }
+                    foreach ($dns as $ri => $r) {
+                        if ($r['type'] === $w['type'] && $r['host'] === $w['host'] && dns_norm($r['value']) === dns_norm($w['value'])) { $has = true; }
+                        // A domain may have only ONE SPF record: when it already has one (Google, another mailer…) add Hostinger to it instead of creating a second.
+                        if (!$has && $w['type'] === 'TXT' && $r['type'] === 'TXT' && $r['host'] === $w['host'] && stripos(trim(str_replace('"', '', $r['value'])), 'v=spf1') === 0) {
+                            $has = true;
+                            $cur = trim(str_replace('"', '', $r['value']));
+                            if (stripos($cur, '_spf.mail.hostinger.com') === false) {
+                                $merged = preg_match('/\s[-~?+]all\s*$/i', $cur) ? preg_replace('/(\s[-~?+]all)\s*$/i', ' include:_spf.mail.hostinger.com$1', $cur) : $cur . ' include:_spf.mail.hostinger.com ~all';
+                                $dns[$ri]['value'] = $merged; $n++;
+                            }
+                        }
+                    }
                     if (!$has) { $w['id'] = new_id(); $dns[] = $w; $n++; }
                 }
                 $db['items']['domains'][$k]['dns'] = $dns;
@@ -935,6 +946,10 @@ function prov_dns_autopush($domainId) {
     if ($i < 0) { return ''; }
     $d = $db['items']['domains'][$i];
     $pid = isset($d['provider']) ? (string) $d['provider'] : '';
+    // Records that differ only by quotes / case / spacing are the same record: keep one (the provider refuses duplicates).
+    $seen = array(); $clean = array();
+    foreach (isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array() as $r) { $k = $r['type'] . '|' . $r['host'] . '|' . dns_norm($r['value']); if (isset($seen[$k])) { continue; } $seen[$k] = true; $clean[] = $r; }
+    if (count($clean) !== count(isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array())) { $d['dns'] = $clean; db_update(function (&$db) use ($domainId, $clean) { $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k >= 0) { $db['items']['domains'][$k]['dns'] = $clean; } }); }
     if (empty($d['dnsSynced']) || !dns_can_write($pid) || !prov_has_keys($pid, prov_cfg($db, $pid))) { return ''; }
     try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), isset($d['dns']) ? $d['dns'] : array()); return ''; }
     catch (Exception $e) { return 'saved here, but not sent to ' . prov_name($pid) . ': ' . $e->getMessage(); }
@@ -1048,4 +1063,119 @@ function nc_system_check($db) {
     $last = meta_get($db, 'lastDaily', '');
     $add('cron', $last !== '' && $last >= gmdate('Y-m-d', time() - 2 * 86400), $last !== '' ? 'last daily run: ' . $last : 'the daily job (renewals & reminders) has never run: add a cron job (see Settings → Renewals)');
     return array('rows' => $rows, 'php' => PHP_VERSION, 'storage' => use_sql() ? 'mysql' : 'file', 'time' => gmdate('c'));
+}
+
+/* ───────── reading a mailbox over IMAP (read-only: EXAMINE + BODY.PEEK, nothing is marked as read or deleted) ───────── */
+function mail_key() {
+    $f = NC_DATA . '/.mailkey';
+    if (!is_file($f)) { @file_put_contents($f, bin2hex(function_exists('random_bytes') ? random_bytes(32) : md5(uniqid('', true)) . md5(mt_rand()))); @chmod($f, 0600); }
+    return hash('sha256', (string) @file_get_contents($f), true);
+}
+function mail_seal($plain) {
+    if (!function_exists('openssl_encrypt')) { throw new Exception('the PHP openssl extension is needed to keep mailbox passwords'); }
+    $iv = function_exists('random_bytes') ? random_bytes(16) : substr(md5(uniqid('', true), true), 0, 16);
+    return base64_encode($iv . openssl_encrypt($plain, 'aes-256-cbc', mail_key(), OPENSSL_RAW_DATA, $iv));
+}
+function mail_unseal($sealed) {
+    $raw = base64_decode((string) $sealed, true);
+    if ($raw === false || strlen($raw) < 17 || !function_exists('openssl_decrypt')) { return ''; }
+    $p = openssl_decrypt(substr($raw, 16), 'aes-256-cbc', mail_key(), OPENSSL_RAW_DATA, substr($raw, 0, 16));
+    return $p === false ? '' : $p;
+}
+
+class NcImap {
+    private $fp; private $n = 0;
+    function __construct($cfg, $user, $pass) {
+        $fp = @stream_socket_client(($cfg['secure'] === 'ssl' ? 'ssl://' : 'tcp://') . $cfg['host'] . ':' . $cfg['port'], $en, $es, 10);
+        if (!$fp) { throw new Exception('cannot reach the mail server ' . $cfg['host'] . ' (' . $es . ')'); }
+        stream_set_timeout($fp, 15); $this->fp = $fp;
+        fgets($fp, 2048); // greeting
+        $r = $this->cmd('LOGIN ' . $this->q($user) . ' ' . $this->q($pass));
+        if (!$r['ok']) { throw new Exception('the mail server refused the address or password'); }
+    }
+    private function q($s) { return '"' . addcslashes((string) $s, "\\\"") . '"'; }
+    /** Sends a command and returns array(ok, lines) — literals ({n}) are read in full. */
+    function cmd($c, $maxBytes = 3000000) {
+        $tag = 'a' . (++$this->n);
+        fwrite($this->fp, $tag . ' ' . $c . "\r\n");
+        $out = ''; $total = 0;
+        while (($l = fgets($this->fp, 65536)) !== false) {
+            if (preg_match('/^' . $tag . ' (OK|NO|BAD)/i', $l, $m)) { return array('ok' => strtoupper($m[1]) === 'OK', 'data' => $out, 'status' => trim($l)); }
+            $out .= $l; $total += strlen($l);
+            if (preg_match('/\{(\d+)\}\r?\n$/', $l, $m)) { $need = (int) $m[1]; $buf = ''; while ($need > 0 && !feof($this->fp)) { $chunk = fread($this->fp, min(8192, $need)); if ($chunk === false || $chunk === '') { break; } $need -= strlen($chunk); if ($total < $maxBytes) { $buf .= $chunk; } } $out .= $buf; $total += strlen($buf); }
+            if ($total > $maxBytes * 2) { break; }
+        }
+        return array('ok' => false, 'data' => $out, 'status' => 'connection closed');
+    }
+    function folders() {
+        $r = $this->cmd('LIST "" "*"'); $o = array();
+        foreach (preg_split('/\r?\n/', $r['data']) as $l) { if (preg_match('/^\* LIST \(([^)]*)\) (?:"(.)"|NIL) (.+)$/', trim($l), $m)) { $n = trim($m[3]); if ($n !== '' && $n[0] === '"') { $n = stripcslashes(substr($n, 1, -1)); } if (stripos($m[1], '\\Noselect') === false) { $o[] = mail_utf7($n); } } }
+        return $o;
+    }
+    function examine($folder) { $r = $this->cmd('EXAMINE ' . $this->q(mail_utf7_enc($folder))); if (!$r['ok']) { throw new Exception('folder not found'); } return preg_match('/\* (\d+) EXISTS/', $r['data'], $m) ? (int) $m[1] : 0; }
+    function headers($from, $to) {
+        $r = $this->cmd("FETCH $from:$to (UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])", 1500000);
+        $o = array();
+        foreach (preg_split('/(?=^\* \d+ FETCH)/m', $r['data']) as $blk) {
+            if (!preg_match('/^\* (\d+) FETCH/', $blk, $m)) { continue; }
+            $uid = preg_match('/UID (\d+)/', $blk, $u) ? (int) $u[1] : (int) $m[1];
+            $hdr = ''; if (preg_match('/\{\d+\}\r?\n(.*)\r?\n\)/s', $blk, $h)) { $hdr = $h[1]; }
+            $p = mail_headers($hdr);
+            $o[] = array('uid' => $uid, 'from' => isset($p['from']) ? $p['from'] : '', 'subject' => isset($p['subject']) ? $p['subject'] : '', 'date' => isset($p['date']) ? $p['date'] : '', 'seen' => stripos($blk, '\\Seen') !== false, 'size' => preg_match('/RFC822\.SIZE (\d+)/', $blk, $z) ? (int) $z[1] : 0);
+        }
+        return array_reverse($o);
+    }
+    function message($uid) {
+        $r = $this->cmd('UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', 2500000);
+        if (!$r['ok'] || !preg_match('/\{(\d+)\}\r?\n/', $r['data'], $m, PREG_OFFSET_CAPTURE)) { throw new Exception('message not found'); }
+        $raw = substr($r['data'], $m[0][1] + strlen($m[0][0]), (int) $m[1][0]); // exactly the literal: the closing ")" of the FETCH is not part of the mail
+        return mail_parse($raw);
+    }
+    function close() { @fwrite($this->fp, "x LOGOUT\r\n"); @fclose($this->fp); }
+}
+function mail_utf7($s) { return function_exists('mb_convert_encoding') && strpos($s, '&') !== false ? @mb_convert_encoding(str_replace(',', '/', $s), 'UTF-8', 'UTF7-IMAP') ?: $s : $s; }
+function mail_utf7_enc($s) { return function_exists('mb_convert_encoding') && preg_match('/[^\x20-\x7e]/', $s) ? @mb_convert_encoding($s, 'UTF7-IMAP', 'UTF-8') ?: $s : $s; }
+function mail_dec($v) {
+    $v = trim((string) $v);
+    if ($v === '') { return ''; }
+    if (function_exists('iconv_mime_decode')) { $d = @iconv_mime_decode($v, 2, 'UTF-8'); if ($d !== false) { return clean_text($d, 400); } }
+    if (function_exists('mb_decode_mimeheader')) { return clean_text(mb_decode_mimeheader($v), 400); }
+    return clean_text($v, 400);
+}
+function mail_headers($raw) {
+    $raw = preg_replace('/\r?\n[ \t]+/', ' ', $raw); $o = array();
+    foreach (preg_split('/\r?\n/', $raw) as $l) { if (preg_match('/^([A-Za-z\-]+):\s*(.*)$/', $l, $m)) { $o[strtolower($m[1])] = $m[2]; } }
+    foreach (array('from', 'subject', 'to', 'cc', 'reply-to') as $k) { if (isset($o[$k])) { $o[$k] = mail_dec($o[$k]); } }
+    return $o;
+}
+function mail_charset($txt, $cs) { $cs = strtolower(trim((string) $cs, "\"' ")); if ($cs === '' || $cs === 'utf-8' || $cs === 'us-ascii') { return $txt; } if (function_exists('mb_convert_encoding')) { $r = @mb_convert_encoding($txt, 'UTF-8', $cs); if ($r !== false) { return $r; } } return function_exists('iconv') ? (@iconv($cs, 'UTF-8//IGNORE', $txt) ?: $txt) : $txt; }
+function mail_body_decode($body, $enc, $cs) {
+    $enc = strtolower(trim($enc));
+    if ($enc === 'base64') { $body = base64_decode($body); } elseif ($enc === 'quoted-printable') { $body = quoted_printable_decode($body); }
+    return mail_charset($body, $cs);
+}
+/** A small MIME reader: headers + the text of the message (plain text preferred, HTML turned into text) + attachment names. */
+function mail_parse($raw, $depth = 0) {
+    $parts = preg_split('/\r?\n\r?\n/', $raw, 2); $hdr = mail_headers($parts[0]); $body = isset($parts[1]) ? $parts[1] : '';
+    $ct = isset($hdr['content-type']) ? $hdr['content-type'] : 'text/plain'; $enc = isset($hdr['content-transfer-encoding']) ? $hdr['content-transfer-encoding'] : '7bit';
+    $res = array('headers' => array_intersect_key($hdr, array_flip(array('from', 'to', 'cc', 'subject', 'date', 'reply-to'))), 'text' => '', 'html' => false, 'attachments' => array());
+    if (preg_match('#^multipart/#i', $ct) && $depth < 5 && preg_match('/boundary="?([^";\s]+)"?/i', $ct, $b)) {
+        $plain = ''; $html = '';
+        foreach (preg_split('/--' . preg_quote($b[1], '/') . '(?:--)?\r?\n?/', $body) as $seg) {
+            if (trim($seg) === '') { continue; }
+            $sub = mail_parse($seg, $depth + 1);
+            if ($sub['text'] !== '') { if ($sub['html']) { $html .= ($html ? "\n" : '') . $sub['text']; } else { $plain .= ($plain ? "\n" : '') . $sub['text']; } }
+            $res['attachments'] = array_merge($res['attachments'], $sub['attachments']);
+        }
+        if ($plain !== '') { $res['text'] = $plain; } elseif ($html !== '') { $res['text'] = $html; $res['html'] = true; }
+        return $res;
+    }
+    $disp = isset($hdr['content-disposition']) ? $hdr['content-disposition'] : '';
+    $name = ''; if (preg_match('/(?:file)?name\*?="?([^";]+)"?/i', $disp . ' ' . $ct, $nm)) { $name = mail_dec(urldecode($nm[1])); }
+    if (stripos($disp, 'attachment') === 0 || ($name !== '' && !preg_match('#^text/(plain|html)#i', $ct))) { $res['attachments'][] = array('name' => $name !== '' ? $name : 'attachment', 'type' => strtolower(trim(explode(';', $ct)[0])), 'size' => strlen($body)); return $res; }
+    $cs = preg_match('/charset="?([^";\s]+)"?/i', $ct, $cm) ? $cm[1] : '';
+    $txt = mail_body_decode($body, $enc, $cs);
+    if (preg_match('#^text/html#i', $ct)) { $txt = html_entity_decode(trim(preg_replace('/[ \t]+/', ' ', strip_tags(preg_replace(array('#<(script|style)[^>]*>.*?</\1>#is', '#<br\s*/?>|</p>|</div>|</tr>|</h\d>#i'), array('', "\n"), $txt)))), ENT_QUOTES, 'UTF-8'); $res['html'] = true; }
+    $res['text'] = nc_substr(preg_replace("/\n{3,}/", "\n\n", trim($txt)), 60000);
+    return $res;
 }

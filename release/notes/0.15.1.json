@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Fix: Hostinger DNS push no longer fails with 'Duplicate record in RRset' (records that differ only by quotes, case or spacing are one record; the Hostinger Email set-up merges Hostinger into an existing SPF record instead of adding a second one, and duplicates already saved are cleaned before sending). New: read a mailbox from the panel (Inbox button on the domain, website and hosting email tabs): folders, message list, full message with attachments names, read-only over IMAP with the mailbox password stored encrypted. Fix: invoice / order Print → PDF was blank (an old print rule hid everything)."
+ ],
+ "ar": [
+  "إصلاح: إرسال DNS لـ Hostinger مبقاش يفشل بخطأ 'Duplicate record in RRset' (السجلات اللي بتختلف بالعلامات أو الحروف أو المسافات بس بقت سجل واحد، وإعداد Hostinger Email بيدمج Hostinger في سجل SPF الموجود بدل ما يضيف واحد تاني، والمكرر المحفوظ بيتنضف قبل الإرسال). جديد: قراءة صندوق الإيميل من اللوحة (زر الرسائل في تاب الإيميل للدومين والموقع والاستضافة): المجلدات وقائمة الرسايل والرسالة كاملة وأسماء المرفقات، قراءة فقط عبر IMAP وباسورد الصندوق متخزن مشفّر. إصلاح: طباعة / PDF للفاتورة والطلب كانت بتطلع فاضية (قاعدة طباعة قديمة كانت بتخفي كل حاجة)."
+ ]
+}

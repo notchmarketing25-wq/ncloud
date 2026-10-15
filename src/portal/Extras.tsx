@@ -151,7 +151,7 @@ export function Sheet({ inv, biz, customer, methods = [], payLink }: { inv: Invo
   const net = incl ? inv.amount - taxSum : gross - (inv.discount ?? 0); // "sub total" before tax
   const paid = inv.paid ?? 0, bal = inv.balance ?? 0;
   return (
-    <div className="invoice-sheet">
+    <div className="invoice-sheet print-sheet">
       <header className="inv-head">
         <div>{logo ? <img src={assetUrl(logo)} alt="" className="inv-logo" /> : <b className="inv-brand">{settings.site || 'Notch Cloud'}</b>}
           <div className="muted">{biz.legalName || settings.site}<br />{[biz.address, biz.address2].filter(Boolean).join(', ')}{(biz.city || biz.governorate) && <><br />{[biz.city, biz.governorate, biz.postalCode].filter(Boolean).join(', ')}</>}{biz.country && <><br />{biz.country}</>}{biz.taxId && <><br />{t('الرقم الضريبي', 'Tax ID')}: <Ltr>{biz.taxId}</Ltr></>}</div></div>

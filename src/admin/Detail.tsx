@@ -7,6 +7,7 @@ import type { DnsRec } from '../lib/types';
 import { useCurrency, useSite } from '../site/settings';
 import { SvcCell } from '../site/svc';
 import { SvcFields } from './SvcEdit';
+import { MailViewer } from './MailView';
 import { Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
@@ -15,7 +16,7 @@ import { ClientLine, Field, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, 
 export { AdminUpdates } from './Updates';
 
 const margin = (cost: unknown, price: unknown) => (num(cost) > 0 && num(price) > 0 ? Math.round(((num(price) - num(cost)) / num(cost)) * 100) : null);
-type Mail = { id: string; address: string; quotaGb: number; usedGb: number; status: string };
+type Mail = { id: string; address: string; quotaGb: number; usedGb: number; status: string; hasPass?: boolean };
 
 /** Shared bits of every detail page: where messages go, and the "Edit" window. */
 function useActions(load: () => void) {
@@ -37,6 +38,7 @@ export function AdminDomainDetail() {
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const [mailForm, setMailForm] = useState<{ local: string; quota: number } | null>(null);
   const [importList, setImportList] = useState<string | null>(null);
+  const [inbox, setInbox] = useState<{ id: string; address: string; hasPass: boolean } | null>(null);
   const [reg, setReg] = useState<{ provider: string; years: number; confirm: boolean } | null>(null);
   const { settings } = useSite();
   const webmail = settings.webmailUrl || 'https://mail.hostinger.com';
@@ -109,7 +111,7 @@ export function AdminDomainDetail() {
                 </div>
               </div>
               <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']} empty={mails.length === 0 ? t('مفيش إيميلات لسه على الدومين ده.', 'No mailboxes on this domain yet.') : undefined}>
-                {mails.map((x) => <tr key={x.id}><td><Ltr>{x.address}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td><td><StatusTag s={x.status as 'active'} /></td><td><div className="row-actions"><a className="btn btn-ghost btn-sm" href={webmail} target="_blank" rel="noreferrer" onClick={() => { void navigator.clipboard?.writeText(x.address).catch(() => undefined); }}>{t('افتح الإيميل', 'Open mailbox')}</a><button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف الإيميل من القائمة؟ (مش بيتحذف من Hostinger)', 'Remove it from the list? (It is not deleted at Hostinger.)'))) void run(() => post('admin/item-delete', { id: x.id }, { res: 'mailboxes' }), t('اتحذف.', 'Removed.')); }}>{t('حذف', 'Delete')}</button></div></td></tr>)}
+                {mails.map((x) => <tr key={x.id}><td><Ltr>{x.address}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td><td><StatusTag s={x.status as 'active'} /></td><td><div className="row-actions"><a className="btn btn-ghost btn-sm" href={webmail} target="_blank" rel="noreferrer" onClick={() => { void navigator.clipboard?.writeText(x.address).catch(() => undefined); }}>{t('افتح الإيميل', 'Open mailbox')}</a><button className="btn btn-accent btn-sm" onClick={() => setInbox({ id: x.id, address: x.address, hasPass: !!x.hasPass })}>{t('الرسائل', 'Inbox')}</button><button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف الإيميل من القائمة؟ (مش بيتحذف من Hostinger)', 'Remove it from the list? (It is not deleted at Hostinger.)'))) void run(() => post('admin/item-delete', { id: x.id }, { res: 'mailboxes' }), t('اتحذف.', 'Removed.')); }}>{t('حذف', 'Delete')}</button></div></td></tr>)}
               </Table>
             </>
           )}
@@ -136,6 +138,7 @@ export function AdminDomainDetail() {
           </form>
         </Modal>
       )}
+      {inbox && <MailViewer id={inbox.id} address={inbox.address} hasPass={inbox.hasPass} onClose={() => setInbox(null)} onChanged={load} />}
       {reg && (
         <Modal title={t('تسجيل الدومين عند المزوّد', 'Register the domain at the provider')} onClose={() => setReg(null)}>
           <form className="form" onSubmit={(e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await post<{ charged: string }>('admin/register-domain', { id: d.id, provider: reg.provider, years: reg.years, confirm: true }); setOk(t(`اتسجّل ${name} عند ${reg.provider}.`, `${name} was registered at ${reg.provider}.`) + (r.charged ? ` (${r.charged})` : '')); setReg(null); }, ''); }}>
@@ -256,6 +259,7 @@ export function AdminWebsiteDetail() {
   const { all, error, load } = useAll();
   const { err, ok, run } = useActions(load);
   const [tab, setTab] = useState<'overview' | 'domain' | 'hosting' | 'email'>('overview');
+  const [inbox, setInbox] = useState<{ id: string; address: string; hasPass: boolean } | null>(null);
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const w = all?.items.websites.find((x) => x.id === id);
   if (!all || !w) return <Page title={t('الموقع', 'Website')}><Notice err={error} ok="" /><Link to="/admin/websites" className="btn btn-ghost btn-sm">{t('← المواقع', '← Websites')}</Link></Page>;
@@ -279,7 +283,7 @@ export function AdminWebsiteDetail() {
             <Table head={[t('الدومين الفرعي', 'Subdomain'), t('النوع', 'Type'), t('القيمة', 'Value')]} empty={dns.length === 0 ? t('مفيش سجلات DNS فرعية.', 'No subdomain DNS records.') : undefined}>{dns.map((r) => <tr key={r.id}><td><Ltr>{r.host}.{String(dom.name)}</Ltr></td><td><span className="tag">{r.type}</span></td><td className="latin">{r.value}</td></tr>)}</Table></div>
             : <p className="muted">{t('مفيش دومين مربوط. اربطه من "تعديل".', 'No domain linked. Link one in Edit.')}</p>)}
           {tab === 'hosting' && (host ? <div className="card"><h3><Link className="link" to={`/admin/hosting/${host.id}`}>{String(host.plan)}</Link></h3><p className="muted latin">{gb(host.usedGb)} / {gb(host.diskGb)} · {String(host.provider || '-')}</p><Meter value={pctUsed(host)} tone={pctUsed(host) > 85 ? 'warn' : undefined} /></div> : <p className="muted">{t('مفيش استضافة مربوطة. اربطها من "تعديل".', 'No hosting linked. Link one in Edit.')}</p>)}
-          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومين الموقع.', 'No mailboxes on the website’s domain.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{String(m.address)}</Ltr></td><td className="latin">{num(m.usedGb)} / {num(m.quotaGb)} GB</td><td><StatusTag s={m.status as 'active'} /></td></tr>)}</Table>}
+          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']} empty={mails.length === 0 ? t('مفيش إيميلات على دومين الموقع.', 'No mailboxes on the website’s domain.') : undefined}>{mails.map((m) => <tr key={m.id}><td><Ltr>{String(m.address)}</Ltr></td><td className="latin">{num(m.usedGb)} / {num(m.quotaGb)} GB</td><td><StatusTag s={m.status as 'active'} /></td><td><button className="btn btn-accent btn-sm" onClick={() => setInbox({ id: m.id, address: String(m.address), hasPass: !!m.hasPass })}>{t('الرسائل', 'Inbox')}</button></td></tr>)}</Table>}
         </div>
         <aside>
           <SideCard title={t('العميل', 'Client')}><ClientLine users={all.users} uid={w.uid} /></SideCard>
@@ -288,6 +292,7 @@ export function AdminWebsiteDetail() {
         </aside>
       </div>
       {edit && <Modal title={t('تعديل الموقع', 'Edit website')} wide onClose={() => setEdit(null)}><WebsiteForm all={all} form={edit} setForm={setEdit} mine={mine} onSave={() => run(() => post('admin/item-save', { item: edit }, { res: 'websites' }), t('اتحفظ.', 'Saved.')).then((r) => { if (r) setEdit(null); })} /></Modal>}
+      {inbox && <MailViewer id={inbox.id} address={inbox.address} hasPass={inbox.hasPass} onClose={() => setInbox(null)} onChanged={load} />}
     </Page>
   );
 }
@@ -300,6 +305,7 @@ export function AdminHostingDetail() {
   const { all, error, load } = useAll();
   const { err, ok, setOk, setErr, run } = useActions(load);
   const [tab, setTab] = useState<'overview' | 'websites' | 'domains' | 'email' | 'billing'>('overview');
+  const [inbox, setInbox] = useState<{ id: string; address: string; hasPass: boolean } | null>(null);
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const [link, setLink] = useState('');
   const [usage, setUsage] = useState<Record<string, { diskGb: string; usedGb: string }> | null>(null);
@@ -348,7 +354,7 @@ export function AdminHostingDetail() {
             </>
           )}
           {tab === 'domains' && <div className="linked">{doms.map((d) => <div key={d.id}><Link className="link" to={`/admin/domains/${d.id}`}><Ltr>{String(d.name)}</Ltr></Link><StatusTag s={d.status as 'active'} /></div>)}{doms.length === 0 && <p className="muted">{t('مفيش دومينات مرتبطة.', 'No domains linked.')}</p>}</div>}
-          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage')]} empty={mails.length === 0 ? t('مفيش إيميلات على دومينات الاستضافة.', 'No mailboxes on this hosting’s domains.') : undefined}>{mails.map((x) => <tr key={x.id}><td><Ltr>{String(x.address)}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td></tr>)}</Table>}
+          {tab === 'email' && <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), '']} empty={mails.length === 0 ? t('مفيش إيميلات على دومينات الاستضافة.', 'No mailboxes on this hosting’s domains.') : undefined}>{mails.map((x) => <tr key={x.id}><td><Ltr>{String(x.address)}</Ltr></td><td><Ltr>{num(x.usedGb)} / {num(x.quotaGb)} GB</Ltr></td><td><button className="btn btn-accent btn-sm" onClick={() => setInbox({ id: x.id, address: String(x.address), hasPass: !!x.hasPass })}>{t('الرسائل', 'Inbox')}</button></td></tr>)}</Table>}
           {tab === 'billing' && <div className="card"><Kv rows={[[t('المزوّد', 'Provider'), String(h.provider || '-')], [t('دورة الدفع', 'Billing'), h.billing === 'yearly' ? t('سنوي', 'Yearly') : t('شهري', 'Monthly')], [t('تكلفتك', 'Your cost'), <span className="latin">{num(h.cost)} {cur}</span>], [t('سعر العميل', 'Client price'), <span className="latin">{num(h.price)} {cur}</span>], [t('المكسب', 'Margin'), m !== null ? `${m}%` : '-'], [t('التجديد القادم', 'Next renewal'), <Ltr>{String(h.expires || '-')}</Ltr>]]} />
             <p className="muted" style={{ marginTop: 12 }}><Link className="link" to="/admin/purchases">{t('فواتير الشراء', 'Purchase bills')}</Link></p></div>}
         </div>
@@ -395,6 +401,7 @@ export function AdminHostingDetail() {
           </form>
         </Modal>
       )}
+      {inbox && <MailViewer id={inbox.id} address={inbox.address} hasPass={inbox.hasPass} onClose={() => setInbox(null)} onChanged={load} />}
     </Page>
   );
 }
