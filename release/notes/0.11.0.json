@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Password reset by email; SMTP sending (Settings → Email) with test button; coupons; online payments (Stripe Checkout and Paymob, with signed webhooks and optional auto-activation); renewals (Renew button, daily job that emails expiry reminders and creates renewal invoices, cron endpoint); printable customer invoice with VAT (Print / Save as PDF) for clients and admins; register a domain at Namecheap or Hostinger from the domain page (opt-in, confirmed); System check page (extensions, permissions, upload limits, opcache, mail, HTTPS, cron); the updater now resets opcache after an update."
+ ],
+ "ar": [
+  "استرجاع كلمة السر بالإيميل؛ إرسال عن طريق SMTP (الإعدادات ← الإيميل) مع زر اختبار؛ كوبونات خصم؛ دفع أونلاين (Stripe وPaymob) مع webhooks موقّعة وتفعيل تلقائي اختياري؛ التجديد (زر جدّد، ومهمة يومية بتبعت تذكيرات الانتهاء وبتنشئ فواتير التجديد، ورابط cron)؛ فاتورة عميل قابلة للطباعة بضريبة القيمة المضافة (طباعة / حفظ PDF) للعميل والأدمن؛ تسجيل دومين عند Namecheap أو Hostinger من صفحة الدومين (اختياري ويطلب تأكيد)؛ صفحة فحص النظام (الإضافات، الصلاحيات، حدود الرفع، opcache، الإيميل، HTTPS، cron)؛ المحدّث بيصفّر opcache بعد التحديث."
+ ]
+}

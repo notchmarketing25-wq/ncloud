@@ -5,9 +5,10 @@ import { api, apiUrl, post } from '../lib/api';
 import type { Brand, Business, PayMethod, Settings } from '../lib/types';
 import { assetUrl, useSite } from '../site/settings';
 import { Page } from '../ui';
+import type { Coupon } from '../lib/types';
 import { errText } from './errors';
 
-const PAY_TYPES: [string, string, string][] = [['bank', 'تحويل بنكي', 'Bank transfer'], ['wallet', 'محفظة / إنستا باي', 'Wallet / InstaPay'], ['card', 'بطاقة / رابط دفع', 'Card / payment link'], ['cash', 'كاش', 'Cash'], ['other', 'أخرى', 'Other']];
+const PAY_TYPES: [string, string, string][] = [['stripe', 'دفع أونلاين بالبطاقة (Stripe)', 'Online card (Stripe)'], ['paymob', 'دفع أونلاين (Paymob)', 'Online (Paymob)'], ['bank', 'تحويل بنكي', 'Bank transfer'], ['wallet', 'محفظة / إنستا باي', 'Wallet / InstaPay'], ['card', 'بطاقة / رابط دفع', 'Card / payment link'], ['cash', 'كاش', 'Cash'], ['other', 'أخرى', 'Other']];
 type Full = Settings & { version?: string };
 const GOVS = ['Cairo', 'Giza', 'Alexandria', 'Qalyubia', 'Sharqia', 'Dakahlia', 'Gharbia', 'Monufia', 'Beheira', 'Kafr El-Sheikh', 'Damietta', 'Port Said', 'Ismailia', 'Suez', 'North Sinai', 'South Sinai', 'Fayoum', 'Beni Suef', 'Minya', 'Asyut', 'Sohag', 'Qena', 'Luxor', 'Aswan', 'Red Sea', 'New Valley', 'Matrouh'];
 
@@ -26,9 +27,9 @@ export function AdminSettings() {
   useEffect(() => { api<Full>('admin/settings').then((r) => { setSaved(r); setS(r); }).catch((e) => setErr(errText(e, t))); }, [t]);
 
   const groups = useMemo<{ title: string; items: { id: string; label: string; to?: string }[] }[]>(() => [
-    { title: t('الشركة', 'Company'), items: [{ id: 'general', label: t('عام', 'General') }, { id: 'branding', label: t('الهوية البصرية', 'Branding') }, { id: 'accounts', label: t('حسابات العملاء', 'Customer accounts') }] },
-    { title: t('المبيعات', 'Sales'), items: [{ id: 'plans', label: t('الباقات والأسعار', 'Plans & prices'), to: '/admin/plans' }, { id: 'orders', label: t('الطلبات', 'Orders'), to: '/admin/orders' }, { id: 'payments', label: t('وسائل الدفع', 'Payment methods') }, { id: 'tld', label: t('أسعار الدومينات', 'TLD pricing'), to: '/admin/pricing' }, { id: 'purchases', label: t('فواتير الشراء', 'Purchases'), to: '/admin/purchases' }] },
-    { title: t('التطبيقات', 'Apps & tools'), items: [{ id: 'apps', label: t('التطبيقات', 'Apps'), to: '/admin/apps' }, { id: 'updates', label: t('التحديثات', 'Updates'), to: '/admin/updates' }, { id: 'activity', label: t('سجل النشاط', 'Activity'), to: '/admin/activity' }] },
+    { title: t('الشركة', 'Company'), items: [{ id: 'general', label: t('عام', 'General') }, { id: 'branding', label: t('الهوية البصرية', 'Branding') }, { id: 'accounts', label: t('حسابات العملاء', 'Customer accounts') }, { id: 'store', label: t('المتجر والضريبة', 'Store & tax') }] },
+    { title: t('المبيعات', 'Sales'), items: [{ id: 'plans', label: t('الباقات والأسعار', 'Plans & prices'), to: '/admin/plans' }, { id: 'orders', label: t('الطلبات', 'Orders'), to: '/admin/orders' }, { id: 'payments', label: t('وسائل الدفع', 'Payment methods') }, { id: 'coupons', label: t('كوبونات الخصم', 'Coupons') }, { id: 'renewals', label: t('التجديد والمزوّدين', 'Renewals & providers') }, { id: 'tld', label: t('أسعار الدومينات', 'TLD pricing'), to: '/admin/pricing' }, { id: 'purchases', label: t('فواتير الشراء', 'Purchases'), to: '/admin/purchases' }] },
+    { title: t('التطبيقات', 'Apps & tools'), items: [{ id: 'apps', label: t('التطبيقات', 'Apps'), to: '/admin/apps' }, { id: 'email', label: t('الإيميل (SMTP)', 'Email (SMTP)') }, { id: 'system', label: t('فحص النظام', 'System check') }, { id: 'updates', label: t('التحديثات', 'Updates'), to: '/admin/updates' }, { id: 'activity', label: t('سجل النشاط', 'Activity'), to: '/admin/activity' }] },
     { title: t('الحساب', 'Account'), items: [{ id: 'account', label: t('حسابي', 'My account'), to: '/admin/account' }] },
   ], [t]);
   if (!s || !saved) return <Page title={t('الإعدادات', 'Settings')}>{err ? <div className="form-error">{err}</div> : <p className="muted">…</p>}</Page>;
@@ -38,11 +39,21 @@ export function AdminSettings() {
   const setBiz = (patch: Partial<Business>) => set({ business: { ...biz, ...patch } });
   const brand = s.brand ?? {};
   const setBrand = (patch: Partial<Brand>) => set({ brand: { ...brand, ...patch } });
+  const smtp = s.smtp ?? { host: '', port: 587, secure: 'tls' as const, user: '', from: '', fromName: '' };
+  const setSmtp = (patch: Partial<NonNullable<Full['smtp']>>) => set({ smtp: { ...smtp, ...patch } });
+  const gw = s.gateways ?? { stripe: { enabled: false }, paymob: { enabled: false } };
+  const setGw = <K extends 'stripe' | 'paymob'>(k: K, patch: Partial<NonNullable<Full['gateways']>[K]>) => set({ gateways: { ...gw, [k]: { ...gw[k], ...patch } } as NonNullable<Full['gateways']> });
+  const coupons = s.coupons ?? [];
+  const setCoupon = (i: number, patch: Partial<Coupon>) => set({ coupons: coupons.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
+  const abs = (route: string) => new URL(apiUrl(route), window.location.href).href;
+  const testMail = async () => { setErr(''); setOk(''); try { const r = await post<{ to: string }>('admin/smtp-test', {}); setOk(t(`اتبعت إيميل تجريبي لـ ${r.to}.`, `Test email sent to ${r.to}.`)); } catch (x) { setErr(errText(x, t)); } };
+  const runDaily = async () => { setErr(''); setOk(''); try { const r = await post<{ created: number }>('admin/daily-run', {}); setOk(t(`اتشغّلت المهمة اليومية (${r.created} فاتورة تجديد جديدة).`, `Daily job ran (${r.created} new renewal invoices).`)); await reloadSaved(); } catch (x) { setErr(errText(x, t)); } };
+  const reloadSaved = async () => { const r = await api<Full>('admin/settings'); setSaved(r); setS(r); };
   const pays = s.payments ?? [];
   const setPay = (i: number, patch: Partial<PayMethod>) => set({ payments: pays.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
   const save = async (e?: FormEvent) => {
     e?.preventDefault(); setErr(''); setOk(''); setBusy(true);
-    try { await post('admin/settings', s); setSaved(s); setOk(t('تم الحفظ.', 'Saved.')); await refresh(); } catch (x) { setErr(errText(x, t)); } finally { setBusy(false); }
+    try { await post('admin/settings', s); await reloadSaved(); setOk(t('تم الحفظ.', 'Saved.')); await refresh(); } catch (x) { setErr(errText(x, t)); } finally { setBusy(false); }
   };
   const upload = async (key: 'logo' | 'logoDark' | 'icon', file?: File) => {
     if (!file) return;
@@ -147,6 +158,74 @@ export function AdminSettings() {
             </>
           )}
 
+          {section === 'store' && (
+            <>
+              {card(t('عنوان الموقع', 'Site address'), t('بيتستخدم في لينكات الإيميلات (استرجاع كلمة السر، الطلبات) ولينكات الدفع الأونلاين. لازم يكون العنوان الحقيقي للموقع.', 'Used in emailed links (password reset, orders) and online-payment return links. It must be the real address of your site.'), <>
+                {field('su', t('العنوان', 'Address'), <div className="row-actions"><input id="su" className="input latin" dir="ltr" style={{ flex: 1 }} placeholder="https://example.com" value={s.siteUrl ?? ''} onChange={(e) => set({ siteUrl: e.target.value })} /><button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ siteUrl: window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '') })}>{t('استخدم العنوان الحالي', 'Use the current address')}</button></div>)}
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!s.cleanUrls} onChange={(e) => set({ cleanUrls: e.target.checked })} /> {t('الموقع بيستخدم روابط نظيفة (من غير #). سيبها مقفولة لو معملتش build:clean.', 'The site uses clean URLs (no #). Leave off unless you built with build:clean.')}</label>
+              </>)}
+              {card(t('الضريبة', 'Tax'), t('نسبة ضريبة القيمة المضافة اللي بتظهر على فاتورة العميل. الأسعار عندك بتتحسب شاملة الضريبة.', 'The VAT rate shown on the customer invoice. Your prices are treated as tax-inclusive.'), <>
+                {field('tx', t('نسبة الضريبة %', 'VAT rate %'), <input id="tx" className="input latin" type="number" min={0} max={100} step="0.01" value={s.taxRate ?? 0} onChange={(e) => set({ taxRate: Number(e.target.value) })} />, t('0 = من غير ضريبة. الرقم الضريبي بتكتبه في "عام ← بيانات الشركة".', '0 = no tax. Put your tax ID in General → Business details.'), false)}
+              </>)}
+              {card(t('الطلبات', 'Orders'), null, <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!s.autoActivate} onChange={(e) => set({ autoActivate: e.target.checked })} /> {t('فعّل الطلب تلقائيًا بمجرد وصول الدفع الأونلاين (بيضيف الخدمات في حساب العميل)', 'Activate an order automatically when the online payment arrives (adds the services to the client account)')}</label>
+              </>)}
+            </>
+          )}
+
+          {section === 'email' && (
+            <>
+              {card(t('إرسال الإيميلات (SMTP)', 'Sending email (SMTP)'), t('من غير SMTP السيرفر بيستخدم mail() وكتير من الاستضافات بتضيّع الرسايل. اكتب بيانات صندوق إيميل حقيقي (مثلًا إيميل Hostinger: smtp.hostinger.com، المنفذ 465 SSL).', 'Without SMTP the server uses PHP mail(), which many hosts drop. Enter the details of a real mailbox (e.g. Hostinger: smtp.hostinger.com, port 465, SSL).'), <>
+                {field('sm-h', t('السيرفر', 'Host'), <input id="sm-h" className="input latin" dir="ltr" placeholder="smtp.hostinger.com" value={smtp.host} onChange={(e) => setSmtp({ host: e.target.value })} />, undefined, false)}
+                {field('sm-p', t('المنفذ', 'Port'), <input id="sm-p" className="input latin" type="number" value={smtp.port} onChange={(e) => setSmtp({ port: Number(e.target.value) })} />, undefined, false)}
+                {field('sm-s', t('التشفير', 'Encryption'), <select id="sm-s" className="select" value={smtp.secure} onChange={(e) => setSmtp({ secure: e.target.value as 'tls' | 'ssl' | 'none' })}><option value="ssl">SSL (465)</option><option value="tls">STARTTLS (587)</option><option value="none">{t('بدون', 'None')}</option></select>, undefined, false)}
+                {field('sm-u', t('اسم المستخدم', 'Username'), <input id="sm-u" className="input latin" dir="ltr" autoComplete="off" value={smtp.user} onChange={(e) => setSmtp({ user: e.target.value })} />, undefined, false)}
+                {field('sm-w', t('كلمة السر', 'Password'), <input id="sm-w" className="input latin" dir="ltr" type="password" autoComplete="new-password" placeholder={smtp.passSet ? '••••••••' : ''} value={smtp.pass ?? ''} onChange={(e) => setSmtp({ pass: e.target.value })} />, smtp.passSet ? t('محفوظة. سيبها فاضية للإبقاء عليها.', 'Saved. Leave empty to keep it.') : undefined, false)}
+                {field('sm-f', t('إيميل المرسِل', 'From address'), <input id="sm-f" className="input latin" dir="ltr" placeholder="no-reply@yourdomain.com" value={smtp.from} onChange={(e) => setSmtp({ from: e.target.value })} />, undefined, false)}
+                {field('sm-n', t('اسم المرسِل', 'From name'), <input id="sm-n" className="input" value={smtp.fromName} onChange={(e) => setSmtp({ fromName: e.target.value })} />, undefined, false)}
+              </>)}
+              <div className="set-card"><div className="row-actions"><button type="button" className="btn btn-accent btn-sm" disabled={dirty} onClick={testMail}>{t('ابعت إيميل تجريبي', 'Send a test email')}</button><span className="muted">{dirty ? t('احفظ الأول وبعدين جرّب.', 'Save first, then test.') : t('بيتبعت لإيميلك كأدمن.', 'Goes to your own admin email.')}</span></div></div>
+            </>
+          )}
+
+          {section === 'coupons' && (
+            <>
+              {card(t('كوبونات الخصم', 'Discount coupons'), t('العميل بيكتب الكود في الـ checkout. الخصم نسبة % أو مبلغ ثابت، وممكن تحدد تاريخ انتهاء وعدد استخدامات وحد أدنى للطلب.', 'The customer enters the code at checkout. The discount is a % or a fixed amount, with an optional expiry date, usage limit and minimum order.'), <>
+                {coupons.map((c, i) => (
+                  <div key={i} className="set-row3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', border: '1px solid var(--nt-fog)', borderRadius: 14, padding: 14, alignItems: 'end' }}>
+                    {field(`cp-c${i}`, t('الكود', 'Code'), <input id={`cp-c${i}`} className="input latin" dir="ltr" maxLength={30} value={c.code} onChange={(e) => setCoupon(i, { code: e.target.value.toUpperCase() })} />, undefined, false)}
+                    {field(`cp-t${i}`, t('النوع', 'Type'), <select id={`cp-t${i}`} className="select" value={c.type} onChange={(e) => setCoupon(i, { type: e.target.value as Coupon['type'] })}><option value="percent">%</option><option value="fixed">{t('مبلغ ثابت', 'Fixed amount')}</option></select>, undefined, false)}
+                    {field(`cp-v${i}`, t('القيمة', 'Value'), <input id={`cp-v${i}`} className="input latin" type="number" min={0} value={c.value} onChange={(e) => setCoupon(i, { value: Number(e.target.value) })} />, undefined, false)}
+                    {field(`cp-e${i}`, t('ينتهي', 'Expires'), <input id={`cp-e${i}`} className="input latin" type="date" value={c.expires} onChange={(e) => setCoupon(i, { expires: e.target.value })} />, undefined, false)}
+                    {field(`cp-m${i}`, t('أقصى استخدام (0 = بلا حد)', 'Max uses (0 = unlimited)'), <input id={`cp-m${i}`} className="input latin" type="number" min={0} value={c.maxUses} onChange={(e) => setCoupon(i, { maxUses: Number(e.target.value) })} />, undefined, false)}
+                    {field(`cp-n${i}`, t('حد أدنى للطلب', 'Minimum order'), <input id={`cp-n${i}`} className="input latin" type="number" min={0} value={c.minTotal} onChange={(e) => setCoupon(i, { minTotal: Number(e.target.value) })} />, undefined, false)}
+                    <label className="check"><input type="checkbox" checked={c.active} onChange={(e) => setCoupon(i, { active: e.target.checked })} /> {t('مفعّل', 'Active')}</label>
+                    <div className="row-actions"><span className="muted latin">{t('استُخدم', 'Used')}: {c.used ?? 0}</span><button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ coupons: coupons.filter((_, j) => j !== i) })}>{t('حذف', 'Remove')}</button></div>
+                  </div>
+                ))}
+                <div style={{ gridColumn: '1 / -1' }}><button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ coupons: [...coupons, { code: '', type: 'percent', value: 10, active: true, expires: '', maxUses: 0, minTotal: 0 }] })}>{t('+ كوبون', '+ Coupon')}</button></div>
+              </>)}
+            </>
+          )}
+
+          {section === 'renewals' && (
+            <>
+              {card(t('التجديد التلقائي', 'Automatic renewals'), t('كل يوم السيرفر بيفحص الدومينات والاستضافات: بيبعت تذكير للعميل قبل الانتهاء بـ 30/14/7/1 يوم، وبينشئ فاتورة تجديد (طلب) قبل الانتهاء بـ 14 يوم لو للخدمة سعر تجديد.', 'Every day the server checks domains and hosting: it emails the client 30/14/7/1 days before expiry and creates a renewal invoice (order) 14 days before, when the service has a renewal price.'), <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.autoRenewInvoices !== false} onChange={(e) => set({ autoRenewInvoices: e.target.checked })} /> {t('أنشئ فواتير التجديد تلقائيًا', 'Create renewal invoices automatically')}</label>
+                <div style={{ gridColumn: '1 / -1' }}><p className="muted">{t('آخر تشغيل', 'Last run')}: <b className="latin">{s.lastDaily || '—'}</b></p>
+                  <p className="muted">{t('بيشتغل لوحده أول مرة تفتح فيها لوحة الأدمن كل يوم. للأمان أضف Cron Job يوميًا في الاستضافة بالأمر ده:', 'It also runs the first time you open the admin each day. To be safe, add a daily cron job on your host with this command:')}</p>
+                  <input className="input latin" dir="ltr" readOnly value={`curl -s "${abs('cron/run')}&key=${s.cronKey ?? ''}"`} onFocus={(e) => e.currentTarget.select()} />
+                  <div className="row-actions" style={{ marginTop: 8 }}><button type="button" className="btn btn-ghost btn-sm" onClick={runDaily}>{t('شغّلها الآن', 'Run it now')}</button></div></div>
+              </>)}
+              {card(t('تسجيل الدومينات عند المزوّد', 'Registering domains at the provider'), t('لما تفعّل ده، بيظهر زر "سجّل عند المزوّد" في صفحة الدومين. الزر بيشتري الدومين فعليًا من حسابك عند Namecheap أو Hostinger وبيخصم من رصيدك هناك، وبيطلب تأكيدك قبل كل عملية.', 'When on, a "Register at provider" button appears on the domain page. It really buys the domain from your Namecheap or Hostinger account and charges your balance there, and asks you to confirm each time.'), <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!s.providerRegister} onChange={(e) => set({ providerRegister: e.target.checked })} /> {t('فعّل تسجيل الدومينات عند المزوّد', 'Enable registering domains at the provider')}</label>
+                <p className="muted" style={{ gridColumn: '1 / -1' }}>{t('مجرّب على مزوّد تجريبي بس، مش على حسابات حقيقية. جرّبه الأول بدومين رخيص. ResellerClub غير مدعوم (سجّل من لوحته).', 'Tested against a stand-in provider only, not real accounts. Try it first with a cheap domain. ResellerClub is not supported (register in its panel).')}</p>
+              </>)}
+            </>
+          )}
+
+          {section === 'system' && <SystemCheck />}
+
           {section === 'payments' && (
             <>
               {card(t('وسائل الدفع', 'Payment methods'), t('الوسائل اللي بتظهر للعميل في الـ checkout. بيانات الحساب (رقم بنك، محفظة، رابط دفع) بتظهر له بعد تأكيد الطلب فقط.', 'Shown to the customer at checkout. The account details (bank number, wallet, payment link) are shown to them only after they place the order.'), <>
@@ -164,6 +243,20 @@ export function AdminSettings() {
                 ))}
                 <div style={{ gridColumn: '1 / -1' }}><button type="button" className="btn btn-ghost btn-sm" disabled={pays.length >= 12} onClick={() => set({ payments: [...pays, { id: '', type: 'bank', nameAr: '', nameEn: '', details: '', active: true }] })}>{t('+ وسيلة دفع', '+ Payment method')}</button></div>
               </>)}
+              {card('Stripe', t('دفع بالبطاقة أونلاين (Checkout). أضف وسيلة دفع من نوع "دفع أونلاين بالبطاقة" عشان تظهر للعميل.', 'Online card payments (Checkout). Add a payment method of type "Online card payment" so customers can pick it.'), <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={gw.stripe.enabled} onChange={(e) => setGw('stripe', { enabled: e.target.checked })} /> {t('مفعّل', 'Enabled')}</label>
+                {field('st-k', t('Secret key', 'Secret key'), <input id="st-k" className="input latin" dir="ltr" type="password" autoComplete="new-password" placeholder={gw.stripe.secretSet ? '••••••••' : 'sk_live_…'} value={gw.stripe.secret ?? ''} onChange={(e) => setGw('stripe', { secret: e.target.value })} />, undefined, false)}
+                {field('st-w', t('Webhook signing secret', 'Webhook signing secret'), <input id="st-w" className="input latin" dir="ltr" type="password" autoComplete="new-password" placeholder={gw.stripe.webhookSet ? '••••••••' : 'whsec_…'} value={gw.stripe.webhook ?? ''} onChange={(e) => setGw('stripe', { webhook: e.target.value })} />, undefined, false)}
+                {field('st-u', t('رابط الـ Webhook (ضيفه في Stripe، الحدث checkout.session.completed)', 'Webhook URL (add it in Stripe, event checkout.session.completed)'), <input id="st-u" className="input latin" dir="ltr" readOnly value={abs('pay/stripe-webhook')} onFocus={(e) => e.currentTarget.select()} />)}
+              </>)}
+              {card('Paymob', t('بطاقات ومحافظ مصر. أضف وسيلة دفع من نوع "دفع أونلاين (Paymob)".', 'Egyptian cards and wallets. Add a payment method of type "Online payment (Paymob)".'), <>
+                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={gw.paymob.enabled} onChange={(e) => setGw('paymob', { enabled: e.target.checked })} /> {t('مفعّل', 'Enabled')}</label>
+                {field('pm-k', 'API key', <input id="pm-k" className="input latin" dir="ltr" type="password" autoComplete="new-password" placeholder={gw.paymob.apiKeySet ? '••••••••' : ''} value={gw.paymob.apiKey ?? ''} onChange={(e) => setGw('paymob', { apiKey: e.target.value })} />, undefined, false)}
+                {field('pm-h', 'HMAC secret', <input id="pm-h" className="input latin" dir="ltr" type="password" autoComplete="new-password" placeholder={gw.paymob.hmacSet ? '••••••••' : ''} value={gw.paymob.hmac ?? ''} onChange={(e) => setGw('paymob', { hmac: e.target.value })} />, undefined, false)}
+                {field('pm-i', 'Integration ID', <input id="pm-i" className="input latin" dir="ltr" value={gw.paymob.integrationId ?? ''} onChange={(e) => setGw('paymob', { integrationId: e.target.value })} />, undefined, false)}
+                {field('pm-f', 'iFrame ID', <input id="pm-f" className="input latin" dir="ltr" value={gw.paymob.iframeId ?? ''} onChange={(e) => setGw('paymob', { iframeId: e.target.value })} />, undefined, false)}
+                {field('pm-u', t('رابط الـ Callback (Transaction processed callback في Paymob)', 'Callback URL (Paymob “Transaction processed callback”)'), <input id="pm-u" className="input latin" dir="ltr" readOnly value={abs('pay/paymob-webhook')} onFocus={(e) => e.currentTarget.select()} />)}
+              </>)}
               {card(t('Webmail', 'Webmail'), t('الرابط اللي بيفتحه زر "افتح الإيميل" للعميل والأدمن.', 'The link opened by the "Open mailbox" button for clients and admins.'), <>
                 {field('wm', t('رابط الويب ميل', 'Webmail URL'), <input id="wm" className="input latin" dir="ltr" value={s.webmailUrl ?? ''} placeholder="https://mail.hostinger.com" onChange={(e) => set({ webmailUrl: e.target.value })} />)}
               </>)}
@@ -177,5 +270,32 @@ export function AdminSettings() {
         </form>
       </div>
     </Page>
+  );
+}
+
+/** Settings → System check: what the host can and cannot do. */
+type Row = { id: string; ok: boolean; level: 'ok' | 'warn' | 'bad'; detail: string };
+function SystemCheck() {
+  const { t } = useI18n();
+  const [d, setD] = useState<{ rows: Row[]; php: string; storage: string; time: string } | null>(null);
+  const [err, setErr] = useState('');
+  const load = () => { setD(null); api<{ rows: Row[]; php: string; storage: string; time: string }>('admin/system-check').then(setD).catch((e) => setErr(errText(e, t))); };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const names: Record<string, [string, string]> = {
+    php: ['إصدار PHP', 'PHP version'], upload: ['حد الرفع', 'Upload limits'], mail: ['إرسال الإيميل', 'Sending email'], siteurl: ['عنوان الموقع', 'Site address'], https: ['HTTPS', 'HTTPS'], cron: ['المهمة اليومية', 'Daily job'], opcache: ['OPcache (تأخّر التحديثات)', 'OPcache (update delay)'],
+    'write:api/data': ['كتابة في api/data', 'Write to api/data'], 'write:uploads': ['كتابة في uploads', 'Write to uploads'], 'write:api (updates)': ['كتابة في api (للتحديثات)', 'Write to api (updates)'], 'write:assets (updates)': ['كتابة في assets (للتحديثات)', 'Write to assets (updates)'],
+  };
+  return (
+    <div className="set-card">
+      <div className="row-actions" style={{ justifyContent: 'space-between' }}><h3>{t('فحص النظام', 'System check')}</h3><button type="button" className="btn btn-ghost btn-sm" onClick={load}>{t('أعد الفحص', 'Check again')}</button></div>
+      <p className="muted">{t('بيفحص الاستضافة اللي شغّال عليها الموقع: الإضافات المطلوبة، صلاحيات الكتابة، حدود الرفع، الكاش والإيميل. ✓ تمام، ! محتاج انتباه.', 'Checks the host this site runs on: required extensions, write permissions, upload limits, cache and email. ✓ fine, ! needs attention.')}</p>
+      {err && <div className="form-error">{err}</div>}
+      {!d ? <p className="muted">…</p> : <>
+        <p className="muted latin">PHP {d.php} · {d.storage}</p>
+        <ul className="sys-list">{d.rows.map((r) => {
+          const nm = r.id.startsWith('ext:') ? [`PHP ${r.id.slice(4)}`, `PHP ${r.id.slice(4)}`] : names[r.id] ?? [r.id, r.id];
+          return <li key={r.id} className={r.level}><b aria-hidden>{r.ok ? '✓' : '!'}</b><div><span>{t(nm[0], nm[1])}</span><small className="muted latin">{r.detail}</small></div></li>;
+        })}</ul></>}
+    </div>
   );
 }

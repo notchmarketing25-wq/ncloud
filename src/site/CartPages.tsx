@@ -88,7 +88,7 @@ export function OrderRedirect() {
   return null;
 }
 
-const typeLabel = (m: PayMethod, t: (a: string, e: string) => string) => ({ bank: t('تحويل بنكي', 'Bank transfer'), wallet: t('محفظة / إنستا باي', 'Wallet / InstaPay'), card: t('بطاقة / رابط دفع', 'Card / payment link'), cash: t('كاش عند الاستلام', 'Cash'), other: t('أخرى', 'Other') }[m.type]);
+const typeLabel = (m: PayMethod, t: (a: string, e: string) => string) => ({ bank: t('تحويل بنكي', 'Bank transfer'), wallet: t('محفظة / إنستا باي', 'Wallet / InstaPay'), card: t('بطاقة / رابط دفع', 'Card / payment link'), cash: t('كاش عند الاستلام', 'Cash'), other: t('أخرى', 'Other'), stripe: t('دفع أونلاين بالبطاقة', 'Online card payment'), paymob: t('دفع أونلاين (Paymob)', 'Online payment (Paymob)') }[m.type]);
 
 export function PayDetails({ m }: { m: PayMethod }) {
   const { t, L } = useI18n();
@@ -112,6 +112,9 @@ export function Checkout() {
   const [method, setMethod] = useState('');
   const [domain, setDomain] = useState('');
   const [note, setNote] = useState('');
+  const [code, setCode] = useState('');
+  const [off, setOff] = useState<{ code: string; discount: number } | null>(null);
+  const [cerr, setCerr] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   if (mode !== 'server') return <Page title={t('إتمام الطلب', 'Checkout')}><div className="empty-note nt-hatch">{t('الطلبات بتشتغل بعد تثبيت الموقع على استضافة PHP.', 'Orders work once the site is installed on a PHP host.')}</div></Page>;
@@ -120,11 +123,15 @@ export function Checkout() {
   const methods = data.payments ?? [];
   const total = priced.reduce((n, p) => n + (p?.price ?? 0), 0);
   const needsDomain = priced.some((p) => p?.needsDomain);
+  const applyCoupon = async () => {
+    setCerr(''); setOff(null);
+    try { const r = await post<{ code: string; discount: number }>('orders/coupon', { code, total }); setOff(r); } catch (x) { setCerr(x instanceof ApiError && x.message ? x.message : t('الكوبون مش صالح.', 'Invalid coupon.')); }
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(''); setBusy(true);
     try {
-      const r = await post<{ order: Order }>('orders/create', { items, method: method || methods[0]?.id || '', domain: domain.trim(), note });
+      const r = await post<{ order: Order }>('orders/create', { items, method: method || methods[0]?.id || '', domain: domain.trim(), note, coupon: off ? off.code : '' });
       clear(); await reload(); nav(`/portal/orders/${r.order.id}`);
     } catch (x) {
       const m = x instanceof ApiError ? x.message : '';
@@ -151,7 +158,10 @@ export function Checkout() {
         <aside className="card cart-sum">
           <h3>{t('ملخص الطلب', 'Order summary')}</h3>
           <ul className="cart-lines">{priced.map((p, i) => p && <li key={i}><span>{L(p.name)} <small className="muted">· {unitLabel(p.unit, p.item.qty, t)}</small></span><b className="latin">{p.price.toLocaleString('en-US')}</b></li>)}</ul>
-          <div className="cart-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{total.toLocaleString('en-US')} {cur}</b></div>
+          <div className="coupon-row"><input className="input latin" dir="ltr" placeholder={t('كوبون خصم', 'Discount code')} value={code} onChange={(e) => { setCode(e.target.value); setOff(null); }} maxLength={40} /><button type="button" className="btn btn-ghost btn-sm" disabled={!code.trim()} onClick={applyCoupon}>{t('تطبيق', 'Apply')}</button></div>
+          {cerr && <div className="form-error" role="alert">{cerr}</div>}
+          {off && <div className="cart-lines"><li><span>{t('خصم', 'Discount')} <small className="latin">({off.code})</small></span><b className="latin">−{off.discount.toLocaleString('en-US')}</b></li></div>}
+          <div className="cart-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{(total - (off?.discount ?? 0)).toLocaleString('en-US')} {cur}</b></div>
           {error && <div className="form-error" role="alert">{error}</div>}
           <button className="btn btn-accent" type="submit" disabled={busy || total <= 0}>{busy ? '…' : t('تأكيد الطلب', 'Place order')}</button>
         </aside>
@@ -200,6 +210,11 @@ export function PortalOrderDetail() {
   if (!o) return <Navigate to="/portal/orders" replace />;
   const m = (data.payments ?? []).find((x) => x.id === o.method);
   const inv = data.invoices.find((x) => x.id === o.invoiceId);
+  const online = m && (m.type === 'stripe' || m.type === 'paymob');
+  const payOnline = async () => {
+    setErr(''); setBusy(true);
+    try { const r = await post<{ url: string }>('orders/pay-online', { id: o.id }); window.location.href = r.url; } catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر فتح صفحة الدفع.', 'Could not open the payment page.')); setBusy(false); }
+  };
   const sendPaid = async (e: FormEvent) => {
     e.preventDefault();
     setErr(''); setBusy(true);
@@ -214,6 +229,7 @@ export function PortalOrderDetail() {
             <Table head={[t('البند', 'Item'), t('المدة', 'Term'), t('السعر', 'Price')]}>
               {o.lines.map((l, i) => <tr key={i}><td>{L({ ar: l.nameAr, en: l.nameEn })}</td><td>{unitLabel(l.unit, l.qty, t)}</td><td className="latin">{l.price.toLocaleString('en-US')}</td></tr>)}
             </Table>
+            {!!o.discount && <p className="muted">{t('خصم', 'Discount')} {o.coupon && <Ltr>({o.coupon})</Ltr>}: <b className="latin">−{o.discount}</b></p>}
             <div className="cart-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{o.total.toLocaleString('en-US')} {cur}</b></div>
             {o.domain && <p className="muted">{t('الدومين:', 'Domain:')} <Ltr>{o.domain}</Ltr></p>}
           </div>
@@ -223,7 +239,8 @@ export function PortalOrderDetail() {
             <div className="card">
               <h3>{t('الدفع', 'Payment')}</h3>
               {m ? <PayDetails m={m} /> : <p className="muted">{t('هنتواصل معاك لتحديد طريقة الدفع.', 'We will contact you to arrange payment.')}</p>}
-              {o.payRef ? <p className="form-ok">{t('اتبعت رقم العملية:', 'Reference sent:')} <Ltr>{o.payRef}</Ltr><br />{t('بنراجع الدفع ونفعّل الخدمة.', 'We are verifying the payment and will activate the service.')}</p> : (
+              {online && <><button className="btn btn-accent" type="button" disabled={busy} onClick={payOnline}>{busy ? '…' : t('ادفع أونلاين الآن', 'Pay online now')}</button>{err && <div className="form-error" role="alert">{err}</div>}<p className="muted">{t('بعد الدفع بيتأكد الطلب تلقائيًا.', 'The order is confirmed automatically after payment.')}</p></>}
+              {!online && o.payRef ? <p className="form-ok">{t('اتبعت رقم العملية:', 'Reference sent:')} <Ltr>{o.payRef}</Ltr><br />{t('بنراجع الدفع ونفعّل الخدمة.', 'We are verifying the payment and will activate the service.')}</p> : (
                 <form className="form" onSubmit={sendPaid}>
                   <div className="field"><label htmlFor="pr">{t('رقم العملية / اسم المحوِّل', 'Transaction reference / sender name')}</label><input id="pr" className="input latin" required maxLength={160} value={ref} onChange={(e) => setRef(e.target.value)} /></div>
                   {err && <div className="form-error" role="alert">{err}</div>}

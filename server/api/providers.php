@@ -887,3 +887,113 @@ function prov_dns_autopush($domainId) {
     try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), isset($d['dns']) ? $d['dns'] : array()); return ''; }
     catch (Exception $e) { return 'saved here, but not sent to ' . prov_name($pid) . ': ' . $e->getMessage(); }
 }
+
+/* ───────── registering a domain at the provider (money is spent: only ever called from an explicit admin action) ───────── */
+function nc_phone_intl($p) {
+    $d = preg_replace('/\D/', '', (string) $p);
+    if ($d === '') { return '+20.1000000000'; }
+    if (strpos((string) $p, '+') === 0) { return '+' . substr($d, 0, 2) . '.' . substr($d, 2); }
+    if ($d[0] === '0') { $d = '20' . substr($d, 1); }
+    return '+' . substr($d, 0, 2) . '.' . substr($d, 2);
+}
+function namecheap_register($cfg, $domain, $years, $c) {
+    $parts = preg_split('/\s+/', trim($c['name']), 2);
+    $one = array('FirstName' => $parts[0] !== '' ? $parts[0] : 'Client', 'LastName' => isset($parts[1]) && $parts[1] !== '' ? $parts[1] : $parts[0], 'Address1' => $c['address'] ?: 'N/A', 'City' => $c['city'] ?: 'Cairo', 'StateProvince' => $c['state'] ?: 'Cairo', 'PostalCode' => $c['zip'] ?: '11511', 'Country' => $c['country'] ?: 'EG', 'Phone' => nc_phone_intl($c['phone']), 'EmailAddress' => $c['email']);
+    $params = array('DomainName' => $domain, 'Years' => max(1, (int) $years), 'AddFreeWhoisguard' => 'yes', 'WGEnabled' => 'yes');
+    foreach (array('Registrant', 'Tech', 'Admin', 'AuxBilling') as $role) { foreach ($one as $k => $v) { $params[$role . $k] = $v; } }
+    $x = namecheap_call($cfg, 'namecheap.domains.create', $params);
+    $r = isset($x->CommandResponse->DomainCreateResult) ? $x->CommandResponse->DomainCreateResult : null;
+    if (!$r || strtolower((string) $r['Registered']) !== 'true') { throw new Exception('Namecheap did not confirm the registration'); }
+    return array('ref' => (string) $r['DomainID'], 'charged' => (string) $r['ChargedAmount']);
+}
+function hostinger_register($cfg, $domain, $years, $c) {
+    $tld = '.' . implode('.', array_slice(explode('.', $domain), 1));
+    $cat = hostinger_call($cfg, 'GET', '/api/billing/v1/catalog?category=DOMAIN&name=' . rawurlencode($tld));
+    $item = null;
+    foreach (prov_rows($cat) as $p) { foreach ((isset($p['prices']) ? $p['prices'] : array()) as $pr) { if (isset($pr['period_unit']) && $pr['period_unit'] === 'year' && (int) $pr['period'] === (int) $years) { $item = $pr['id']; } } }
+    if (!$item) { foreach (prov_rows($cat) as $p) { foreach ((isset($p['prices']) ? $p['prices'] : array()) as $pr) { if ($item === null && isset($pr['period_unit']) && $pr['period_unit'] === 'year') { $item = $pr['id']; } } } }
+    if (!$item) { throw new Exception('Hostinger has no price for ' . $tld); }
+    $who = prov_rows(hostinger_call($cfg, 'GET', '/api/domains/v1/whois'));
+    if (!$who || !isset($who[0]['id'])) { throw new Exception('Create a WHOIS contact profile in your Hostinger account first'); }
+    $cid = $who[0]['id'];
+    $r = hostinger_call($cfg, 'POST', '/api/domains/v1/portfolio', array('domain' => $domain, 'item_id' => $item, 'domain_contacts' => array('owner_id' => $cid, 'admin_id' => $cid, 'billing_id' => $cid, 'tech_id' => $cid)));
+    return array('ref' => isset($r['id']) ? (string) $r['id'] : $domain, 'charged' => '');
+}
+function resellerclub_register($cfg, $domain, $years, $c) { throw new Exception('Registering through ResellerClub needs a customer/contact set-up that is not supported yet: register it in the ResellerClub panel'); }
+
+/* ───────── online payment gateways ───────── */
+function gw_cfg($db, $id) { $g = meta_get($db, 'gateways', array()); return isset($g[$id]) && is_array($g[$id]) && !empty($g[$id]['enabled']) ? $g[$id] : null; }
+function gw_stripe_session($db, $o, $email, $okUrl, $backUrl) {
+    $c = gw_cfg($db, 'stripe');
+    if (!$c || empty($c['secret'])) { throw new Exception('Stripe is not set up'); }
+    $base = !empty($c['base']) ? $c['base'] : 'https://api.stripe.com';
+    $f = array('mode' => 'payment', 'success_url' => $okUrl, 'cancel_url' => $backUrl, 'client_reference_id' => $o['id'], 'customer_email' => $email, 'metadata[orderId]' => $o['id'],
+        'line_items[0][quantity]' => 1, 'line_items[0][price_data][currency]' => strtolower($o['currency']), 'line_items[0][price_data][unit_amount]' => (int) round($o['total'] * 100), 'line_items[0][price_data][product_data][name]' => 'Order ' . $o['number']);
+    list($st, $raw) = prov_http('POST', $base . '/v1/checkout/sessions', array('Authorization: Basic ' . base64_encode($c['secret'] . ':'), 'Content-Type: application/x-www-form-urlencoded'), http_build_query($f));
+    $j = json_decode($raw, true);
+    if ($st >= 300 || empty($j['url'])) { throw new Exception('Stripe: ' . (isset($j['error']['message']) ? clean_text($j['error']['message'], 160) : 'HTTP ' . $st)); }
+    return $j['url'];
+}
+function gw_stripe_verify($secret, $payload, $header) {
+    $t = ''; $sigs = array();
+    foreach (explode(',', (string) $header) as $kv) { $p = explode('=', trim($kv), 2); if (count($p) === 2) { if ($p[0] === 't') { $t = $p[1]; } elseif ($p[0] === 'v1') { $sigs[] = $p[1]; } } }
+    if ($t === '' || !$sigs || abs(time() - (int) $t) > 600) { return false; }
+    $calc = hash_hmac('sha256', $t . '.' . $payload, $secret);
+    foreach ($sigs as $s) { if (hash_equals($calc, $s)) { return true; } }
+    return false;
+}
+function gw_paymob_url($db, $o, $u) {
+    $c = gw_cfg($db, 'paymob');
+    if (!$c || empty($c['apiKey']) || empty($c['integrationId']) || empty($c['iframeId'])) { throw new Exception('Paymob is not set up'); }
+    $base = !empty($c['base']) ? $c['base'] : 'https://accept.paymob.com';
+    $call = function ($path, $body) use ($base) {
+        list($st, $raw) = prov_http('POST', $base . $path, array('Content-Type: application/json'), json_encode($body));
+        $j = json_decode($raw, true);
+        if ($st >= 300 || !is_array($j)) { throw new Exception('Paymob: HTTP ' . $st . ' ' . clean_text(substr($raw, 0, 120), 120)); }
+        return $j;
+    };
+    $cents = (int) round($o['total'] * 100);
+    $tok = $call('/api/auth/tokens', array('api_key' => $c['apiKey']));
+    if (empty($tok['token'])) { throw new Exception('Paymob: bad API key'); }
+    $ord = $call('/api/ecommerce/orders', array('auth_token' => $tok['token'], 'delivery_needed' => false, 'amount_cents' => $cents, 'currency' => $o['currency'], 'merchant_order_id' => $o['id'] . 'x' . time(), 'items' => array()));
+    $parts = preg_split('/\s+/', trim($u['name']), 2);
+    $pk = $call('/api/acceptance/payment_keys', array('auth_token' => $tok['token'], 'amount_cents' => $cents, 'expiration' => 3600, 'order_id' => $ord['id'], 'currency' => $o['currency'], 'integration_id' => (int) $c['integrationId'], 'lock_order_when_paid' => false,
+        'billing_data' => array('first_name' => $parts[0], 'last_name' => isset($parts[1]) ? $parts[1] : $parts[0], 'email' => $u['email'], 'phone_number' => !empty($u['phone']) ? $u['phone'] : '01000000000', 'apartment' => 'NA', 'floor' => 'NA', 'street' => 'NA', 'building' => 'NA', 'shipping_method' => 'NA', 'postal_code' => 'NA', 'city' => 'Cairo', 'country' => 'EG', 'state' => 'Cairo')));
+    if (empty($pk['token'])) { throw new Exception('Paymob: no payment token'); }
+    return $base . '/api/acceptance/iframes/' . rawurlencode($c['iframeId']) . '?payment_token=' . rawurlencode($pk['token']);
+}
+function gw_paymob_verify($hmacKey, $obj, $given) {
+    $get = function ($path) use ($obj) { $v = $obj; foreach (explode('.', $path) as $k) { if (!is_array($v) || !array_key_exists($k, $v)) { return ''; } $v = $v[$k]; } return is_bool($v) ? ($v ? 'true' : 'false') : (string) $v; };
+    $keys = array('amount_cents', 'created_at', 'currency', 'error_occured', 'has_parent_transaction', 'id', 'integration_id', 'is_3d_secure', 'is_auto_captured', 'is_capture', 'is_refunded', 'is_standalone_payment', 'is_voided', 'order.id', 'owner', 'pending', 'source_data.pan', 'source_data.sub_type', 'source_data.type', 'success');
+    $s = ''; foreach ($keys as $k) { $s .= $get($k); }
+    return $hmacKey !== '' && hash_equals(hash_hmac('sha512', $s, $hmacKey), strtolower((string) $given));
+}
+
+/* ───────── system check (Settings → System check) ───────── */
+function nc_ini_bytes($v) { $v = trim((string) $v); $n = (float) $v; switch (strtolower(substr($v, -1))) { case 'g': $n *= 1024; case 'm': $n *= 1024; case 'k': $n *= 1024; } return (int) $n; }
+function nc_system_check($db) {
+    $rows = array();
+    $add = function ($id, $ok, $detail, $level = 'warn') use (&$rows) { $rows[] = array('id' => $id, 'ok' => (bool) $ok, 'level' => $ok ? 'ok' : $level, 'detail' => $detail); };
+    $add('php', version_compare(PHP_VERSION, '7.0.0', '>='), PHP_VERSION, 'bad');
+    foreach (array('pdo_mysql' => 'MySQL storage', 'curl' => 'provider APIs & online payments', 'zip' => 'update files (.zip)', 'mbstring' => 'text handling', 'openssl' => 'HTTPS & SMTP', 'simplexml' => 'Namecheap', 'json' => 'JSON') as $ext => $why) {
+        $add('ext:' . $ext, extension_loaded($ext) || ($ext === 'pdo_mysql' && !use_sql()), $why, $ext === 'json' || $ext === 'curl' ? 'bad' : 'warn');
+    }
+    $up = nc_ini_bytes(ini_get('upload_max_filesize')); $post = nc_ini_bytes(ini_get('post_max_size'));
+    $add('upload', $up >= 8 * 1048576 && $post >= 8 * 1048576, 'upload_max_filesize ' . ini_get('upload_max_filesize') . ' · post_max_size ' . ini_get('post_max_size') . ' (update files are ~1–2 MB, images up to 1.5 MB)');
+    $site = dirname(dirname(NC_DATA));
+    foreach (array(NC_DATA => 'api/data', $site . '/uploads' => 'uploads', $site . '/api' => 'api (updates)', $site . '/assets' => 'assets (updates)') as $dir => $label) {
+        if ($label === 'uploads' && !is_dir($dir)) { @mkdir($dir, 0755, true); }
+        $add('write:' . $label, is_dir($dir) && is_writable($dir), $label);
+    }
+    $op = function_exists('opcache_get_status') ? @opcache_get_status(false) : false;
+    if ($op) { $val = (int) ini_get('opcache.validate_timestamps'); $rev = (int) ini_get('opcache.revalidate_freq'); $add('opcache', !$val || $rev <= 2, 'validate_timestamps=' . $val . ' revalidate_freq=' . $rev . ' — after an update the old code can stay cached for up to ' . $rev . 's; the updater also invalidates each file it writes'); }
+    else { $add('opcache', true, 'opcache is off or not visible: updates apply at once'); }
+    $smtp = meta_get($db, 'smtp', array());
+    $add('mail', !empty($smtp['host']) || function_exists('mail'), !empty($smtp['host']) ? 'SMTP: ' . $smtp['host'] : (function_exists('mail') ? 'PHP mail() — many hosts drop these emails; set up SMTP' : 'no way to send email'));
+    $add('siteurl', site_url($db) !== '', 'Settings → Store & tax → Site address (needed for password-reset and order links)');
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    $add('https', $https, $https ? 'HTTPS' : 'the site is opened over HTTP: use HTTPS before taking real customers');
+    $last = meta_get($db, 'lastDaily', '');
+    $add('cron', $last !== '' && $last >= gmdate('Y-m-d', time() - 2 * 86400), $last !== '' ? 'last daily run: ' . $last : 'the daily job (renewals & reminders) has never run: add a cron job (see Settings → Renewals)');
+    return array('rows' => $rows, 'php' => PHP_VERSION, 'storage' => use_sql() ? 'mysql' : 'file', 'time' => gmdate('c'));
+}

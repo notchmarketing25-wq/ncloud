@@ -36,6 +36,7 @@ export function AdminDomainDetail() {
   const [edit, setEdit] = useState<Record<string, unknown> | null>(null);
   const [mailForm, setMailForm] = useState<{ local: string; quota: number } | null>(null);
   const [importList, setImportList] = useState<string | null>(null);
+  const [reg, setReg] = useState<{ provider: string; years: number; confirm: boolean } | null>(null);
   const { settings } = useSite();
   const webmail = settings.webmailUrl || 'https://mail.hostinger.com';
   const [dnsErr, setDnsErr] = useState('');
@@ -58,7 +59,7 @@ export function AdminDomainDetail() {
   };
   const connectMail = () => void run(async () => { const r = await post<{ added: number; warning?: string }>('admin/domain-mail', { id: d.id }); if (r.warning) setErr(r.warning); setOk(t(`اتضافت ${r.added} سجل إيميل (MX/SPF) لـ Hostinger.`, `Added ${r.added} email records (MX/SPF) for Hostinger.`)); }, '');
   return (
-    <Page title={name} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => setEdit({ ...d })}>{t('تعديل', 'Edit')}</button><Link to="/admin/domains" className="btn btn-ghost btn-sm">{t('← الدومينات', '← Domains')}</Link></div>}>
+    <Page title={name} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => setEdit({ ...d })}>{t('تعديل', 'Edit')}</button>{d.status === 'pending' && <button className="btn btn-accent btn-sm" onClick={() => setReg({ provider: 'namecheap', years: Number(d.regYears) || 1, confirm: false })}>{t('سجّل عند المزوّد', 'Register at provider')}</button>}<Link to="/admin/domains" className="btn btn-ghost btn-sm">{t('← الدومينات', '← Domains')}</Link></div>}>
       <Notice err={err || error} ok={ok} />
       <Strip items={[[t('الحالة', 'Status'), <StatusTag s={d.status as 'active'} />], [t('ينتهي', 'Expires'), <Ltr>{String(d.expires || '-')}</Ltr>], [t('المزوّد', 'Provider'), provider || '-'],
         [t('تكلفة → بيع (سنة)', 'Cost → price (yr)'), <span className="latin">{num(d.cost)} → {num(d.price)} {cur}{m !== null ? ` · ${m}%` : ''}</span>], [t('سجلات DNS', 'DNS records'), <span className="latin">{dns.length}</span>]]} />
@@ -130,6 +131,18 @@ export function AdminDomainDetail() {
             <label className="check"><input type="checkbox" checked={Boolean(edit.autoRenew)} onChange={(e) => setEdit({ ...edit, autoRenew: e.target.checked })} /> {t('تجديد تلقائي', 'Auto-renew')}</label>
             <Field id="ed-nt" label={t('ملاحظات', 'Notes')} wide><input id="ed-nt" className="input" value={String(edit.notes ?? '')} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
             <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
+          </form>
+        </Modal>
+      )}
+      {reg && (
+        <Modal title={t('تسجيل الدومين عند المزوّد', 'Register the domain at the provider')} onClose={() => setReg(null)}>
+          <form className="form" onSubmit={(e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await post<{ charged: string }>('admin/register-domain', { id: d.id, provider: reg.provider, years: reg.years, confirm: true }); setOk(t(`اتسجّل ${name} عند ${reg.provider}.`, `${name} was registered at ${reg.provider}.`) + (r.charged ? ` (${r.charged})` : '')); setReg(null); }, ''); }}>
+            <p className="form-error">{t('ده بيشتري الدومين فعليًا من حسابك عند المزوّد وبيخصم من رصيدك هناك.', 'This really buys the domain from your provider account and charges your balance there.')}</p>
+            <p><b className="latin" dir="ltr">{name}</b></p>
+            <Field id="rg-p" label={t('المزوّد', 'Provider')}><select id="rg-p" className="select" value={reg.provider} onChange={(e) => setReg({ ...reg, provider: e.target.value })}>{PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}</select></Field>
+            <Field id="rg-y" label={t('عدد السنين', 'Years')}><input id="rg-y" className="input latin" type="number" min={1} max={10} value={reg.years} onChange={(e) => setReg({ ...reg, years: Number(e.target.value) })} /></Field>
+            <label className="check"><input type="checkbox" checked={reg.confirm} onChange={(e) => setReg({ ...reg, confirm: e.target.checked })} /> {t('أنا متأكد وعايز أسجّله دلوقتي', 'I am sure, register it now')}</label>
+            <button className="btn btn-accent" type="submit" disabled={!reg.confirm}>{t('سجّل', 'Register')}</button>
           </form>
         </Modal>
       )}

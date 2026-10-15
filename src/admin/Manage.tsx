@@ -241,7 +241,7 @@ export function AdminInvoices() {
         { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [['due', 'مستحقة', 'Due'], ['paid', 'مدفوعة', 'Paid'], ['void', 'ملغاة', 'Void']] },
       ]}
       columns={[
-        { label: ['الرقم', 'No.'], render: (it) => <Ltr>{String(it.number ?? '-')}</Ltr> }, { label: ['البند', 'Item'], render: (it) => String(it.item) },
+        { label: ['الرقم', 'No.'], render: (it) => <Link className="link latin" to={`/admin/invoices/${it.id}`}>{String(it.number ?? '-')}</Link> }, { label: ['البند', 'Item'], render: (it) => String(it.item) },
         { label: ['المبلغ', 'Amount'], render: (it) => <span><b className="latin">{num(it.amount)}</b> {cur}</span> }, { label: ['التاريخ', 'Date'], render: (it) => <Ltr>{day(String(it.date))}</Ltr> },
         { label: ['الحالة', 'Status'], render: (it) => <InvoiceTag s={it.status as 'due'} /> },
       ]}

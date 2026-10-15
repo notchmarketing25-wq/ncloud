@@ -93,6 +93,7 @@ function upd_apply($u, $me) {
     } catch (Exception $e) {
         fail('update stopped: ' . $e->getMessage() . ' — your data is untouched; the previous files are in api/data/backup/' . $name, 500);
     }
+    if (function_exists("opcache_reset")) { @opcache_reset(); }
     $migrated = false;
     if (use_sql() && is_file(__DIR__ . '/schema.php')) { try { require_once __DIR__ . '/schema.php'; nc_schema(nc_pdo()); $migrated = true; } catch (Exception $e) { $migrated = false; } }
     // keep only the newest 3 backups

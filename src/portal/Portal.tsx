@@ -8,6 +8,7 @@ import { LangToggle, Logo } from '../site/Layout';
 import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { OrderButton } from '../site/CartPages';
+import { RenewButton } from './Extras';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
 
@@ -53,8 +54,10 @@ export function Login() {
         {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): أي بيانات هتدخلك.', 'Demo build (no server): any details will sign you in.')}</p>}
         <div className="field"><label htmlFor="em">{t('الإيميل', 'Email')}</label><input id="em" className="input latin" type="email" autoComplete="username" required={mode === 'server'} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
         <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" autoComplete="current-password" required={mode === 'server'} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+        {qs.get('reset') && <div className="form-ok" role="status">{t('اتغيّرت كلمة السر. سجّل دخول بيها.', 'Your password was changed. Sign in with it.')}</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn btn-primary" type="submit" disabled={busy || mode === 'checking'}>{busy ? '…' : t('دخول', 'Sign in')}</button>
+        {mode === 'server' && <Link className="link" to="/portal/forgot">{t('نسيت كلمة السر؟', 'Forgot your password?')}</Link>}
         {mode === 'server' && <p className="muted">{t('لسه مالكش حساب؟', 'No account yet?')} <Link className="link" to={`/portal/register${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{t('سجّل حساب جديد', 'Create an account')}</Link></p>}
         <Link to="/" className="muted back">{t('← رجوع للموقع', '← Back to site')}</Link>
       </form>
@@ -266,7 +269,7 @@ export function PortalDomainDetail() {
   const hosts = data.hosting.filter((h) => under(h.domain) || sites.some((w) => w.hostingId === h.id));
   const mails = data.mailboxes.filter((m) => m.address.toLowerCase().endsWith('@' + d.name.toLowerCase()));
   return (
-    <Page title={d.name} action={<Link to="/portal/domains" className="btn btn-ghost btn-sm">{t('← كل الدومينات', '← All domains')}</Link>}>
+    <Page title={d.name} action={<div className="row-actions"><RenewButton res="domains" id={d.id} expires={d.expires} /><Link to="/portal/domains" className="btn btn-ghost btn-sm">{t('← كل الدومينات', '← All domains')}</Link></div>}>
       <div className="card"><dl className="kv">
         <div><dt>{t('الحالة', 'Status')}</dt><dd><StatusTag s={d.status} /></dd></div>
         <div><dt>{t('ينتهي', 'Expires')}</dt><dd><Ltr>{d.expires || '-'}</Ltr></dd></div>
@@ -401,7 +404,7 @@ export function PortalHostingDetail() {
   const p = pct(h.usedGb, h.diskGb);
   const tabs: [typeof tab, string, number?][] = [['overview', t('نظرة عامة', 'Overview')], ['websites', t('المواقع', 'Websites'), sites.length], ['domains', t('الدومينات', 'Domains'), doms.length], ['email', t('الإيميلات', 'Email'), mails.length]];
   return (
-    <Page title={h.plan} action={<Link to="/portal/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link>}>
+    <Page title={h.plan} action={<div className="row-actions"><RenewButton res="hosting" id={h.id} expires={h.expires} /><Link to="/portal/hosting" className="btn btn-ghost btn-sm">{t('← الاستضافة', '← Hosting')}</Link></div>}>
       <div className="stat-strip">
         <div><span>{t('الحالة', 'Status')}</span><b><StatusTag s={h.status} /></b></div>
         <div><span>{t('المساحة', 'Disk')}</span><b className="latin">{h.usedGb} / {h.diskGb} GB</b></div>
@@ -486,12 +489,12 @@ export function PortalBilling() {
   const hasDue = data.invoices.some((i) => i.status === 'due');
   return (
     <Page title={t('الفواتير', 'Billing')}>
-      {hasDue && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. للدفع تواصل مع الدعم وهنأكد الدفع من عندنا.', 'You have invoices due. Contact support to pay and we will confirm the payment.')} <Link to="/portal/support?new=payment" className="link">{t('تواصل مع الدعم', 'Contact support')}</Link></p></div>}
+      {hasDue && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الطلب المرتبط بالفاتورة وادفع منه.', 'You have invoices due. Open the order behind the invoice and pay from there.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
       {data.invoices.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
         <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('الحالة', 'Status'), '']}>
           {data.invoices.map((i) => (
             <tr key={i.id}>
-              <td><Ltr>{i.number}</Ltr></td><td><Ltr>{day(i.date)}</Ltr></td><td>{i.item}</td>
+              <td>{demo ? <Ltr>{i.number}</Ltr> : <Link className="link latin" to={`/portal/invoices/${i.id}`}>{i.number}</Link>}</td><td><Ltr>{day(i.date)}</Ltr></td><td>{i.item}</td>
               <td><b className="latin">{i.amount}</b> {cur} {demo && <Ph />}</td>
               <td><InvoiceTag s={i.status} /></td>
               <td>{demo && i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => demo.pay(i.id)}>{t('ادفع', 'Pay')}</button>}</td>

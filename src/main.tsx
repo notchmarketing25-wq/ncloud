@@ -19,6 +19,7 @@ import { CatalogProvider } from './site/catalog';
 import { CartProvider } from './site/cart';
 import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
 import { AdminOrders } from './admin/Orders';
+import { AdminInvoice, ForgotPassword, PortalInvoice, RenewPage, ResetPassword } from './portal/Extras';
 import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
@@ -51,6 +52,8 @@ createRoot(document.getElementById('root')!).render(
           </Route>
           <Route path="portal/login" element={<Login />} />
           <Route path="portal/register" element={<Register />} />
+          <Route path="portal/forgot" element={<ForgotPassword />} />
+          <Route path="portal/reset" element={<ResetPassword />} />
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
@@ -67,6 +70,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="hosting" element={<AdminHosting />} />
             <Route path="servers" element={<AdminServers />} />
             <Route path="invoices" element={<AdminInvoices />} />
+            <Route path="invoices/:id" element={<AdminInvoice />} />
             <Route path="tickets" element={<AdminTickets />} />
             <Route path="leads" element={<AdminLeads />} />
             <Route path="apps" element={<AdminApps />} />
@@ -88,6 +92,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="order/:id" element={<OrderRedirect />} />
             <Route path="checkout" element={<Checkout />} />
             <Route path="orders" element={<PortalOrders />} />
+            <Route path="invoices/:id" element={<PortalInvoice />} />
+            <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />
             <Route path="email" element={<PortalEmail />} />
             <Route path="hosting" element={<PortalHosting />} />
