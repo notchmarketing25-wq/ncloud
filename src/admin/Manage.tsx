@@ -85,8 +85,8 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
   const liveForm = form && form.id ? items.find((i) => i.id === form.id) : null;
   const hasStatus = items.some((i) => typeof i.status === 'string');
   const statuses = Array.from(new Set(items.map((i) => String(i.status ?? '')).filter(Boolean)));
-  const count = (s: string) => items.filter((i) => s === 'all' || i.status === s).length;
-  const shown = items.filter((i) => (tab === 'all' || i.status === tab) && (!q.trim() || JSON.stringify(Object.values(i).filter((v) => typeof v === 'string' || typeof v === 'number')).toLowerCase().includes(q.trim().toLowerCase()) || owner(i.uid).toLowerCase().includes(q.trim().toLowerCase())));
+  const count = (s: string) => items.filter((i) => (s === 'all' ? i.status !== 'archived' : i.status === s)).length;
+  const shown = items.filter((i) => (tab === 'all' ? i.status !== 'archived' : i.status === tab) && (!q.trim() || JSON.stringify(Object.values(i).filter((v) => typeof v === 'string' || typeof v === 'number')).toLowerCase().includes(q.trim().toLowerCase()) || owner(i.uid).toLowerCase().includes(q.trim().toLowerCase())));
   const stLabel = (s: string) => ({ active: t('نشط', 'Active'), pending: t('قيد التفعيل', 'Pending'), expiring: t('قرب ينتهي', 'Expiring'), stopped: t('متوقف', 'Stopped'), due: t('مستحقة', 'Due'), paid: t('مدفوعة', 'Paid'), void: t('ملغاة', 'Void') } as Record<string, string>)[s] ?? s;
   const open = (it: Item) => { setOk(''); setForm({ ...it }); };
   const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}`);

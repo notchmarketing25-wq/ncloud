@@ -199,14 +199,19 @@ export function AdminClient() {
 
   const mine = (res: string) => (all?.items[res] ?? []).filter((x) => x.uid === id);
   const invs = useMemo(() => (mine('invoices') as unknown as AInv[]).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))), [all, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [showArch, setShowArch] = useState(false);
   if (!all || !u) return <Page title={t('العميل', 'Customer')}><Notice err={error} ok="" /><Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link></Page>;
   const sum = (st: string) => invs.filter((i) => i.status === st);
   const total = (l: AInv[]) => l.reduce((n, i) => n + num(i.amount), 0);
   const paidSum = invs.reduce((n, i) => n + num(i.paid), 0);
   const expenses = (all.items.purchases ?? []).filter((p) => p.client === u.id).reduce((n, p) => n + num(p.amount), 0);
   const ledger: LedgerEntry[] = invs.flatMap((i) => (i.payments ?? []).map((e) => ({ ...e, invoiceId: i.id, number: i.number, uid: i.uid }))).sort((a, b) => b.at.localeCompare(a.at));
-  const services = SERVICE_RES.flatMap(([res]) => mine(res).map((it) => ({ res, it })));
-  const domains = mine('domains').map((it) => ({ res: 'domains', it }));
+  const vis = (r: { it: Item }) => showArch || r.it.status !== 'archived';
+  const allServices = SERVICE_RES.flatMap(([res]) => mine(res).map((it) => ({ res, it })));
+  const allDomains = mine('domains').map((it) => ({ res: 'domains', it }));
+  const archivedCount = allServices.filter((r) => r.it.status === 'archived').length + allDomains.filter((r) => r.it.status === 'archived').length;
+  const services = allServices.filter(vis);
+  const domains = allDomains.filter(vis);
   const quotes = (mine('quotes') as unknown as Quote[]).slice().sort((a, b) => String(b.created).localeCompare(String(a.created)));
   const billable = mine('billable');
   const tickets = all.tickets.filter((x) => x.uid === u.id);
@@ -363,6 +368,7 @@ export function AdminClient() {
         </>
       )}
 
+      {(tab === 'services' || tab === 'domains') && archivedCount > 0 && <label className="check" style={{ marginBottom: 8 }}><input type="checkbox" checked={showArch} onChange={(e) => setShowArch(e.target.checked)} /> {t('عرض المؤرشف', 'Show archived')} ({archivedCount})</label>}
       {tab === 'services' && <ServiceTable rows={services} kind="services" methods={methods} run={run} all={all} uid={u.id} />}
       {tab === 'domains' && <ServiceTable rows={domains} kind="domains" methods={methods} run={run} all={all} uid={u.id} />}
 

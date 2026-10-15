@@ -184,11 +184,11 @@ export function AdminWebsites() {
   const [q, setQ] = useState('');
   const [form, setForm] = useState<Record<string, unknown> | null>(null);
   const sites = all?.items.websites ?? [];
-  const shown = sites.filter((w) => (tab === 'all' || w.status === tab) && (!q.trim() || `${w.name} ${w.url}`.toLowerCase().includes(q.trim().toLowerCase())));
+  const shown = sites.filter((w) => (tab === 'all' ? w.status !== 'archived' : w.status === tab) && (!q.trim() || `${w.name} ${w.url}`.toLowerCase().includes(q.trim().toLowerCase())));
   const owner = (uid: string) => all?.users.find((u) => u.id === uid)?.name ?? '-';
   const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}`);
   const totalUsed = sites.reduce((n, w) => n + num(w.usedGb), 0);
-  const count = (s: string) => sites.filter((w) => s === 'all' || w.status === s).length;
+  const count = (s: string) => sites.filter((w) => (s === 'all' ? w.status !== 'archived' : w.status === s)).length;
   const blank = { uid: all?.users.find((u) => u.role === 'client')?.id ?? '', name: '', url: '', status: 'active', domainId: '', hostingId: '', diskGb: 0, usedGb: 0, notes: '' };
   const mine = (res: string, uid: unknown) => (all?.items[res] ?? []).filter((x) => x.uid === uid);
   return (
