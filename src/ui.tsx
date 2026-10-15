@@ -9,7 +9,7 @@ export function Page({ title, action, children }: { title: string; action?: Reac
 export function StatusTag({ s }: { s: Status }) {
   const { t } = useI18n();
   const map: Record<Status, [string, string, string]> = {
-    active: ['ok', 'نشط', 'Active'], pending: ['warn', 'قيد التفعيل', 'Pending'], expiring: ['bad', 'قرب ينتهي', 'Expiring'], stopped: ['', 'متوقف', 'Stopped'],
+    active: ['ok', 'نشط', 'Active'], pending: ['warn', 'قيد التفعيل', 'Pending'], expiring: ['bad', 'قرب ينتهي', 'Expiring'], stopped: ['', 'متوقف', 'Stopped'], archived: ['', 'مؤرشف', 'Archived'],
   };
   const [cls, ar, en] = map[s] ?? ['', s, s];
   return <span className={`tag ${cls}`}>{s === 'active' && <i className="dot" />}{t(ar, en)}</span>;

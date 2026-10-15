@@ -75,7 +75,7 @@ export function AdminUsers() {
             <tbody>
               {pageRows.map(({ u, services, at }) => (
                 <tr key={u.id} className="row-link" onClick={() => nav(`/admin/users/${u.id}`)}>
-                  <td><Link className="link" to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()}>{u.name}</Link>{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}{now - at < WEEK && u.role === 'client' && <> <span className="tag volt">{t('جديد', 'New')}</span></>}</td>
+                  <td><Link className="link" to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()}>{u.name}</Link>{me?.id === u.id && <> <span className="tag">{t('أنت', 'You')}</span></>}{u.disabled && <> <span className="tag bad">{t('موقوف', 'Suspended')}</span></>}{now - at < WEEK && u.role === 'client' && <> <span className="tag volt">{t('جديد', 'New')}</span></>}</td>
                   <td><Ltr>{day(u.created ?? '') || '-'}</Ltr></td>
                   <td><span className={`tag ${u.role === 'admin' ? 'dark' : ''}`}>{u.role === 'admin' ? t('أدمن', 'Admin') : services === 0 ? t('عميل · من غير خدمات', 'Client · no services') : t('عميل', 'Client')}</span></td>
                   <td><Ltr>{u.phone || '-'}</Ltr></td><td>{u.company || '-'}</td><td className="latin">{services}</td><td><Ltr>{u.email}</Ltr></td>

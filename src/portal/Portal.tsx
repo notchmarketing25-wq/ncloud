@@ -9,6 +9,7 @@ import { DomainSearch, Money, Ph } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { OrderButton } from '../site/CartPages';
 import { RenewButton } from './Extras';
+import { DomainName, SubLine, SvcCard } from '../site/svc';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
 
@@ -173,7 +174,7 @@ export function PortalLayout() {
         <div className="portal-top">
           <button className="burger" onClick={() => setOpen(!open)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
           <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
-          <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>
+          {mode !== 'server' && <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>}
         </div>
         <div className="portal-body"><PortalDataProvider><Outlet /></PortalDataProvider></div>
       </div>
@@ -229,21 +230,19 @@ export function PortalDomains() {
   const { t } = useI18n();
   const { mode } = useAuth();
   const { data } = usePortal();
-  const nav = useNavigate();
   if (!data) return <Loading />;
   return (
     <Page title={t('الدومينات', 'Domains')} action={<Link to={mode === 'server' ? '/domains' : '/portal/support?new=domain'} className="btn btn-primary btn-sm">{t('+ دومين جديد', '+ New domain')}</Link>}>
       <div className="card" style={{ marginBottom: 16 }}><h3>{t('ابحث عن دومين جديد', 'Find a new domain')}</h3><DomainSearch /></div>
       {data.domains.length === 0 ? <Empty>{t('مفيش دومينات لسه. اطلب دومين من الدعم.', 'No domains yet. Request one from support.')}</Empty> : (
-        <Table head={[t('الدومين', 'Domain'), t('الحالة', 'Status'), t('ينتهي', 'Expires'), t('تجديد تلقائي', 'Auto-renew'), '']}>
+        <div className="svc-list">
           {data.domains.map((d) => (
-            <tr key={d.id} className="row-link" onClick={() => nav(`/portal/domains/${d.id}`)}>
-              <td><Link to={`/portal/domains/${d.id}`} onClick={(e) => e.stopPropagation()}><Ltr>{d.name}</Ltr></Link></td><td><StatusTag s={d.status} /></td><td><Ltr>{d.expires || '-'}</Ltr></td>
-              <td>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</td>
-              <td><span className="btn btn-ghost btn-sm">{t('التفاصيل و DNS', 'Details & DNS')}</span></td>
-            </tr>
+            <SvcCard key={d.id} host={d.name} to={`/portal/domains/${d.id}`} dim={d.status === 'stopped'}
+              title={<DomainName name={d.name} />}
+              sub={<SubLine sub={d.sub} started={d.started} expires={d.expires} extra={<StatusTag s={d.status} />} />}
+              actions={<><RenewButton res="domains" id={d.id} expires={d.expires} /><Link className="btn btn-ghost btn-sm" to={`/portal/domains/${d.id}`}>{t('التفاصيل و DNS', 'Details & DNS')}</Link></>} />
           ))}
-        </Table>
+        </div>
       )}
     </Page>
   );
@@ -275,6 +274,8 @@ export function PortalDomainDetail() {
         <div><dt>{t('ينتهي', 'Expires')}</dt><dd><Ltr>{d.expires || '-'}</Ltr></dd></div>
         <div><dt>{t('تجديد تلقائي', 'Auto-renew')}</dt><dd>{d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')}</dd></div>
         {d.price ? <div><dt>{t('سعر التجديد', 'Renewal price')}</dt><dd><Money value={d.price} /></dd></div> : null}
+        <div><dt>{t('معرّف الاشتراك', 'Subscription ID')}</dt><dd><Ltr>{d.sub || '-'}</Ltr></dd></div>
+        <div><dt>{t('بدأ في', 'Started')}</dt><dd><Ltr>{d.started || '-'}</Ltr></dd></div>
       </dl></div>
       <h2 className="sub">{t('سجلات DNS', 'DNS records')}</h2>
       <DnsEditor records={d.dns} err={err}
@@ -305,15 +306,14 @@ export function PortalWebsites() {
   return (
     <Page title={t('المواقع', 'Websites')} action={<OrderButton category="site" fallback="/portal/support?new=website" label={t('+ اطلب موقع', '+ Request a website')} />}>
       {sites.length === 0 ? <Empty>{t('مفيش مواقع لسه.', 'No websites yet.')}</Empty> : (
-        <Table head={[t('الموقع', 'Website'), t('الحالة', 'Status'), t('الدومين', 'Domain'), t('الاستضافة', 'Hosting')]}>
+        <div className="svc-list">
           {sites.map((w) => (
-            <tr key={w.id}>
-              <td><Link className="link" to={`/portal/websites/${w.id}`}><Ltr>{w.name}</Ltr></Link></td><td><StatusTag s={w.status} /></td>
-              <td>{dom(w.domainId) ? <Link to={`/portal/domains/${w.domainId}`}><Ltr>{dom(w.domainId)!.name}</Ltr></Link> : '-'}</td>
-              <td>{host(w.hostingId)?.plan ?? '-'}</td>
-            </tr>
+            <SvcCard key={w.id} host={w.url || dom(w.domainId)?.name || w.name} to={`/portal/websites/${w.id}`} dim={w.status === 'stopped'}
+              title={<Ltr>{w.name}</Ltr>}
+              sub={<SubLine sub={w.sub} started={w.started} expires={w.expires} extra={<><StatusTag s={w.status} />{dom(w.domainId) && <span><Ltr>{dom(w.domainId)!.name}</Ltr></span>}{host(w.hostingId) && <span>{host(w.hostingId)!.plan}</span>}</>} />}
+              actions={<Link className="btn btn-ghost btn-sm" to={`/portal/websites/${w.id}`}>{t('التفاصيل', 'Details')}</Link>} />
           ))}
-        </Table>
+        </div>
       )}
     </Page>
   );
@@ -411,6 +411,7 @@ export function PortalHostingDetail() {
         <div><span>{t('المواقع', 'Websites')}</span><b className="latin">{sites.length}</b></div>
         <div><span>{t('الدومين', 'Domain')}</span><b><Ltr>{h.domain || '-'}</Ltr></b></div>
         {h.expires && <div><span>{t('التجديد', 'Renews')}</span><b><Ltr>{h.expires}</Ltr></b></div>}
+        <div><span>{t('معرّف الاشتراك', 'Subscription ID')}</span><b><Ltr>{h.sub || '-'}</Ltr></b></div>
       </div>
       <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
       {tab === 'overview' && <div className="card"><h3>{t('حجم الاستضافة', 'Hosting size')}</h3><p className="muted latin">{h.usedGb} / {h.diskGb} GB · {Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} />
@@ -444,6 +445,8 @@ export function PortalWebsiteDetail() {
         <div><span>{t('الدومين', 'Domain')}</span><b>{dom ? <Link className="link" to={`/portal/domains/${dom.id}`}><Ltr>{dom.name}</Ltr></Link> : '-'}</b></div>
         <div><span>{t('الاستضافة', 'Hosting')}</span><b>{host ? <Link className="link" to={`/portal/hosting/${host.id}`}>{host.plan}</Link> : '-'}</b></div>
         <div><span>{t('المساحة', 'Disk')}</span><b className="latin">{w.usedGb ?? 0} / {w.diskGb ?? 0} GB</b></div>
+        <div><span>{t('معرّف الاشتراك', 'Subscription ID')}</span><b><Ltr>{w.sub || '-'}</Ltr></b></div>
+        <div><span>{t('بدأ / ينتهي', 'Started / renews')}</span><b><Ltr>{w.started || '-'} → {w.expires || '-'}</Ltr></b></div>
       </div>
       <div className="tabs tabs-bar" role="tablist">{tabs.map(([k, label, n]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}{n !== undefined && <> <span className="latin">({n})</span></>}</button>)}</div>
       {tab === 'overview' && <div className="card"><dl className="kv"><div><dt>{t('الرابط', 'URL')}</dt><dd><Ltr>{w.url || w.name}</Ltr></dd></div><div><dt>{t('ملاحظات', 'Notes')}</dt><dd>{w.notes || '-'}</dd></div></dl>{(w.diskGb ?? 0) > 0 && <><h3 style={{ marginTop: 16 }}>{t('المساحة', 'Disk')}</h3><p className="muted latin">{Math.round(p)}%</p><Meter value={p} tone={p > 85 ? 'warn' : undefined} /></>}</div>}

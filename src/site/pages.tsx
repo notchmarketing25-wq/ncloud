@@ -4,7 +4,7 @@ import { faqs, services, stats, steps } from '../data/content';
 import { useCatalog, type CPlan } from './catalog';
 import { useSite } from './settings';
 import { useAuth } from '../auth';
-import { Ltr, useI18n } from '../i18n';
+import { useI18n } from '../i18n';
 import { post } from '../lib/api';
 import { DomainSearch, Faq, Money, Ph, PlanCard, SectionHead } from './parts';
 
@@ -123,22 +123,28 @@ export function CtaBand() {
 function TldTable() {
   const { t } = useI18n();
   const { tlds, live } = useCatalog();
+  const [q, setQ] = useState('');
   if (tlds.length === 0) return null;
+  const rows = tlds.filter((x) => !q.trim() || x.ext.includes(q.trim().toLowerCase().replace(/^\.?/, '.')));
   return (
-    <div className="table-wrap">
-      <table className="tbl">
-        <thead><tr><th>{t('الامتداد', 'Extension')}</th><th>{t('تسجيل / سنة', 'Register / yr')}</th><th>{t('تجديد / سنة', 'Renew / yr')}</th></tr></thead>
-        <tbody>
-          {tlds.map((x) => (
-            <tr key={x.ext}>
-              <td><Ltr>{x.ext}</Ltr> {x.popular && <span className="tag dark">{t('الأشهر', 'Popular')}</span>}</td>
-              <td><Money value={x.register} /> {!live && <Ph />}</td>
-              <td><Money value={x.renew} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <input className="input latin" dir="ltr" style={{ maxWidth: 320, marginBottom: 12 }} placeholder={t('ابحث عن امتداد (.com)', 'Find an extension (.com)')} aria-label={t('بحث عن امتداد', 'Find an extension')} value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="table-wrap">
+        <table className="tbl">
+          <thead><tr><th>{t('الامتداد', 'Extension')}</th><th>{t('تسجيل / سنة', 'Register / yr')}</th><th>{t('تجديد / سنة', 'Renew / yr')}</th></tr></thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr key={x.ext}>
+                <td><b className="tld-ext latin" dir="ltr">{x.ext}</b> {x.popular && <span className="tag dark">{t('الأشهر', 'Popular')}</span>}</td>
+                <td><Money value={x.register} /> {!live && <Ph />}</td>
+                <td><Money value={x.renew} /></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={3} className="muted">{t('مفيش امتداد بالاسم ده.', 'No extension matches.')}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

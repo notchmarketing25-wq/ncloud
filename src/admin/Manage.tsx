@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { DomainName, SvcCell } from '../site/svc';
 import { useCurrency } from '../site/settings';
 import { Ltr, useI18n } from '../i18n';
 import { api, post, type User } from '../lib/api';
@@ -7,6 +8,7 @@ import type { DnsRec, Lead, Ticket } from '../lib/types';
 import { day, InvoiceTag, Modal, Page, StatusTag, Table, TicketTag } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
+import { StatusMenu } from './kit';
 
 type Item = { id: string; uid: string; [k: string]: unknown };
 type Opt = [string, string, string]; // value, ar, en
@@ -112,6 +114,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
                   <td>{owner(it.uid)}</td>
                   <td onClick={(e) => e.stopPropagation()}><div className="row-actions">
                     {actions?.(it, run)}
+                    {hasStatus && ['domains', 'hosting', 'mailboxes', 'servers'].includes(res) && <StatusMenu res={res} item={it} run={run} />}
                     <button className="btn btn-ghost btn-sm" onClick={() => open(it)}>{t('تعديل', 'Edit')}</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف العنصر ده؟', 'Delete this item?'))) void run(() => post('admin/item-delete', { id: it.id }, { res }), t('تم الحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>
                   </div></td>
@@ -153,7 +156,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
   );
 }
 
-const statusOpts: Opt[] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['stopped', 'متوقف', 'Stopped']];
+const statusOpts: Opt[] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['stopped', 'متوقف', 'Stopped'], ['archived', 'مؤرشف (مخفي عن العميل)', 'Archived (hidden from client)']];
 const num = (v: unknown) => Number(v ?? 0);
 const providerOpts: Opt[] = [['', 'بدون', 'None'], ['hostinger', 'Hostinger', 'Hostinger'], ['namecheap', 'Namecheap', 'Namecheap'], ['resellerclub', 'ResellerClub', 'ResellerClub']];
 
@@ -171,7 +174,7 @@ export const AdminDomains = () => (
   <ResourcePage res="domains" detail={(it) => `/admin/domains/${it.id}`} title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
     fields={[
       { key: 'name', label: ['الدومين', 'Domain'], type: 'text', latin: true, req: true },
-      { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [...statusOpts.slice(0, 2), ['expiring', 'قرب ينتهي', 'Expiring'], statusOpts[2]] },
+      { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [...statusOpts.slice(0, 2), ['expiring', 'قرب ينتهي', 'Expiring'], statusOpts[2], statusOpts[3]] },
       { key: 'expires', label: ['ينتهي في', 'Expires'], type: 'date' },
       { key: 'autoRenew', label: ['تجديد تلقائي', 'Auto-renew'], type: 'bool' },
       { key: 'provider', label: ['المزوّد', 'Provider'], type: 'select', options: providerOpts },
@@ -179,8 +182,8 @@ export const AdminDomains = () => (
       { key: 'price', label: ['سعر البيع للعميل (سنة)', 'Client price (per year)'], type: 'number' },
     ]}
     columns={[
-      { label: ['الدومين', 'Domain'], render: (it) => <Link className="link" to={`/admin/domains/${it.id}`}><Ltr>{String(it.name)}</Ltr></Link> }, { label: ['الحالة', 'Status'], render: status },
-      { label: ['ينتهي', 'Expires'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> }, { label: ['سجلات DNS', 'DNS'], render: (it) => <span className="latin">{((it.dns as unknown[]) ?? []).length}</span> },
+      { label: ['الدومين', 'Domain'], render: (it) => <SvcCell host={String(it.name)} name={<DomainName name={String(it.name)} />} sub={String(it.sub ?? '')} to={`/admin/domains/${it.id}`} /> }, { label: ['الحالة', 'Status'], render: status },
+      { label: ['بدأ → ينتهي', 'Started → expires'], render: (it) => <Ltr>{String(it.started || '-')} → {String(it.expires || '-')}</Ltr> }, { label: ['سجلات DNS', 'DNS'], render: (it) => <span className="latin">{((it.dns as unknown[]) ?? []).length}</span> },
       { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
     ]} />
 );
@@ -189,7 +192,7 @@ export const AdminMailboxes = () => (
   <ResourcePage res="mailboxes" title={['الإيميلات', 'Email']} newLabel={['+ صندوق إيميل', '+ Mailbox']} defaults={{ address: '', quotaGb: 5, usedGb: 0, status: 'active' }}
     fields={[
       { key: 'address', label: ['الإيميل', 'Address'], type: 'text', latin: true, req: true },
-      { key: 'quotaGb', label: ['المساحة (GB)', 'Quota (GB)'], type: 'number' }, { key: 'usedGb', label: ['المستخدم (GB)', 'Used (GB)'], type: 'number' },
+      { key: 'expires', label: ['ينتهي الاشتراك', 'Subscription ends'], type: 'date' }, { key: 'quotaGb', label: ['المساحة (GB)', 'Quota (GB)'], type: 'number' }, { key: 'usedGb', label: ['المستخدم (GB)', 'Used (GB)'], type: 'number' },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: statusOpts },
     ]}
     columns={[
@@ -222,7 +225,7 @@ export const AdminServers = () => (
   <ResourcePage res="servers" title={['السيرفرات', 'Servers']} newLabel={['+ سيرفر', '+ Server']} defaults={{ name: '', ip: '', spec: '1 vCPU · 2 GB · 40 GB', cpu: 0, ram: 0, status: 'active' }}
     fields={[
       { key: 'name', label: ['الاسم', 'Name'], type: 'text', latin: true, req: true }, { key: 'ip', label: ['IP', 'IP'], type: 'text', latin: true },
-      { key: 'spec', label: ['المواصفات', 'Spec'], type: 'text' }, { key: 'cpu', label: ['CPU %', 'CPU %'], type: 'number' }, { key: 'ram', label: ['RAM %', 'RAM %'], type: 'number' },
+      { key: 'expires', label: ['ينتهي الاشتراك', 'Subscription ends'], type: 'date' }, { key: 'spec', label: ['المواصفات', 'Spec'], type: 'text' }, { key: 'cpu', label: ['CPU %', 'CPU %'], type: 'number' }, { key: 'ram', label: ['RAM %', 'RAM %'], type: 'number' },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: statusOpts },
     ]}
     columns={[
@@ -244,8 +247,28 @@ export function AdminInvoices() {
         { label: ['الرقم', 'No.'], render: (it) => <Link className="link latin" to={`/admin/invoices/${it.id}`}>{String(it.number ?? '-')}</Link> }, { label: ['البند', 'Item'], render: (it) => String(it.item) },
         { label: ['المبلغ', 'Amount'], render: (it) => <span><b className="latin">{num(it.amount)}</b> {cur}</span> }, { label: ['التاريخ', 'Date'], render: (it) => <Ltr>{day(String(it.date))}</Ltr> },
         { label: ['الحالة', 'Status'], render: (it) => <InvoiceTag s={it.status as 'due'} /> },
+        { label: ['المتابعة', 'Follow-up'], render: (it) => <span className="sub-line">{it.sentAt ? <span className="tag">{String(it.sentVia) === 'whatsapp' ? 'WhatsApp' : 'Email'} · <Ltr>{day(String(it.sentAt))}</Ltr></span> : <span className="muted">{t('لم تُرسل', 'Not sent')}</span>}{it.viewedAt ? <span className="tag ok">{t('اتفتحت', 'Viewed')}</span> : null}</span> },
       ]}
-      actions={(it, run) => it.status === 'due' ? <button className="btn btn-accent btn-sm" onClick={() => void run(() => post('admin/item-save', { item: { ...it, status: 'paid' } }, { res: 'invoices' }), t('تم تسجيل الدفع.', 'Marked as paid.'))}>{t('تم الدفع', 'Mark paid')}</button> : null} />
+      actions={(it, run) => (
+        <>
+          {it.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => void run(() => post('admin/invoice-status', { id: it.id, status: 'paid' }), t('تم تسجيل الدفع وتفعيل الخدمة المرتبطة.', 'Marked as paid; the linked service is activated.'))}>{t('تم الدفع', 'Mark paid')}</button>}
+          {it.status === 'paid' && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('ترجّعها مستحقة؟', 'Set it back to due?'))) void run(() => post('admin/invoice-status', { id: it.id, status: 'due' }), t('رجعت مستحقة.', 'Set back to due.')); }}>{t('تراجع', 'Undo')}</button>}
+          {it.status === 'due' && <>
+            <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/invoice-send', { id: it.id, via: 'email' }), t('اتبعتت للعميل بالإيميل.', 'Emailed to the client.'))}>{t('إيميل', 'Email')}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => void run(async () => {
+              const r = await api<{ users: (User & { phone?: string })[] }>('admin/users');
+              const u = r.users.find((x) => x.id === it.uid);
+              let ph = (u?.phone ?? '').replace(/\D/g, '').replace(/^00/, '');
+              if (ph.startsWith('0')) ph = '20' + ph.slice(1);
+              if (!ph) throw new Error('this client has no phone number');
+              const link = `${window.location.href.split('#')[0]}#/portal/invoices/${it.id}`;
+              const msg = t(`أهلًا ${u?.name ?? ''}، فاتورتك ${String(it.number)} بمبلغ ${num(it.amount)} ${cur}: ${link}`, `Hello ${u?.name ?? ''}, your invoice ${String(it.number)} for ${num(it.amount)} ${cur}: ${link}`);
+              window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+              await post('admin/invoice-send', { id: it.id, via: 'whatsapp' });
+            }, t('اتفتح واتساب واتسجّل الإرسال.', 'WhatsApp opened and the send was recorded.'))}>{t('واتساب', 'WhatsApp')}</button>
+          </>}
+        </>
+      )} />
   );
 }
 

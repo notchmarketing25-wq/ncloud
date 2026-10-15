@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Invoices: send by email or WhatsApp, follow-up (sent / viewed), and marking an invoice paid activates the linked service; payment methods with InstaPay, Fawateerk and a QR code image shown on the order and the invoice. Services as cards with a live site preview (or a Notch-style name tile) and the extension in the accent colour; every service has a unique subscription ID and start / renewal dates. Admin can suspend, archive (hidden from the client), restore or delete any service, and suspend a customer account. Site default language setting. Domain search redesigned (best match, coloured extension, taken names collapsed, extension filter). Demo labels hidden on real installs."
+ ],
+ "ar": [
+  "الفواتير: إرسال بالإيميل أو واتساب ومتابعتها (اتبعتت / اتفتحت)، وتسجيل الفاتورة كمدفوعة بيفعّل الخدمة المرتبطة؛ وسائل دفع جديدة (إنستا باي، فواتيرك) مع صورة QR بتظهر في الطلب والفاتورة. الخدمات بقت كروت فيها معاينة حية للموقع (أو لوحة باسم الدومين بستايل نوتش) والامتداد بلون مميز؛ وكل خدمة ليها معرّف اشتراك فريد وتواريخ بداية وتجديد. الأدمن يقدر يوقف أو يأرشف (مخفي عن العميل) أو يسترجع أو يحذف أي خدمة، ويوقف حساب عميل. إعداد اللغة الأساسية للموقع. إعادة تصميم بحث الدومينات (الأنسب، امتداد ملوّن، المحجوز مطوي، فلتر امتدادات). إخفاء علامات التجريبي في النسخ الحقيقية."
+ ]
+}

@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 export type Lang = 'ar' | 'en';
 export type Bi = { ar: string; en: string };
 
-type Ctx = { lang: Lang; dir: 'rtl' | 'ltr'; setLang: (l: Lang) => void; t: (ar: string, en: string) => string; L: (b: Bi) => string };
+type Ctx = { lang: Lang; dir: 'rtl' | 'ltr'; setLang: (l: Lang) => void; applyDefault: (l: Lang) => void; t: (ar: string, en: string) => string; L: (b: Bi) => string };
 const I18n = createContext<Ctx | null>(null);
 
 const KEY = 'ncloud-lang';
@@ -21,13 +21,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = dir;
-    try { localStorage.setItem(KEY, lang); } catch { /* ignore */ }
   }, [lang, dir]);
+  /** A visitor's own choice is remembered; the site's default language (Settings → General) only applies until they choose. */
+  const setLang = useCallback((l: Lang) => { setLangState(l); try { localStorage.setItem(KEY, l); } catch { /* ignore */ } }, []);
+  const applyDefault = useCallback((l: Lang) => { try { if (localStorage.getItem(KEY)) return; } catch { /* ignore */ } setLangState(l); }, []);
   const value = useMemo<Ctx>(() => ({
-    lang, dir, setLang: setLangState,
+    lang, dir, setLang, applyDefault,
     t: (ar, en) => (lang === 'ar' ? ar : en),
     L: (b) => b[lang],
-  }), [lang, dir]);
+  }), [lang, dir, setLang, applyDefault]);
   return <I18n.Provider value={value}>{children}</I18n.Provider>;
 }
 

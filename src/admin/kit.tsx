@@ -5,10 +5,10 @@ import { api, type User } from '../lib/api';
 import { errText } from './errors';
 
 export type Item = { id: string; uid: string; [k: string]: unknown };
-export type AllData = { users: (User & { phone?: string; company?: string; source?: string })[]; items: Record<string, Item[]>; tickets: { id: string; uid: string; subject: string; status: string; updated: string }[] };
+export type AllData = { users: (User & { phone?: string; company?: string; source?: string; disabled?: boolean })[]; items: Record<string, Item[]>; tickets: { id: string; uid: string; subject: string; status: string; updated: string }[] };
 
 export const PROVIDERS = ['hostinger', 'namecheap', 'resellerclub'];
-export const STATUS: [string, string, string][] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['expiring', 'قرب ينتهي', 'Expiring'], ['stopped', 'متوقف', 'Stopped']];
+export const STATUS: [string, string, string][] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['expiring', 'قرب ينتهي', 'Expiring'], ['stopped', 'متوقف', 'Stopped'], ['archived', 'مؤرشف (مخفي عن العميل)', 'Archived (hidden from client)']];
 export const DNS_PULL = ['hostinger', 'namecheap', 'resellerclub'];
 export const DNS_PUSH = ['hostinger', 'namecheap'];
 
@@ -58,3 +58,25 @@ export function Kv({ rows }: { rows: [string, ReactNode][] }) {
 }
 
 export const LtrText = ({ children }: { children: ReactNode }) => <Ltr>{children}</Ltr>;
+
+/** ⋮ menu on a service row: suspend / activate / archive / delete. Archived services disappear from the client's account. */
+export function StatusMenu({ res, item, run }: { res: string; item: Item; run: (fn: () => Promise<unknown>, done: string) => Promise<boolean> }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const st = String(item.status);
+  const set = (status: string, msg: string) => { setOpen(false); void run(() => api('admin/item-save', { item: { ...item, status } }, { res }), msg); };
+  return (
+    <span className="menu-wrap" onClick={(e) => e.stopPropagation()}>
+      <button className="btn btn-ghost btn-sm" aria-haspopup="menu" aria-expanded={open} aria-label={t('خيارات', 'Options')} onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)}>⋮</button>
+      {open && (
+        <div className="menu-pop" role="menu">
+          {st !== 'active' && st !== 'archived' && <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('active', t('اتفعّل.', 'Activated.'))}>{t('تفعيل', 'Activate')}</button>}
+          {st === 'active' && <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('stopped', t('اتوقف.', 'Suspended.'))}>{t('إيقاف', 'Suspend')}</button>}
+          {st !== 'archived' ? <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('archived', t('اتأرشف وبقى مخفي عن العميل.', 'Archived and hidden from the client.'))}>{t('أرشفة (إخفاء عن العميل)', 'Archive (hide from client)')}</button>
+            : <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('active', t('رجع من الأرشيف.', 'Restored from the archive.'))}>{t('استرجاع من الأرشيف', 'Restore from archive')}</button>}
+          <button role="menuitem" className="danger" onMouseDown={(e) => e.preventDefault()} onClick={() => { setOpen(false); if (window.confirm(t('تحذف نهائيًا؟ لا يمكن التراجع.', 'Delete permanently? This cannot be undone.'))) void run(() => api('admin/item-delete', { id: item.id }, { res }), t('اتحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>
+        </div>
+      )}
+    </span>
+  );
+}

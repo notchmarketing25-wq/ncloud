@@ -8,7 +8,7 @@ import { Page } from '../ui';
 import type { Coupon } from '../lib/types';
 import { errText } from './errors';
 
-const PAY_TYPES: [string, string, string][] = [['stripe', 'دفع أونلاين بالبطاقة (Stripe)', 'Online card (Stripe)'], ['paymob', 'دفع أونلاين (Paymob)', 'Online (Paymob)'], ['bank', 'تحويل بنكي', 'Bank transfer'], ['wallet', 'محفظة / إنستا باي', 'Wallet / InstaPay'], ['card', 'بطاقة / رابط دفع', 'Card / payment link'], ['cash', 'كاش', 'Cash'], ['other', 'أخرى', 'Other']];
+const PAY_TYPES: [string, string, string][] = [['instapay', 'إنستا باي (InstaPay)', 'InstaPay'], ['fawateerk', 'فواتيرك', 'Fawateerk'], ['stripe', 'دفع أونلاين بالبطاقة (Stripe)', 'Online card (Stripe)'], ['paymob', 'دفع أونلاين (Paymob)', 'Online (Paymob)'], ['bank', 'تحويل بنكي', 'Bank transfer'], ['wallet', 'محفظة / إنستا باي', 'Wallet / InstaPay'], ['card', 'بطاقة / رابط دفع', 'Card / payment link'], ['cash', 'كاش', 'Cash'], ['other', 'أخرى', 'Other']];
 type Full = Settings & { version?: string };
 const GOVS = ['Cairo', 'Giza', 'Alexandria', 'Qalyubia', 'Sharqia', 'Dakahlia', 'Gharbia', 'Monufia', 'Beheira', 'Kafr El-Sheikh', 'Damietta', 'Port Said', 'Ismailia', 'Suez', 'North Sinai', 'South Sinai', 'Fayoum', 'Beni Suef', 'Minya', 'Asyut', 'Sohag', 'Qena', 'Luxor', 'Aswan', 'Red Sea', 'New Valley', 'Matrouh'];
 
@@ -64,6 +64,17 @@ export function AdminSettings() {
       const j = await res.json().catch(() => null) as { url?: string; error?: string } | null;
       if (!res.ok || !j?.url) throw new Error(j?.error ?? `HTTP ${res.status}`);
       setS((cur) => (cur ? { ...cur, brand: { ...(cur.brand ?? {}), [key]: j.url } } : cur));
+    } catch (x) { setErr(x instanceof Error ? x.message : 'error'); }
+  };
+  const uploadQr = async (i: number, file?: File) => {
+    if (!file) return;
+    setErr('');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch(apiUrl('admin/upload'), { method: 'POST', credentials: 'same-origin', headers: { 'X-NC': '1', Accept: 'application/json' }, body: fd });
+      const j = await res.json().catch(() => null) as { url?: string; error?: string } | null;
+      if (!res.ok || !j?.url) throw new Error(j?.error ?? `HTTP ${res.status}`);
+      setS((cur) => (cur ? { ...cur, payments: (cur.payments ?? []).map((m, k) => (k === i ? { ...m, qr: j.url } : m)) } : cur));
     } catch (x) { setErr(x instanceof Error ? x.message : 'error'); }
   };
   const visible = (id: string, label: string) => !q.trim() || label.toLowerCase().includes(q.trim().toLowerCase()) || id.includes(q.trim().toLowerCase());
@@ -150,6 +161,7 @@ export function AdminSettings() {
           {section === 'accounts' && (
             <>
               {card(t('تسجيل العملاء', 'Customer sign-up'), t('تحكم في إمكانية إنشاء حساب جديد من الموقع.', 'Control whether new customers can create an account on the website.'), <>
+                {field('dl', t('اللغة الأساسية للموقع', 'Default site language'), <select id="dl" className="select" value={s.defaultLang ?? 'ar'} onChange={(e) => set({ defaultLang: e.target.value as 'ar' | 'en' })}><option value="ar">العربية</option><option value="en">English</option></select>, t('اللغة اللي بتفتح بيها الصفحة لأي زائر جديد. اللي بيغيّر اللغة بنفسه بتتفتح له اللغة اللي اختارها.', 'The language a new visitor sees first. Visitors who switch language keep their own choice.'), false)}
                 <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.allowRegistration !== false} onChange={(e) => set({ allowRegistration: e.target.checked })} /> {t('اسمح للعملاء الجدد بإنشاء حساب من الموقع', 'Let new customers create an account on the website')}</label>
               </>)}
               {card(t('عرض الموقع', 'Website display'), null, <>
@@ -236,6 +248,7 @@ export function AdminSettings() {
                       {field(`pm-en${i}`, t('الاسم (إنجليزي)', 'Name (English)'), <input id={`pm-en${i}`} className="input latin" maxLength={80} value={m.nameEn} onChange={(e) => setPay(i, { nameEn: e.target.value })} />, undefined, false)}
                       {field(`pm-t${i}`, t('النوع', 'Type'), <select id={`pm-t${i}`} className="select" value={m.type} onChange={(e) => setPay(i, { type: e.target.value as PayMethod['type'] })}>{PAY_TYPES.map(([k, ar, en]) => <option key={k} value={k}>{t(ar, en)}</option>)}</select>, undefined, false)}
                       <label className="check"><input type="checkbox" checked={!!m.active} onChange={(e) => setPay(i, { active: e.target.checked })} /> {t('مفعّلة', 'Active')}</label>
+                      {m.type !== 'stripe' && m.type !== 'paymob' && field(`pm-q${i}`, t('QR Code للدفع (صورة)', 'Payment QR code (image)'), <div className="row-actions">{m.qr ? <img src={assetUrl(m.qr)} alt="QR" style={{ width: 96, height: 96, objectFit: 'contain', background: '#fff', borderRadius: 10, border: '1px solid var(--nt-fog)' }} /> : <span className="muted">{t('مفيش صورة', 'No image')}</span>}<input id={`pm-q${i}`} type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadQr(i, e.target.files?.[0])} />{m.qr && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPay(i, { qr: '' })}>{t('إزالة', 'Remove')}</button>}</div>, t('مثال: QR بتاع إنستا باي من تطبيق البنك. بيظهر للعميل في صفحة الطلب والفاتورة.', 'e.g. your InstaPay QR from the bank app. Shown to the customer on the order and the invoice.'))}
                       {field(`pm-d${i}`, t('تفاصيل الدفع (تظهر للعميل بعد الطلب)', 'Payment details (shown after the order)'), <textarea id={`pm-d${i}`} className="textarea" maxLength={600} value={m.details ?? ''} placeholder={t('مثال: بنك مصر، حساب 1234…، باسم نوتش\nأو رابط الدفع https://…', 'e.g. Bank, account 1234…, in the name of Notch\nor a payment link https://…')} onChange={(e) => setPay(i, { details: e.target.value })} />)}
                     </div>
                     <div><button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ payments: pays.filter((_, j) => j !== i) })}>{t('حذف', 'Remove')}</button></div>

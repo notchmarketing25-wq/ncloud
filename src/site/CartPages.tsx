@@ -8,7 +8,7 @@ import { day, InvoiceTag, Modal, Page, Table } from '../ui';
 import { useCart, type CartItem } from './cart';
 import { type CPlan, useCatalog } from './catalog';
 import { Money } from './parts';
-import { useCurrency } from './settings';
+import { assetUrl, useCurrency } from './settings';
 import { useAuth } from '../auth';
 
 const PERIODS: Record<string, number[]> = { month: [1, 3, 6, 12], year: [1, 2, 3], once: [1] };
@@ -88,13 +88,14 @@ export function OrderRedirect() {
   return null;
 }
 
-const typeLabel = (m: PayMethod, t: (a: string, e: string) => string) => ({ bank: t('تحويل بنكي', 'Bank transfer'), wallet: t('محفظة / إنستا باي', 'Wallet / InstaPay'), card: t('بطاقة / رابط دفع', 'Card / payment link'), cash: t('كاش عند الاستلام', 'Cash'), other: t('أخرى', 'Other'), stripe: t('دفع أونلاين بالبطاقة', 'Online card payment'), paymob: t('دفع أونلاين (Paymob)', 'Online payment (Paymob)') }[m.type]);
+const typeLabel = (m: PayMethod, t: (a: string, e: string) => string) => ({ bank: t('تحويل بنكي', 'Bank transfer'), wallet: t('محفظة / إنستا باي', 'Wallet / InstaPay'), card: t('بطاقة / رابط دفع', 'Card / payment link'), cash: t('كاش عند الاستلام', 'Cash'), instapay: t('إنستا باي', 'InstaPay'), fawateerk: t('فواتيرك', 'Fawateerk'), other: t('أخرى', 'Other'), stripe: t('دفع أونلاين بالبطاقة', 'Online card payment'), paymob: t('دفع أونلاين (Paymob)', 'Online payment (Paymob)') }[m.type]);
 
 export function PayDetails({ m }: { m: PayMethod }) {
   const { t, L } = useI18n();
   const urls = (m.details ?? '').split(/(\bhttps?:\/\/\S+)/g);
   return (
     <div className="pay-box"><b>{L({ ar: m.nameAr || m.nameEn, en: m.nameEn || m.nameAr })}</b> <span className="tag">{typeLabel(m, t)}</span>
+      {m.qr && <img className="pay-qr" src={assetUrl(m.qr)} alt="QR" />}
       {m.details && <p className="pay-details">{urls.map((x, i) => (/^https?:\/\//.test(x) ? <a key={i} className="link latin" href={x} target="_blank" rel="noreferrer">{x}</a> : <span key={i}>{x}</span>))}</p>}
     </div>
   );

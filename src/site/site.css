@@ -172,3 +172,15 @@ html[lang='ar'] .footer h5 { text-transform: none; letter-spacing: 0; font-famil
 
 .logo-img img { display: block; height: 34px; width: auto; max-width: 180px; object-fit: contain; }
 .side .logo-img img { height: 38px; }
+.tld-ext { color: var(--nt-volt, #ff5a36); font-size: 1.05rem; }
+.dresults .dn { font-size: 1.1rem; }
+.dresults .dn-t { color: var(--nt-volt, #ff5a36); }
+.dresults li.drow.best { background: rgba(0, 0, 0, .04); border-radius: 14px; border-bottom: 0; padding: 16px 14px; }
+.dresults li.drow.best .dn { font-size: 1.5rem; }
+.dresults li.drow.taken { opacity: .6; }
+.dresults li.dhead { display: flex; justify-content: space-between; font-size: 13px; color: var(--nt-slate); border-bottom: 0; }
+.dresults li.dtaken { display: block; }
+.dresults li.dtaken summary { cursor: pointer; font-size: 13px; color: var(--nt-slate); }
+.dresults li.dtaken ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.dresults li.dtaken li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border: 0; }
+@media (max-width: 560px) { .dresults li.drow { grid-template-columns: 1fr auto; } .dresults li.drow .btn { grid-column: 1 / -1; } }

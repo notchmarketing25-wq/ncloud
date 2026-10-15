@@ -10,11 +10,13 @@ const SiteCtx = createContext<Ctx>({ settings: defaults, refresh: async () => {}
 
 /** Public site settings from the API (company name, placeholder tags on/off, currency). Static hosts keep the defaults. */
 export function SiteProvider({ children }: { children: ReactNode }) {
+  const { applyDefault } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);
   const refresh = useCallback(async () => {
     try { setSettings({ ...defaults, ...(await api<Settings>('public/settings')) }); } catch { /* static host: keep defaults */ }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (settings.defaultLang) applyDefault(settings.defaultLang); }, [settings.defaultLang, applyDefault]);
   // Your brand: accent colour and the browser-tab icon follow Settings → Branding.
   const accent = settings.brand?.accent;
   const icon = settings.brand?.icon;

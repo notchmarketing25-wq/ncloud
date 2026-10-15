@@ -5,10 +5,11 @@ import { Ltr, useI18n } from '../i18n';
 import { post } from '../lib/api';
 import type { DnsRec } from '../lib/types';
 import { useCurrency, useSite } from '../site/settings';
+import { SvcCell } from '../site/svc';
 import { day, Meter, Modal, Page, StatusTag, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
-import { ClientLine, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, Strip, Tabs, under, useAll, type Item } from './kit';
+import { ClientLine, DNS_PULL, DNS_PUSH, gb, Kv, Notice, num, PROVIDERS, pctUsed, SideCard, STATUS, StatusMenu, Strip, Tabs, under, useAll, type Item } from './kit';
 
 export { AdminUpdates } from './Updates';
 
@@ -175,7 +176,7 @@ export function AdminWebsites() {
   const nav = useNavigate();
   const { all, error, load } = useAll();
   const { err, ok, run } = useActions(load);
-  const [tab, setTab] = useState<'all' | 'active' | 'pending' | 'stopped'>('all');
+  const [tab, setTab] = useState<'all' | 'active' | 'pending' | 'stopped' | 'archived'>('all');
   const [q, setQ] = useState('');
   const [form, setForm] = useState<Record<string, unknown> | null>(null);
   const sites = all?.items.websites ?? [];
@@ -192,24 +193,24 @@ export function AdminWebsites() {
       <Strip items={[[t('المواقع', 'Websites'), <span className="latin">{sites.length}</span>], [t('شغّالة', 'Active'), <span className="latin">{count('active')}</span>], [t('المساحة المستخدمة', 'Disk in use'), <span className="latin">{gb(totalUsed)}</span>], [t('من غير استضافة', 'Without hosting'), <span className="latin">{sites.filter((w) => !w.hostingId).length}</span>]]} />
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="cust-bar">
-          <Tabs value={tab} onChange={setTab} tabs={[['all', t('الكل', 'All'), count('all')], ['active', t('نشط', 'Active'), count('active')], ['pending', t('قيد التفعيل', 'Pending'), count('pending')], ['stopped', t('متوقف', 'Stopped'), count('stopped')]]} />
+          <Tabs value={tab} onChange={setTab} tabs={[['all', t('الكل', 'All'), count('all')], ['active', t('نشط', 'Active'), count('active')], ['pending', t('قيد التفعيل', 'Pending'), count('pending')], ['stopped', t('متوقف', 'Stopped'), count('stopped')], ['archived', t('مؤرشف', 'Archived'), count('archived')]]} />
           <input className="input" style={{ height: 40, width: 220 }} placeholder={t('ابحث', 'Search')} aria-label={t('بحث', 'Search')} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
           <table className="tbl">
-            <thead><tr><th>{t('الموقع', 'Website')}</th><th>{t('الحالة', 'Status')}</th><th>{t('الدومين', 'Domain')}</th><th>{t('الاستضافة', 'Hosting')}</th><th>{t('المساحة', 'Disk')}</th><th>{t('العميل', 'Client')}</th></tr></thead>
+            <thead><tr><th>{t('الموقع', 'Website')}</th><th>{t('الحالة', 'Status')}</th><th>{t('الدومين', 'Domain')}</th><th>{t('الاستضافة', 'Hosting')}</th><th>{t('المساحة', 'Disk')}</th><th>{t('العميل', 'Client')}</th><th /></tr></thead>
             <tbody>
               {pageRows.map((w) => {
                 const dom = all?.items.domains.find((x) => x.id === w.domainId); const host = all?.items.hosting.find((x) => x.id === w.hostingId);
                 return (
                   <tr key={w.id} className="row-link" onClick={() => nav(`/admin/websites/${w.id}`)}>
-                    <td><Link className="link" to={`/admin/websites/${w.id}`} onClick={(e) => e.stopPropagation()}><Ltr>{String(w.name)}</Ltr></Link></td><td><StatusTag s={w.status as 'active'} /></td>
+                    <td><SvcCell host={String(w.url || dom?.name || w.name)} name={<Ltr>{String(w.name)}</Ltr>} sub={`${String(w.sub ?? '')}${w.expires ? ' · ' + String(w.expires) : ''}`} /></td><td><StatusTag s={w.status as 'active'} /></td>
                     <td>{dom ? <Ltr>{String(dom.name)}</Ltr> : '-'}</td><td>{host ? String(host.plan) : '-'}</td>
-                    <td style={{ minWidth: 130 }}><span className="latin">{gb(w.usedGb)} / {gb(w.diskGb)}</span>{num(w.diskGb) > 0 && <Meter value={pctUsed(w)} tone={pctUsed(w) > 85 ? 'warn' : undefined} />}</td><td>{owner(w.uid)}</td>
+                    <td style={{ minWidth: 130 }}><span className="latin">{gb(w.usedGb)} / {gb(w.diskGb)}</span>{num(w.diskGb) > 0 && <Meter value={pctUsed(w)} tone={pctUsed(w) > 85 ? 'warn' : undefined} />}</td><td>{owner(w.uid)}</td><td><StatusMenu res="websites" item={w} run={run} /></td>
                   </tr>
                 );
               })}
-              {shown.length === 0 && <tr><td colSpan={6}><div className="empty-note">{all ? t('مفيش مواقع. اجلبها من Apps أو أضف واحد.', 'No websites. Import them from Apps or add one.') : '…'}</div></td></tr>}
+              {shown.length === 0 && <tr><td colSpan={7}><div className="empty-note">{all ? t('مفيش مواقع. اجلبها من Apps أو أضف واحد.', 'No websites. Import them from Apps or add one.') : '…'}</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -422,7 +423,7 @@ export function AdminUserDetail() {
   const move = (res: string, itemId: string) => { const it = all.items[res].find((x) => x.id === itemId); if (it) void run(() => post('admin/item-save', { item: { ...it, uid: u.id } }, { res }), t('اتربط بالعميل.', 'Linked to the client.')).then(() => setPick({ ...pick, [res]: '' })); };
   const section = SECTIONS.find((x) => x.key === tab);
   return (
-    <Page title={u.name} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: u.name, email: u.email, phone: u.phone ?? '', company: u.company ?? '' })}>{t('تعديل', 'Edit')}</button><Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link></div>}>
+    <Page title={u.name} action={<div className="row-actions">{u.role === 'client' && <button className={`btn btn-sm ${u.disabled ? 'btn-accent' : 'btn-ghost'}`} onClick={() => { if (u.disabled || window.confirm(t('توقف حساب العميل؟ مش هيقدر يدخل لحد ما تفعّله.', 'Suspend this account? The customer cannot sign in until you reactivate it.'))) void run(() => post('admin/user-update', { id: u.id, disabled: !u.disabled }), u.disabled ? t('اتفعّل الحساب.', 'Account activated.') : t('اتوقف الحساب.', 'Account suspended.')); }}>{u.disabled ? t('تفعيل الحساب', 'Activate account') : t('إيقاف الحساب', 'Suspend account')}</button>}<button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: u.name, email: u.email, phone: u.phone ?? '', company: u.company ?? '' })}>{t('تعديل', 'Edit')}</button><Link to="/admin/users" className="btn btn-ghost btn-sm">{t('← العملاء', '← Customers')}</Link></div>}>
       <Notice err={err || error} ok={ok} />
       <Strip items={[[t('الخدمات', 'Services'), <span className="latin">{services}</span>], [t('مدفوع', 'Paid'), <span className="latin">{paidTotal} {cur}</span>], [t('مستحق', 'Due'), <span className="latin">{dueTotal} {cur}</span>], [t('عميل من', 'Customer since'), <Ltr>{day(String(u.created ?? '')) || '-'}</Ltr>], [t('تذاكر', 'Tickets'), <span className="latin">{tickets.length}</span>]]} />
       <div className="cust-layout">

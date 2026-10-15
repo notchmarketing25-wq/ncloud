@@ -3,7 +3,8 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { api, ApiError, post } from '../lib/api';
-import type { Business, Invoice, Order } from '../lib/types';
+import type { Business, Invoice, Order, PayMethod } from '../lib/types';
+import { PayDetails } from '../site/CartPages';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency, useSite, assetUrl } from '../site/settings';
 import { InvoiceTag, Page, day } from '../ui';
@@ -137,7 +138,7 @@ export function RenewButton({ res, id, expires }: { res: 'domains' | 'hosting'; 
 
 /* ───────── printable invoice (Print → Save as PDF) ───────── */
 type Line = { name: string; qty: string; price: number };
-function Sheet({ inv, lines, biz, taxRate, customer, order }: { inv: Invoice; lines: Line[]; biz: Business; taxRate: number; customer: { name: string; email: string; phone?: string; company?: string }; order?: Order }) {
+function Sheet({ inv, lines, biz, taxRate, customer, order, methods = [], payLink }: { inv: Invoice; lines: Line[]; biz: Business; taxRate: number; customer: { name: string; email: string; phone?: string; company?: string }; order?: Order; methods?: PayMethod[]; payLink?: string }) {
   const { t } = useI18n();
   const { settings } = useSite();
   const cur = useCurrency();
@@ -162,6 +163,14 @@ function Sheet({ inv, lines, biz, taxRate, customer, order }: { inv: Invoice; li
         <div className="inv-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{f(total)} {cur}</b></div>
         {taxRate > 0 && <small className="muted">{t('الأسعار شاملة الضريبة.', 'Prices include tax.')}</small>}
       </div>
+      {inv.status === 'due' && (
+        <section className="inv-pay">
+          <h3>{t('طرق الدفع', 'How to pay')}</h3>
+          {payLink && <Link className="btn btn-accent btn-sm no-print" to={payLink}>{t('افتح الطلب وادفع', 'Open the order and pay')}</Link>}
+          <div className="inv-methods">{methods.filter((m) => m.type !== 'stripe' && m.type !== 'paymob').map((m) => <PayDetails key={m.id} m={m} />)}{methods.some((m) => m.type === 'stripe' || m.type === 'paymob') && <p className="muted">{t('تقدر تدفع أونلاين بالبطاقة من صفحة الطلب.', 'You can also pay online by card from the order page.')}</p>}</div>
+          <p className="muted">{t('بعد الدفع ابعت رقم العملية، وهنفعّل الخدمة أول ما نتأكد.', 'After paying, send the transaction reference and we activate the service once we confirm it.')}</p>
+        </section>
+      )}
       <footer className="muted">{t('شكرًا لتعاملكم معنا.', 'Thank you for your business.')}</footer>
     </div>
   );
@@ -173,13 +182,14 @@ export function PortalInvoice() {
   const { t, L } = useI18n();
   const { id } = useParams();
   const { data } = usePortal();
+  useEffect(() => { if (id) void post('invoices/view', { id }).catch(() => undefined); }, [id]);
   if (!data) return null;
   const inv = data.invoices.find((x) => x.id === id);
   if (!inv) return <Navigate to="/portal/billing" replace />;
   const order = (data.orders ?? []).find((o) => o.id === (inv as Invoice & { orderId?: string }).orderId);
   return (
     <Page title={`${t('فاتورة', 'Invoice')} ${inv.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button><Link to="/portal/billing" className="btn btn-ghost btn-sm">{t('← الفواتير', '← Billing')}</Link></div>}>
-      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={data.business ?? {}} taxRate={data.taxRate ?? 0} customer={data.me ?? { name: '', email: '' }} order={order} />
+      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={data.business ?? {}} taxRate={data.taxRate ?? 0} customer={data.me ?? { name: '', email: '' }} order={order} methods={data.payments ?? []} payLink={order ? `/portal/orders/${order.id}` : undefined} />
     </Page>
   );
 }
@@ -188,8 +198,8 @@ export function AdminInvoice() {
   const { t, L } = useI18n();
   const { id } = useParams();
   const { all } = useAll();
-  const [set, setSet] = useState<{ business?: Business; taxRate?: number } | null>(null);
-  useEffect(() => { api<{ business?: Business; taxRate?: number }>('admin/settings').then(setSet).catch(() => setSet({})); }, []);
+  const [set, setSet] = useState<{ business?: Business; taxRate?: number; payments?: PayMethod[] } | null>(null);
+  useEffect(() => { api<{ business?: Business; taxRate?: number; payments?: PayMethod[] }>('admin/settings').then(setSet).catch(() => setSet({})); }, []);
   if (!all || !set) return null;
   const inv = all.items.invoices?.find((x) => x.id === id) as unknown as Invoice & { uid: string; orderId?: string } | undefined;
   if (!inv) return <Navigate to="/admin/invoices" replace />;
@@ -197,7 +207,7 @@ export function AdminInvoice() {
   const u = all.users.find((x) => x.id === inv.uid);
   return (
     <Page title={`${t('فاتورة', 'Invoice')} ${inv.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button><Link to="/admin/invoices" className="btn btn-ghost btn-sm">{t('← الفواتير', '← Invoices')}</Link></div>}>
-      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={set.business ?? {}} taxRate={set.taxRate ?? 0} customer={u ? { name: u.name, email: u.email, phone: u.phone, company: u.company } : { name: '-', email: '' }} order={order} />
+      <Sheet inv={inv} lines={toLines(order, inv, t, L)} biz={set.business ?? {}} taxRate={set.taxRate ?? 0} methods={(set.payments ?? []).filter((m) => m.active)} customer={u ? { name: u.name, email: u.email, phone: u.phone, company: u.company } : { name: '-', email: '' }} order={order} />
       {u && <p className="muted"><ClientLine users={all.users} uid={u.id} /></p>}
     </Page>
   );

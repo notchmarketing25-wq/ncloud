@@ -3,9 +3,10 @@ import { useAuth } from '../auth';
 import { api } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from './cart';
+import { DomainName } from './svc';
 import { tlds } from '../data/content';
 import type { CPlan } from './catalog';
-import { Ltr, useI18n } from '../i18n';
+import { useI18n } from '../i18n';
 import { useCurrency, useSite } from './settings';
 
 export function SectionHead({ title, text }: { title: string; text?: string }) {
@@ -90,27 +91,32 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
   const [q, setQ] = useState('');
   const [name, setName] = useState('');
   const [live, setLive] = useState<Found[] | null>(null);
+  const [ms, setMs] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const raw = q.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[^a-z0-9.-]/g, '');
     const clean = raw.split('.')[0];
-    setName(clean); setErr(''); setLive(null);
+    setName(clean); setErr(''); setLive(null); setMs(null);
     if (mode !== 'server' || !clean) return;
     setBusy(true);
-    try { const r = await api<{ results: Found[]; errors?: Record<string, string> }>('public/domain-search', undefined, { q: raw }); setLive(r.results); if (r.results.length === 0 && r.errors && Object.keys(r.errors).length) setErr(t('البحث مش متاح لحظيًا، جرّب بعد شوية.', 'Search is temporarily unavailable, try again shortly.')); }
+    try { const r = await api<{ results: Found[]; errors?: Record<string, string>; ms?: number }>('public/domain-search', undefined, { q: raw }); setLive(r.results); setMs(typeof r.ms === 'number' ? r.ms : null); if (r.results.length === 0 && r.errors && Object.keys(r.errors).length) setErr(t('البحث مش متاح لحظيًا، جرّب بعد شوية.', 'Search is temporarily unavailable, try again shortly.')); }
     catch (x) { setErr(x instanceof Error && /enabled|prices/.test(x.message) ? t('البحث غير متاح حاليًا.', 'Search is not available right now.') : t('تعذّر البحث، حاول تاني.', 'Search failed, please try again.')); }
     finally { setBusy(false); }
   };
-  const row = (domain: string, taken: boolean, price: ReactNode, key: string) => (
-    <li key={key}>
-      <span className="dot-wrap"><i className={`dot${taken ? ' bad' : ''}`} /> <Ltr>{domain}</Ltr></span>
+  const add = (domain: string) => { if (mode === 'server') { addDomain(domain); nav('/cart'); } else nav(`/portal/support?new=domain&d=${encodeURIComponent(domain)}`); };
+  const price = (r: Found) => <><b className="latin">{r.sell.toLocaleString('en-US')}</b> <small>{r.currency}</small> <small className="muted">/ {t('سنة', 'yr')}</small></>;
+  const row = (domain: string, taken: boolean, pr: ReactNode, key: string, best = false) => (
+    <li key={key} className={`drow${best ? ' best' : ''}${taken ? ' taken' : ''}`}>
+      <span className="dot-wrap">{best && <span className="tag volt">{t('الأنسب', 'Best match')}</span>}<DomainName name={domain} /></span>
       <span className={`tag ${taken ? 'bad' : 'ok'}`}>{taken ? t('محجوز', 'Taken') : t('متاح', 'Available')}</span>
-      <span className="dprice">{taken ? '—' : price}</span>
-      <button type="button" className="btn btn-ghost btn-sm" disabled={taken} onClick={() => { if (mode === 'server') { addDomain(domain); nav('/cart'); } else nav(`/portal/support?new=domain&d=${encodeURIComponent(domain)}`); }}>{t('أضف للسلة', 'Add to cart')}</button>
+      <span className="dprice">{taken ? '—' : pr}</span>
+      <button type="button" className={`btn btn-sm ${best ? 'btn-accent' : 'btn-ghost'}`} disabled={taken} onClick={() => add(domain)}>{t('أضف للسلة', 'Add to cart')}</button>
     </li>
   );
+  const avail = (live ?? []).filter((r) => r.available);
+  const taken = (live ?? []).filter((r) => !r.available);
   return (
     <div className={dark ? 'dsearch on-dark' : 'dsearch'}>
       <form onSubmit={submit} role="search">
@@ -122,7 +128,10 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
         <ul className="dresults" aria-live="polite">
           {mode === 'server' ? (
             <>
-              {live && live.map((r) => row(r.domain, !r.available, <><b className="latin">{r.sell.toLocaleString('en-US')}</b> <small>{r.currency}</small> <small className="muted">/ {t('سنة', 'yr')}</small></>, r.domain))}
+              {busy && <li className="dnote">{t('بنسأل المسجّلين…', 'Checking with the registrars…')}</li>}
+              {live && live.length > 0 && <li className="dhead"><span>{t(`${avail.length} متاح من ${live.length}`, `${avail.length} available of ${live.length}`)}</span>{ms !== null && <span className="muted latin">{ms} ms</span>}</li>}
+              {avail.map((r, i) => row(r.domain, false, price(r), r.domain, i === 0))}
+              {taken.length > 0 && <li className="dtaken"><details><summary>{t(`محجوز (${taken.length})`, `Taken (${taken.length})`)}</summary><ul>{taken.map((r) => <li key={r.domain} className="drow taken"><DomainName name={r.domain} /><span className="tag bad">{t('محجوز', 'Taken')}</span></li>)}</ul></details></li>}
               {live && live.length === 0 && <li className="dnote">{t('مفيش نتائج للامتدادات دي.', 'No results for these extensions.')}</li>}
               {err && <li className="dnote">{err}</li>}
             </>

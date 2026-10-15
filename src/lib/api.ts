@@ -1,5 +1,5 @@
 /** Thin client for api/index.php. Static hosts (no PHP) answer with HTML/404, which callers treat as "demo mode". */
-export type User = { id: string; name: string; email: string; role: 'admin' | 'client'; created?: string | null };
+export type User = { disabled?: boolean; id: string; name: string; email: string; role: 'admin' | 'client'; created?: string | null };
 
 function base(): string {
   const b = import.meta.env.BASE_URL;
