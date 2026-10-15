@@ -142,7 +142,7 @@ export function PortalLayout() {
   const nav = useNavigate();
   const { mode, user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  if (mode === 'checking') return null;
+  if (mode === 'checking') return <div className="boot-loading" role="status">…</div>;
   if (!user) return <Navigate to={`/portal/login?next=${encodeURIComponent(window.location.hash.replace(/^#/, '') || window.location.pathname)}`} replace />;
   const items = [
     { to: '/portal', label: t('نظرة عامة', 'Overview'), end: true },

@@ -24,7 +24,7 @@ export function AdminLayout() {
     if (mode !== 'server' || user?.role !== 'admin') return;
     api<Overview>('admin/overview').then((o) => setBadges({ tickets: o.openTickets, leads: o.newLeads, orders: o.pendingOrders ?? 0 })).catch(() => undefined);
   }, [mode, user, pathname]);
-  if (mode === 'checking') return null;
+  if (mode === 'checking') return <div className="boot-loading" role="status">…</div>;
   if (!user) return <Navigate to="/portal/login" replace />;
   if (mode === 'demo') return <DemoNotice />;
   if (user.role !== 'admin') return <Navigate to="/portal" replace />;

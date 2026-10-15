@@ -314,9 +314,9 @@ function smtp_read($fp) { $out = ''; while (($l = fgets($fp, 515)) !== false) { 
 function smtp_cmd($fp, $cmd, $ok) { if ($cmd !== null) { fwrite($fp, $cmd . "\r\n"); } $r = smtp_read($fp); if (!in_array((int) substr($r, 0, 3), (array) $ok, true)) { throw new Exception(trim($r)); } return $r; }
 function smtp_send($c, $to, $subject, $text, $replyTo) {
     $host = $c['host']; $port = (int) $c['port'] ?: 587; $sec = isset($c['secure']) ? $c['secure'] : 'tls';
-    $fp = @stream_socket_client(($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $en, $es, 12);
+    $fp = @stream_socket_client(($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $en, $es, 6);
     if (!$fp) { throw new Exception('cannot connect to ' . $host . ':' . $port . ' (' . $es . ')'); }
-    stream_set_timeout($fp, 12);
+    stream_set_timeout($fp, 8);
     try {
         smtp_cmd($fp, null, 220);
         $me = isset($_SERVER['SERVER_NAME']) ? preg_replace('/[^A-Za-z0-9.\-]/', '', $_SERVER['SERVER_NAME']) : 'localhost';
@@ -476,7 +476,11 @@ function nc_daily($force = false) {
         }
         return array('ran' => true, 'mails' => $mails, 'created' => $created, 'db' => $db);
     });
-    if (!empty($res['ran'])) { foreach ($res['mails'] as $m) { nc_mail($res['db'], $m[0], $m[1], $m[2]); } }
+    if (!empty($res['ran']) && $res['mails']) {
+        // Reminder emails go out after the response is sent, and stop at the first failure (a dead mail server must never slow the panel down).
+        $send = function () use ($res) { foreach ($res['mails'] as $m) { if (nc_mail($res['db'], $m[0], $m[1], $m[2]) !== true) { break; } } };
+        if ($force) { $send(); } else { register_shutdown_function(function () use ($send) { if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); } @ignore_user_abort(true); $send(); }); }
+    }
     return $res;
 }
 
@@ -521,6 +525,8 @@ if (!is_file(NC_DATA . '/installed.lock')) {
     fail('not installed', 503);
 }
 start_session();
+// PHP keeps the session file locked until the script ends, so one slow request (a mail server that does not answer, a provider call) would freeze every other page for the same user. Only sign-in / sign-out need to write the session.
+if (!in_array($r, array('auth/login', 'auth/register', 'auth/logout'), true)) { session_write_close(); }
 
 if ($r === 'admin/update' || $r === 'admin/update/restore') {
     require_once __DIR__ . '/update.php';

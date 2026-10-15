@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Fix: the panel could show a blank 'site failed to load' page when a slow request (for example a mail server that does not answer) held the PHP session lock. The session is now released at once, expiry reminder emails are sent after the response and stop at the first failure, SMTP timeouts are shorter, and the admin/portal show a loading mark instead of a blank page while signing in."
+ ],
+ "ar": [
+  "إصلاح: لوحة التحكم كانت ممكن تفتح صفحة بيضاء 'الموقع لم يُحمَّل' لما طلب بطيء (زي سيرفر إيميل مش بيرد) يمسك قفل جلسة PHP. دلوقتي الجلسة بتتحرر فورًا، وإيميلات تذكير الانتهاء بتتبعت بعد الرد وتقف عند أول فشل، ومهلة SMTP أقصر، واللوحة بتعرض علامة تحميل بدل الصفحة البيضاء أثناء تسجيل الدخول."
+ ]
+}

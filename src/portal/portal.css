@@ -311,3 +311,4 @@
 .inv-pay h3 { margin: 0; }
 .inv-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 @media print { .no-print { display: none !important; } }
+.boot-loading { display: grid; place-items: center; min-height: 100vh; font-size: 2rem; color: var(--nt-slate); }
