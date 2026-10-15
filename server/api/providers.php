@@ -1118,7 +1118,10 @@ class NcImap {
         $r = $this->cmd('UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', 2500000);
         if (!$r['ok'] || !preg_match('/\{(\d+)\}\r?\n/', $r['data'], $m, PREG_OFFSET_CAPTURE)) { throw new Exception('message not found'); }
         $raw = substr($r['data'], $m[0][1] + strlen($m[0][0]), (int) $m[1][0]); // exactly the literal: the closing ")" of the FETCH is not part of the mail
-        return mail_parse($raw);
+        $msg = mail_parse($raw);
+        $msg['body'] = !empty($msg['htmlRaw']) ? mail_html_clean($msg['htmlRaw'], isset($msg['cids']) ? $msg['cids'] : array()) : '';
+        unset($msg['htmlRaw'], $msg['cids']);
+        return $msg;
     }
     function select($folder) { $r = $this->cmd('SELECT ' . $this->q(mail_utf7_enc($folder))); if (!$r['ok']) { throw new Exception('folder not found'); } return preg_match('/\* (\d+) EXISTS/', $r['data'], $m) ? (int) $m[1] : 0; }
     function status($folder) { $r = $this->cmd('STATUS ' . $this->q(mail_utf7_enc($folder)) . ' (MESSAGES UNSEEN)'); return array('messages' => preg_match('/MESSAGES (\d+)/', $r['data'], $m) ? (int) $m[1] : 0, 'unseen' => preg_match('/UNSEEN (\d+)/', $r['data'], $u) ? (int) $u[1] : 0); }
@@ -1170,6 +1173,15 @@ function mail_open($db, $mb, $pw) {
     }
     throw new Exception('the mail server refused the login. If the password was not changed, it is usually a temporary limit on simultaneous logins: wait a minute and refresh');
 }
+/** HTML of a message made safe to show: no scripts / frames / forms / event handlers; cid: images become data URIs. It is still shown in a sandboxed iframe with a strict CSP. */
+function mail_html_clean($html, $cids) {
+    $html = preg_replace('#<(script|iframe|object|embed|form|link|meta|base|applet|frameset|frame)\b[^>]*>.*?</\1\s*>#is', '', (string) $html);
+    $html = preg_replace('#<(script|iframe|object|embed|form|link|meta|base|applet|input|button|textarea|select)\b[^>]*>#i', '', $html);
+    $html = preg_replace('#\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html);
+    $html = preg_replace('#(href|src|xlink:href|action|formaction|background)\s*=\s*(["\']?)\s*(javascript|vbscript|data:text)[^"\'>\s]*#i', '$1=$2#', $html);
+    if ($cids) { $html = preg_replace_callback('#cid:([^"\'\s>)]+)#i', function ($m) use ($cids) { $k = trim(urldecode($m[1]), '<>'); return isset($cids[$k]) ? $cids[$k] : $m[0]; }, $html); }
+    return $html;
+}
 function mail_utf7($s) { return function_exists('mb_convert_encoding') && strpos($s, '&') !== false ? @mb_convert_encoding(str_replace(',', '/', $s), 'UTF-8', 'UTF7-IMAP') ?: $s : $s; }
 function mail_utf7_enc($s) { return function_exists('mb_convert_encoding') && preg_match('/[^\x20-\x7e]/', $s) ? @mb_convert_encoding($s, 'UTF7-IMAP', 'UTF-8') ?: $s : $s; }
 function mail_dec($v) {
@@ -1200,10 +1212,12 @@ function mail_parse($raw, $depth = 0, $keep = false) {
     $ct = isset($hdr['content-type']) ? $hdr['content-type'] : 'text/plain'; $enc = isset($hdr['content-transfer-encoding']) ? $hdr['content-transfer-encoding'] : '7bit';
     $res = array('headers' => array_intersect_key($hdr, array_flip(array('from', 'to', 'cc', 'subject', 'date', 'reply-to', 'message-id', 'references', 'in-reply-to'))), 'text' => '', 'html' => false, 'attachments' => array());
     if (preg_match('#^multipart/#i', $ct) && $depth < 5 && preg_match('/boundary="?([^";\s]+)"?/i', $ct, $b)) {
-        $plain = ''; $html = '';
+        $plain = ''; $html = ''; $res['htmlRaw'] = ''; $res['cids'] = array();
         foreach (preg_split('/--' . preg_quote($b[1], '/') . '(?:--)?\r?\n?/', $body) as $seg) {
             if (trim($seg) === '') { continue; }
             $sub = mail_parse($seg, $depth + 1, $keep);
+            if (!empty($sub['htmlRaw'])) { $res['htmlRaw'] .= ($res['htmlRaw'] !== '' ? "\n" : '') . $sub['htmlRaw']; }
+            if (!empty($sub['cids'])) { $res['cids'] = array_merge($res['cids'], $sub['cids']); }
             if ($sub['text'] !== '') { if ($sub['html']) { $html .= ($html ? "\n" : '') . $sub['text']; } else { $plain .= ($plain ? "\n" : '') . $sub['text']; } }
             $res['attachments'] = array_merge($res['attachments'], $sub['attachments']);
         }
@@ -1211,11 +1225,17 @@ function mail_parse($raw, $depth = 0, $keep = false) {
         return $res;
     }
     $disp = isset($hdr['content-disposition']) ? $hdr['content-disposition'] : '';
+    // Images embedded in the message body (cid:…): kept as data URIs so the HTML view can show them.
+    if (isset($hdr['content-id']) && preg_match('#^image/#i', $ct) && strlen($body) < 2200000) {
+        $bin = strtolower(trim($enc)) === 'base64' ? base64_decode($body) : (strtolower(trim($enc)) === 'quoted-printable' ? quoted_printable_decode($body) : $body);
+        $mime = strtolower(trim(explode(';', $ct)[0]));
+        if ($bin !== '' && $bin !== false && $mime !== 'image/svg+xml') { $res['cids'] = array(trim(trim($hdr['content-id']), '<>') => 'data:' . $mime . ';base64,' . base64_encode($bin)); return $res; }
+    }
     $name = ''; if (preg_match('/(?:file)?name\*?="?([^";]+)"?/i', $disp . ' ' . $ct, $nm)) { $name = mail_dec(urldecode($nm[1])); }
     if (stripos($disp, 'attachment') === 0 || ($name !== '' && !preg_match('#^text/(plain|html)#i', $ct))) { $att = array('name' => $name !== '' ? $name : 'attachment', 'type' => strtolower(trim(explode(';', $ct)[0])), 'size' => strlen($body)); if ($keep) { $att['data'] = strtolower(trim($enc)) === 'base64' ? base64_decode($body) : (strtolower(trim($enc)) === 'quoted-printable' ? quoted_printable_decode($body) : $body); $att['size'] = strlen($att['data']); } $res['attachments'][] = $att; return $res; }
     $cs = preg_match('/charset="?([^";\s]+)"?/i', $ct, $cm) ? $cm[1] : '';
     $txt = mail_body_decode($body, $enc, $cs);
-    if (preg_match('#^text/html#i', $ct)) { $txt = html_entity_decode(trim(preg_replace('/[ \t]+/', ' ', strip_tags(preg_replace(array('#<(script|style)[^>]*>.*?</\1>#is', '#<br\s*/?>|</p>|</div>|</tr>|</h\d>#i'), array('', "\n"), $txt)))), ENT_QUOTES, 'UTF-8'); $res['html'] = true; }
+    if (preg_match('#^text/html#i', $ct)) { $res['htmlRaw'] = nc_substr($txt, 400000); $txt = html_entity_decode(trim(preg_replace('/[ \t]+/', ' ', strip_tags(preg_replace(array('#<(script|style)[^>]*>.*?</\1>#is', '#<br\s*/?>|</p>|</div>|</tr>|</h\d>#i'), array('', "\n"), $txt)))), ENT_QUOTES, 'UTF-8'); $res['html'] = true; }
     $res['text'] = nc_substr(preg_replace("/\n{3,}/", "\n\n", trim($txt)), 60000);
     return $res;
 }

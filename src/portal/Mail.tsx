@@ -10,7 +10,7 @@ import { Modal } from '../ui';
 type Box = { id: string; address: string; connected: boolean; status: string };
 type Folder = { name: string; unseen: number; total: number };
 type Msg = { uid: number; from: string; subject: string; date: string; seen: boolean; starred?: boolean; size: number };
-type Full = { headers: Record<string, string>; text: string; html: boolean; attachments: { name: string; type: string; size: number }[] };
+type Full = { headers: Record<string, string>; text: string; html: boolean; body?: string; attachments: { name: string; type: string; size: number }[] };
 type Check = { key: string; ok: boolean; live: boolean; required: boolean; records: { host: string; type: string; value: string; ok: boolean; saved: boolean }[] };
 type Draft = { to: string; cc: string; subject: string; body: string; inReplyTo: string; references: string };
 
@@ -199,9 +199,8 @@ function Client({ box, switcher, onDisconnect, onLogout }: { box: Box; switcher:
                 <div className="ma-msg">
                   <h2 dir="auto">{open.msg.headers.subject || t('(بدون عنوان)', '(no subject)')}</h2>
                   <p className="muted">{t('من', 'From')}: <Ltr>{open.msg.headers.from}</Ltr><br />{t('إلى', 'To')}: <Ltr>{open.msg.headers.to}</Ltr>{open.msg.headers.cc && <><br />Cc: <Ltr>{open.msg.headers.cc}</Ltr></>}<br /><Ltr>{open.msg.headers.date}</Ltr></p>
-                  <div className="mv-body" dir="auto">{open.msg.text || t('(رسالة فاضية)', '(empty message)')}</div>
+                  {open.msg.body ? <HtmlBody key={open.uid} html={open.msg.body} /> : <div className="mv-body" dir="auto">{open.msg.text || t('(رسالة فاضية)', '(empty message)')}</div>}
                   {open.msg.attachments.length > 0 && <p className="muted">{t('مرفقات', 'Attachments')}: {open.msg.attachments.map((a, i) => <a key={i} className="tag latin" href={apiUrl('mail/attachment', { id: box.id, folder, uid: String(open.uid), n: String(i) })}>{a.name} · {kb(a.size)}</a>)}</p>}
-                  {open.msg.html && <p className="muted">{t('الرسالة HTML وبتتعرض كنص عادي للأمان.', 'This is an HTML message, shown as plain text for safety.')}</p>}
                 </div>
                 <div className="ma-reply"><button className="btn btn-ghost" onClick={() => reply(false)}>↩ {t('رد', 'Reply')}</button><button className="btn btn-ghost" onClick={() => reply(true)}>↩↩ {t('رد على الكل', 'Reply all')}</button><button className="btn btn-ghost" onClick={forward}>↪ {t('تحويل', 'Forward')}</button></div>
               </>
@@ -214,6 +213,15 @@ function Client({ box, switcher, onDisconnect, onLogout }: { box: Box; switcher:
       {sigEdit && <Signature id={box.id} onClose={() => setSigEdit(false)} />}
     </div>
   );
+}
+
+/** HTML mail in a sandbox: no scripts, no forms, a strict CSP (only images and inline styles), links open in a new tab. */
+function HtmlBody({ html }: { html: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'"><base target="_blank"><style>html,body{margin:0}body{padding:14px;font:14px/1.6 system-ui,sans-serif;color:#111;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>${html}</body></html>`;
+  const fit = () => { const d = ref.current?.contentDocument; if (ref.current && d?.documentElement) { ref.current.style.height = `${Math.max(160, d.documentElement.scrollHeight)}px`; } };
+  const onLoad = () => { fit(); const d = ref.current?.contentDocument; if (d?.body && 'ResizeObserver' in window) { new ResizeObserver(fit).observe(d.body); } d?.querySelectorAll('img').forEach((i) => i.addEventListener('load', fit)); };
+  return <iframe ref={ref} className="ma-html" title="message" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={doc} onLoad={onLoad} />;
 }
 
 function Compose({ box, draft, onClose, onSent }: { box: Box; draft: Draft; onClose: () => void; onSent: (saved: boolean) => void }) {

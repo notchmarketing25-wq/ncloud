@@ -429,3 +429,5 @@
   .reading .ma-list { display: none; }
   .nm-back { display: inline-flex; }
 }
+
+.ma-html { width: 100%; border: 1px solid var(--nt-fog); border-radius: 12px; background: #fff; min-height: 160px; display: block; }
