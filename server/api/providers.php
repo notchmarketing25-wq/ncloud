@@ -194,9 +194,25 @@ function hostinger_hosting($cfg) {
             'cost' => $price === null ? 0 : round($price / 100, 2), 'billing' => $months >= 12 ? 'yearly' : 'monthly', 'currency' => strtoupper(isset($s['currency_code']) ? $s['currency_code'] : 'USD'));
     }
     $subs = array(); foreach ($o as $r) { if ($r['kind'] === 'subscription') { $subs[$r['ref']] = $r; } }
+    $sites = array(); $GLOBALS['prov_warn'] = array();
     try {
-        foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/hosting/v1/websites')) as $w) {
-            if (!is_array($w) || empty($w['domain'])) { continue; }
+        // The list is paged: ask for big pages and follow every page, so no WordPress/website is left out.
+        for ($page = 1; $page <= 30; $page++) {
+            try { $j = hostinger_call($cfg, 'GET', '/api/hosting/v1/websites?per_page=100&page=' . $page); }
+            catch (Exception $e) { if ($page === 1) { $j = hostinger_call($cfg, 'GET', '/api/hosting/v1/websites'); } else { throw $e; } }
+            $rows = prov_rows($j); $n = 0;
+            foreach ($rows as $w) { if (is_array($w)) { $sites[] = $w; $n++; } }
+            $last = isset($j['meta']['last_page']) ? (int) $j['meta']['last_page'] : (isset($j['meta']['total'], $j['meta']['per_page']) && (int) $j['meta']['per_page'] > 0 ? (int) ceil($j['meta']['total'] / $j['meta']['per_page']) : 0);
+            if ($n === 0 || ($last > 0 && $page >= $last) || ($last === 0 && $n < 100)) { break; }
+        }
+    } catch (Exception $e) { $GLOBALS['prov_warn'][] = 'Hostinger websites: ' . $e->getMessage(); }
+    try {
+        $seenSite = array();
+        foreach ($sites as $w) {
+            $dom = (string) prov_pick($w, array('domain', 'name', 'hostname', 'temporary_domain', 'main_domain'), '');
+            if ($dom === '') { continue; }
+            $w['domain'] = $dom;
+            if (isset($seenSite[strtolower($dom)])) { continue; } $seenSite[strtolower($dom)] = true;
             $usedB = null;
             foreach (array('disk_usage', 'disk_usage_bytes', 'disk_space_used', 'used_disk_space') as $k) { if (isset($w[$k]) && is_numeric($w[$k])) { $usedB = (float) $w[$k]; break; } }
             $type = strtolower(clean_text(prov_pick($w, array('type', 'website_type', 'app_type', 'application', 'platform', 'kind'), ''), 30));
@@ -207,7 +223,7 @@ function hostinger_hosting($cfg) {
                 'appType' => $type, 'username' => clean_text(prov_pick($w, array('username', 'user', 'ftp_username'), ''), 60), 'dataCenter' => clean_text(prov_pick($w, array('data_center', 'datacenter', 'datacenter_code', 'region', 'location'), ''), 40),
                 'orderRef' => $order, 'created' => prov_date(prov_pick($w, array('created_at', 'created', 'date_created'), '')), 'details' => prov_details($w));
         }
-    } catch (Exception $e) { /* websites are a bonus: subscriptions alone are still useful */ }
+    } catch (Exception $e) { $GLOBALS['prov_warn'][] = 'Hostinger websites: ' . $e->getMessage(); }
     // VPS servers
     try {
         foreach (prov_rows(hostinger_call($cfg, 'GET', '/api/vps/v1/virtual-machines')) as $v) {
@@ -227,7 +243,7 @@ function hostinger_hosting($cfg) {
                 'expires' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['expires'] : '', 'cost' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['cost'] : 0, 'billing' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['billing'] : 'monthly', 'currency' => $sub !== '' && isset($subs[$sub]) ? $subs[$sub]['currency'] : 'USD',
                 'dataCenter' => clean_text(prov_pick($v, array('data_center', 'datacenter', 'data_center_id'), ''), 40), 'orderRef' => $sub, 'created' => prov_date(prov_pick($v, array('created_at', 'created'), '')), 'details' => prov_details($v));
         }
-    } catch (Exception $e) { /* not every account has VPS */ }
+    } catch (Exception $e) { if ($e->getMessage() && !preg_match('/404|not found|forbidden|403/i', $e->getMessage())) { $GLOBALS['prov_warn'][] = 'Hostinger VPS: ' . $e->getMessage(); } }
     return $o;
 }
 
@@ -813,7 +829,7 @@ function prov_route($r, $me) {
             try { $list = prov_run($id, 'hosting', $db); } catch (Exception $e) { fail($e->getMessage(), 502); }
             $have = array(); foreach (array_merge(items_of($db, 'hosting'), items_of($db, 'websites'), items_of($db, 'servers')) as $h) { if (!empty($h['ref'])) { $have[$h['ref']] = true; } }
             foreach ($list as $k => $h) { $list[$k]['imported'] = isset($have[$h['ref']]); $list[$k]['costStore'] = prov_to_store($db, $h['cost'], $h['currency']); }
-            out(array('hosting' => $list, 'currency' => meta_get($db, 'currency', '') ?: 'EGP'));
+            out(array('hosting' => $list, 'warnings' => isset($GLOBALS['prov_warn']) ? array_values(array_unique($GLOBALS['prov_warn'])) : array(), 'currency' => meta_get($db, 'currency', '') ?: 'EGP'));
 
         case 'admin/providers/import':
             require_post();

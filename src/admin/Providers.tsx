@@ -141,14 +141,16 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
   const [own, setOwn] = useState<Record<string, string>>({});
   const [bills, setBills] = useState(kind !== 'websites');
   const [more, setMore] = useState<string | null>(null);
+  const [warn, setWarn] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const key = (r: PDomain | PHost) => ('ref' in r ? r.ref : r.name);
   useEffect(() => {
     setRows(null);
     api<{ users: User[] }>('admin/users').then((r) => { setUsers(r.users); setUid((u) => u || r.users.find((x) => x.role === 'client')?.id || r.users[0]?.id || ''); }).catch(() => undefined);
     const src = kind === 'domains' ? 'domains' : 'hosting';
-    api<Record<string, (PDomain | PHost)[]>>(`admin/providers/${src}`, undefined, { id: p.id })
-      .then((r) => setRows(kind === 'domains' ? r.domains : (r.hosting as PHost[]).filter((h) => (kind === 'websites' ? h.kind === 'website' : kind === 'servers' ? h.kind === 'vps' : h.kind !== 'website' && h.kind !== 'vps'))))
+    api<Record<string, (PDomain | PHost)[]> & { warnings?: string[] }>(`admin/providers/${src}`, undefined, { id: p.id })
+      .then((r) => { setWarn(r.warnings ?? []); setRows(kind === 'domains' ? r.domains : (r.hosting as PHost[]).filter((h) => (kind === 'websites' ? h.kind === 'website' : kind === 'servers' ? h.kind === 'vps' : h.kind !== 'website' && h.kind !== 'vps')));
+      })
       .catch((e) => { onError(errText(e, t)); setRows([]); });
   }, [p.id, kind, onError, t]);
   const free = useMemo(() => (rows ?? []).filter((r) => !r.imported), [rows]);
@@ -163,9 +165,11 @@ function ImportPanel({ p, kind, onDone, onError }: { p: Provider; kind: 'domains
     } catch (e) { onError(errText(e, t)); } finally { setBusy(false); }
   };
   if (rows === null) return <p className="muted">…</p>;
-  if (rows.length === 0) return <p className="muted">{t('مفيش عناصر عند المزوّد.', 'Nothing found at the provider.')}</p>;
+  const warnBox = warn.length > 0 && <div className="form-error" role="alert">{t('المزوّد رجّع خطأ أثناء الجلب (ممكن يكون السبب إن بعض المواقع مش ظاهرة):', 'The provider returned an error while fetching (some sites may be missing):')} {warn.join(' · ')}</div>;
+  if (rows.length === 0) return <><p className="muted">{t('مفيش عناصر عند المزوّد.', 'Nothing found at the provider.')}</p>{warnBox}</>;
   return (
     <>
+      {warnBox}
       <div className="inline-form" style={{ gridTemplateColumns: '1fr auto', marginBottom: 0 }}>
         <div className="field"><label htmlFor="imp-uid">{t('العميل الافتراضي', 'Default client')}</label>
           <select id="imp-uid" className="select" value={uid} onChange={(e) => setUid(e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name} · {u.email}</option>)}</select></div>

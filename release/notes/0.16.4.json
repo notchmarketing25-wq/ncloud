@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "Hostinger import: follows every page of the websites list (WordPress sites were cut off), accepts sites without a plain domain field, and shows provider errors instead of hiding them"
+ ],
+ "ar": [
+  "جلب Hostinger: بيتابع كل صفحات قايمة المواقع (مواقع WordPress كانت بتتقطع)، وبيقبل مواقع من غير حقل domain عادي، وبيعرض أخطاء المزوّد بدل ما يخفيها"
+ ]
+}
