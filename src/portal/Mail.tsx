@@ -14,6 +14,9 @@ type Full = { headers: Record<string, string>; text: string; html: boolean; atta
 type Check = { key: string; ok: boolean; live: boolean; required: boolean; records: { host: string; type: string; value: string; ok: boolean; saved: boolean }[] };
 type Draft = { to: string; cc: string; subject: string; body: string; inReplyTo: string; references: string };
 
+/** One mail request at a time: the mail server limits simultaneous logins, and every request opens its own session. */
+let queue: Promise<unknown> = Promise.resolve();
+const mailApi = <T,>(route: string, body?: unknown, query?: Record<string, string>): Promise<T> => { const run = () => api<T>(route, body, query); const p = queue.then(run, run); queue = p.catch(() => undefined); return p; };
 const when = (d: string) => { const t = Date.parse(d); if (Number.isNaN(t)) return d.slice(0, 22); const x = new Date(t); const same = x.toDateString() === new Date().toDateString(); return same ? x.toTimeString().slice(0, 5) : x.toISOString().slice(0, 10); };
 const nameOf = (a: string) => a.replace(/<.*>/, '').replace(/"/g, '').trim() || a;
 const addrOf = (a: string) => { const m = a.match(/<([^>]+)>/); return (m ? m[1] : a).trim(); };
@@ -97,11 +100,11 @@ function Client({ box, switcher, onDisconnect, onLogout }: { box: Box; switcher:
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
-  const loadFolders = useCallback(() => { api<{ folders: Folder[]; special: Record<string, string> }>('mail/folders', undefined, { id: box.id }).then((r) => { if (alive.current) { setFolders(r.folders); setSpecial(r.special); } }).catch(() => undefined); }, [box.id]);
+  const loadFolders = useCallback(() => { mailApi<{ folders: Folder[]; special: Record<string, string> }>('mail/folders', undefined, { id: box.id }).then((r) => { if (alive.current) { setFolders(r.folders); setSpecial(r.special); } }).catch(() => undefined); }, [box.id]);
   const loadList = useCallback((quiet = false) => {
     if (!quiet) setList(null);
     const p: Record<string, string> = { id: box.id, folder, page: String(page) }; if (query) p.q = query; if (filter !== 'all') p.filter = filter;
-    api<{ total: number; size: number; messages: Msg[] }>('mail/list', undefined, p).then((r) => { if (alive.current) { setList(r); setErr(''); } }).catch((e) => { if (!alive.current) return; if (e instanceof ApiError && e.status === 409) onDisconnect(); setErr(errText(e, t)); setList({ total: 0, size: 25, messages: [] }); });
+    mailApi<{ total: number; size: number; messages: Msg[] }>('mail/list', undefined, p).then((r) => { if (alive.current) { setList(r); setErr(''); } }).catch((e) => { if (!alive.current) return; if (e instanceof ApiError && e.status === 409) onDisconnect(); setErr(errText(e, t)); setList({ total: 0, size: 25, messages: [] }); });
   }, [box.id, folder, page, query, filter, t, onDisconnect]);
   useEffect(() => { loadFolders(); }, [loadFolders]);
   useEffect(() => { loadList(); }, [loadList]);
@@ -110,12 +113,12 @@ function Client({ box, switcher, onDisconnect, onLogout }: { box: Box; switcher:
 
   const read = (uid: number) => {
     setOpen({ uid, msg: null });
-    api<Full>('mail/read', undefined, { id: box.id, folder, uid: String(uid) }).then((msg) => { setOpen({ uid, msg }); setList((l) => l && { ...l, messages: l.messages.map((m) => m.uid === uid ? { ...m, seen: true } : m) }); loadFolders(); }).catch((e) => { setErr(errText(e, t)); setOpen(null); });
+    mailApi<Full>('mail/read', undefined, { id: box.id, folder, uid: String(uid) }).then((msg) => { setOpen({ uid, msg }); setList((l) => l && { ...l, messages: l.messages.map((m) => m.uid === uid ? { ...m, seen: true } : m) }); loadFolders(); }).catch((e) => { setErr(errText(e, t)); setOpen(null); });
   };
   const act = async (action: 'seen' | 'unseen' | 'delete' | 'spam' | 'star' | 'unstar', uid: number) => {
     setErr('');
     if (action === 'star' || action === 'unstar') setList((l) => l && { ...l, messages: l.messages.map((m) => m.uid === uid ? { ...m, starred: action === 'star' } : m) });
-    try { await post('mail/action', { id: box.id, folder, action, uids: [uid] }); if (action === 'delete' || action === 'spam') setOpen(null); if (action !== 'star' && action !== 'unstar') { loadList(true); loadFolders(); } } catch (e) { setErr(errText(e, t)); loadList(true); }
+    try { await mailApi('mail/action', { id: box.id, folder, action, uids: [uid] }); if (action === 'delete' || action === 'spam') setOpen(null); if (action !== 'star' && action !== 'unstar') { loadList(true); loadFolders(); } } catch (e) { setErr(errText(e, t)); loadList(true); }
   };
   const search = (e: FormEvent) => { e.preventDefault(); setPage(1); setQuery(q.trim()); setOpen(null); };
   const go = (f: string) => { setFolder(f); setPage(1); setOpen(null); setQuery(''); setQ(''); setFilter('all'); setMenu(false); };

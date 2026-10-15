@@ -2302,7 +2302,7 @@ switch ($r) {
         if ($pw === '') { db_update(function (&$db) use ($id, $u) { $m = meta_get($db, 'mailSecrets', array()); unset($m[$id]); $db['meta']['mailSecrets'] = $m; log_act($db, $u, 'mailbox-disconnect', $id); }); out(array('ok' => true)); }
         $rk = 'mailpw:' . $id;
         if (rate_blocked($db0, $rk, 8, 900)) { fail('too many attempts, try again later', 429); }
-        try { $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $im->close(); $sealed = mail_seal($pw); }
+        try { $im = mail_open($db0, $mb, $pw); $im->close(); $sealed = mail_seal($pw); }
         catch (Exception $e) { db_update(function (&$db) use ($rk) { rate_hit($db, $rk); }); fail($e->getMessage(), 422); }
         db_update(function (&$db) use ($id, $sealed, $u) { $m = meta_get($db, 'mailSecrets', array()); $m[$id] = $sealed; $db['meta']['mailSecrets'] = $m; log_act($db, $u, 'mailbox-connect', $id); });
         out(array('ok' => true));
@@ -2318,7 +2318,7 @@ switch ($r) {
         $pw = mail_pass($db0, $mb);
         $folder = isset($_GET['folder']) && $_GET['folder'] !== '' ? (string) $_GET['folder'] : 'INBOX';
         try {
-            $im = new NcImap(imap_cfg($db0), $mb['address'], $pw);
+            $im = mail_open($db0, $mb, $pw);
             if ($r === 'mail/folders') {
                 $fl = $im->folders(); $sp = mail_special($fl); $o = array();
                 foreach ($fl as $f) { $st = $im->status($f); $o[] = array('name' => $f, 'unseen' => $st['unseen'], 'total' => $st['messages']); }
@@ -2363,7 +2363,7 @@ switch ($r) {
         $act = isset($b['action']) ? (string) $b['action'] : ''; $uids = array(); foreach ((isset($b['uids']) && is_array($b['uids']) ? $b['uids'] : array()) as $x) { $uids[] = (int) $x; } $uids = array_slice(array_unique($uids), 0, 100);
         if (!in_array($act, array('seen', 'unseen', 'delete', 'spam', 'star', 'unstar'), true) || !$uids) { fail('bad request', 422); }
         try {
-            $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $im->select($folder); $sp = mail_special($im->folders());
+            $im = mail_open($db0, $mb, $pw); $im->select($folder); $sp = mail_special($im->folders());
             foreach ($uids as $x) {
                 if ($act === 'seen' || $act === 'unseen') { $im->store($x, '\\Seen', $act === 'seen'); }
                 elseif ($act === 'star' || $act === 'unstar') { $im->store($x, '\\Flagged', $act === 'star'); }
@@ -2403,7 +2403,7 @@ switch ($r) {
         } catch (Exception $e) { fail($e->getMessage(), 502); }
         db_update(function (&$db) use ($rk, $u, $mb) { rate_hit($db, $rk); log_act($db, $u, 'mail-sent', $mb['address']); });
         $saved = false;
-        try { $im = new NcImap(imap_cfg($db0), $mb['address'], $pw); $sp = mail_special($im->folders()); if ($sp['sent'] !== '') { $saved = $im->append($sp['sent'], $raw, '\\Seen'); } $im->close(); } catch (Exception $e) { }
+        try { $im = mail_open($db0, $mb, $pw); $sp = mail_special($im->folders()); if ($sp['sent'] !== '') { $saved = $im->append($sp['sent'], $raw, '\\Seen'); } $im->close(); } catch (Exception $e) { }
         out(array('ok' => true, 'saved' => $saved));
 
     case 'mail/dns':

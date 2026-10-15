@@ -372,9 +372,11 @@ function dns_group($records) {
     return array_values($g);
 }
 /** DNS rules a provider enforces: ALIAS/CNAME cannot share a name with A/AAAA (or with each other). The record added last wins; the rest are dropped and reported. */
-function dns_resolve($records, &$notes) {
-    $notes = array(); $by = array();
-    foreach ($records as $i => $r) { $by[strtolower($r['host'])][] = $i; }
+function dns_resolve($records, &$notes, $domain = '') {
+    $notes = array(); $by = array(); $dom = strtolower(rtrim((string) $domain, '.'));
+    // "web", "web.example.com" and "web.example.com." are the same name.
+    $norm = function ($h) use ($dom) { $h = strtolower(rtrim(trim((string) $h), '.')); if ($dom !== '') { if ($h === $dom || $h === '') { return '@'; } $suf = '.' . $dom; if (substr($h, -strlen($suf)) === $suf) { $h = substr($h, 0, -strlen($suf)); } } return $h === '' ? '@' : $h; };
+    foreach ($records as $i => $r) { $by[$norm($r['host'])][] = $i; }
     $drop = array();
     foreach ($by as $host => $idx) {
         $excl = -1; $addr = -1;
@@ -407,7 +409,7 @@ function hostinger_dns_get($cfg, $domain) {
     return $o;
 }
 function hostinger_dns_set($cfg, $domain, $records) {
-    $zone = array(); $n = array(); $records = dns_resolve($records, $n);
+    $zone = array(); $n = array(); $records = dns_resolve($records, $n, $domain);
     foreach (dns_group($records) as $g) {
         $zone[] = array('name' => $g['host'], 'type' => $g['type'], 'ttl' => $g['ttl'], 'records' => array_map(function ($v) { return array('content' => $v); }, $g['values']));
     }
@@ -742,7 +744,7 @@ function prov_route($r, $me) {
                 if ($action === 'push') {
                     if (!dns_can_write($pid)) { fail(prov_name($pid) . ' DNS is read-only here — edit it at the provider', 422); }
                     $local = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array(); $notes = array();
-                    $local = dns_resolve($local, $notes);
+                    $local = dns_resolve($local, $notes, $d['name']);
                     prov_run($pid, 'dns_set', $db, strtolower($d['name']), $local);
                     db_update(function (&$db) use ($id, $me, $d, $local) {
                         $k = find_by(items_of($db, 'domains'), 'id', $id);
@@ -944,7 +946,7 @@ function prov_dns_autopush($domainId) {
     if (count($clean) !== count(isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array())) { $d['dns'] = $clean; db_update(function (&$db) use ($domainId, $clean) { $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k >= 0) { $db['items']['domains'][$k]['dns'] = $clean; } }); }
     if (empty($d['dnsSynced']) || !dns_can_write($pid) || !prov_has_keys($pid, prov_cfg($db, $pid))) { return ''; }
     $recs = isset($d['dns']) && is_array($d['dns']) ? $d['dns'] : array(); $notes = array();
-    $fixed = dns_resolve($recs, $notes);
+    $fixed = dns_resolve($recs, $notes, $d['name']);
     if ($notes) { db_update(function (&$db) use ($domainId, $fixed) { $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k >= 0) { $db['items']['domains'][$k]['dns'] = $fixed; } }); }
     try { prov_run($pid, 'dns_set', $db, strtolower($d['name']), $fixed); return $notes ? 'sent, but these records were removed because the provider does not allow them on the same name as another record (A/AAAA vs ALIAS/CNAME): ' . implode(', ', $notes) : ''; }
     catch (Exception $e) { return 'saved here, but not sent to ' . prov_name($pid) . ': ' . $e->getMessage(); }
@@ -1158,6 +1160,15 @@ class NcImap {
         return $o;
     }
     function close() { @fwrite($this->fp, "x LOGOUT\r\n"); @fclose($this->fp); }
+}
+/** Opens an IMAP session for a mailbox that is already connected. Hostinger throttles logins, so a refusal is retried a couple of times before it is reported. */
+function mail_open($db, $mb, $pw) {
+    $last = null;
+    for ($i = 0; $i < 3; $i++) {
+        try { return new NcImap(imap_cfg($db), $mb['address'], $pw); }
+        catch (Exception $e) { $last = $e; if (strpos($e->getMessage(), 'refused') === false) { throw $e; } usleep(($i + 1) * 800000); }
+    }
+    throw new Exception('the mail server refused the login. If the password was not changed, it is usually a temporary limit on simultaneous logins: wait a minute and refresh');
 }
 function mail_utf7($s) { return function_exists('mb_convert_encoding') && strpos($s, '&') !== false ? @mb_convert_encoding(str_replace(',', '/', $s), 'UTF-8', 'UTF7-IMAP') ?: $s : $s; }
 function mail_utf7_enc($s) { return function_exists('mb_convert_encoding') && preg_match('/[^\x20-\x7e]/', $s) ? @mb_convert_encoding($s, 'UTF7-IMAP', 'UTF-8') ?: $s : $s; }

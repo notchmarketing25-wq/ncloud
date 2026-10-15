@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-15",
+ "en": [
+  "DNS push: ALIAS/CNAME vs A conflicts are now resolved even when the same name is written as web and web.example.com; N Emails: one request at a time and login retry (Hostinger limits simultaneous IMAP logins)"
+ ],
+ "ar": [
+  "دفع الـ DNS: تعارض ALIAS/CNAME مع A بيتحل حتى لو الاسم مكتوب web مرة وweb.example.com مرة؛ N Emails: طلب واحد في كل مرة وإعادة محاولة الدخول (Hostinger بيحدّد تسجيلات IMAP المتزامنة)"
+ ]
+}
