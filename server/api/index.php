@@ -2013,14 +2013,14 @@ switch ($r) {
         $b = body();
         $id = isset($b['id']) ? (string) $b['id'] : '';
         $items = array();
-        foreach ((isset($b['items']) && is_array($b['items']) ? array_slice($b['items'], 0, 60) : array()) as $it) { if (is_array($it)) { $d = clean_text(isset($it['desc']) ? $it['desc'] : '', 200); $am = isset($it['amount']) && is_numeric($it['amount']) ? round((float) $it['amount'], 2) : 0; if ($d !== '' || $am != 0) { $items[] = array('desc' => $d, 'amount' => $am, 'taxed' => !empty($it['taxed'])); } } }
+        foreach ((isset($b['items']) && is_array($b['items']) ? array_slice($b['items'], 0, 60) : array()) as $it) { if (is_array($it)) { $d = clean_text(isset($it['desc']) ? $it['desc'] : '', 200); $am = isset($it['amount']) && is_numeric($it['amount']) ? round((float) $it['amount'], 2) : 0; $qty = isset($it['qty']) && is_numeric($it['qty']) && (float) $it['qty'] > 0 ? round((float) $it['qty'], 2) : 1; $pr = isset($it['price']) && is_numeric($it['price']) && (float) $it['price'] != 0 ? round((float) $it['price'], 2) : null; if ($pr !== null) { $am = round($qty * $pr, 2); } if ($d !== '' || $am != 0) { $row = array('desc' => $d, 'amount' => $am, 'taxed' => !empty($it['taxed'])); if ($pr !== null) { $row['qty'] = $qty; $row['price'] = $pr; } $dt = clean_text(isset($it['details']) ? $it['details'] : '', 400); if ($dt !== '') { $row['details'] = $dt; } $items[] = $row; } } }
         if (!$items) { fail('add at least one item', 422); }
         $subject = clean_text(isset($b['subject']) ? $b['subject'] : '', 160);
         if ($subject === '') { fail('subject is required', 422); }
         $valid = isset($b['validUntil']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $b['validUntil']) ? $b['validUntil'] : '';
         $status = isset($b['status']) && in_array($b['status'], array('draft', 'delivered', 'accepted', 'declined', 'expired'), true) ? $b['status'] : 'draft';
-        $notes = clean_text(isset($b['notes']) ? $b['notes'] : '', 1000); $uid = isset($b['uid']) ? (string) $b['uid'] : ''; $disc = isset($b['discount']) ? max(0, (float) $b['discount']) : 0;
-        $out = db_update(function (&$db) use ($id, $items, $subject, $valid, $status, $notes, $uid, $disc, $me) {
+        $notes = clean_text(isset($b['notes']) ? $b['notes'] : '', 1000); $terms = nc_substr(trim(strip_tags(isset($b['terms']) ? (string) $b['terms'] : '')), 3000); $uid = isset($b['uid']) ? (string) $b['uid'] : ''; $disc = isset($b['discount']) ? max(0, (float) $b['discount']) : 0;
+        $out = db_update(function (&$db) use ($id, $items, $subject, $valid, $status, $notes, $terms, $uid, $disc, $me) {
             if ($id === '') {
                 if (find_user($db, 'id', $uid) < 0) { return array('err' => 'choose a client'); }
                 $seq = (int) meta_get($db, 'quoteSeq', 0) + 1; $db['meta']['quoteSeq'] = $seq;
@@ -2029,12 +2029,22 @@ switch ($r) {
             } else { $i = find_by(items_of($db, 'quotes'), 'id', $id); if ($i < 0) { return array('err' => 'quote not found'); } }
             $ui = find_user($db, 'id', $db['items']['quotes'][$i]['uid']);
             $calc = inv_calc($db, $items, $disc, $ui >= 0 && !empty($db['users'][$ui]['taxExempt']));
-            $db['items']['quotes'][$i] = array_merge($db['items']['quotes'][$i], array('subject' => $subject, 'items' => $items, 'discount' => $calc['discount'], 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'total' => $calc['total'], 'validUntil' => $valid, 'status' => $status, 'notes' => $notes));
+            $db['items']['quotes'][$i] = array_merge($db['items']['quotes'][$i], array('subject' => $subject, 'items' => $items, 'discount' => $calc['discount'], 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'total' => $calc['total'], 'validUntil' => $valid, 'status' => $status, 'notes' => $notes, 'terms' => $terms));
+            if (empty($db['items']['quotes'][$i]['token'])) { $db['items']['quotes'][$i]['token'] = bin2hex(function_exists('random_bytes') ? random_bytes(12) : md5(uniqid('', true), true)); }
             log_act($db, $me, $id === '' ? 'quote-create' : 'quote-update', $db['items']['quotes'][$i]['number']);
             return array('quote' => $db['items']['quotes'][$i]);
         });
         if (isset($out['err'])) { fail($out['err'], 422); }
         out($out, $id === '' ? 201 : 200);
+
+    case 'admin/quote-token':
+        // The private link of a quote (older quotes get theirs the first time it is asked for).
+        need_admin();
+        require_post();
+        $b = body(); $qid = isset($b['id']) ? (string) $b['id'] : '';
+        $tok = db_update(function (&$db) use ($qid) { $k = find_by(items_of($db, 'quotes'), 'id', $qid); if ($k < 0) { return ''; } if (empty($db['items']['quotes'][$k]['token'])) { $db['items']['quotes'][$k]['token'] = bin2hex(function_exists('random_bytes') ? random_bytes(12) : md5(uniqid('', true), true)); } return $db['items']['quotes'][$k]['token']; });
+        if ($tok === '') { fail('quote not found', 404); }
+        out(array('token' => $tok));
 
     case 'admin/quote-send':
         $me = need_admin();
@@ -2045,7 +2055,8 @@ switch ($r) {
         if ($qi < 0) { fail('quote not found', 404); }
         $q = $db0['items']['quotes'][$qi]; $ui = find_user($db0, 'id', $q['uid']);
         if ($ui < 0) { fail('the quote has no client', 422); }
-        $link = site_link($db0, '/portal/quotes');
+        if (empty($q['token'])) { $q['token'] = db_update(function (&$db) use ($q) { $k = find_by(items_of($db, 'quotes'), 'id', $q['id']); if ($k < 0) { return ''; } if (empty($db['items']['quotes'][$k]['token'])) { $db['items']['quotes'][$k]['token'] = bin2hex(function_exists('random_bytes') ? random_bytes(12) : md5(uniqid('', true), true)); } return $db['items']['quotes'][$k]['token']; }); }
+        $link = site_link($db0, !empty($q['token']) ? '/quote/' . $q['token'] : '/portal/quotes');
         $cur = meta_get($db0, 'currency', '') ?: 'EGP';
         $r2 = nc_mail($db0, $db0['users'][$ui]['email'], 'Quote ' . $q['number'] . ': ' . $q['subject'], "Hello " . $db0['users'][$ui]['name'] . ",\n\nWe prepared a quote for you: " . $q['subject'] . ' — ' . $q['total'] . ' ' . $cur . (!empty($q['validUntil']) ? ' (valid until ' . $q['validUntil'] . ')' : '') . ".\n" . ($link !== '' ? 'Review and accept it here: ' . $link : 'Open your client area → Quotes to review and accept it.') . "\n\nThank you.");
         if ($r2 !== true) { fail($r2, 502); }
@@ -2158,6 +2169,20 @@ switch ($r) {
         });
         if (isset($out['err'])) { fail($out['err'], 422); }
         out($out);
+
+    case 'public/quote':
+        // A quote opened from its private link: read-only, no sign-in (accepting still needs the client's account).
+        $db = db_read();
+        $tk = isset($_GET['t']) ? (string) $_GET['t'] : '';
+        $found = -1;
+        if (preg_match('/^[a-f0-9]{24}$/', $tk)) { foreach (items_of($db, 'quotes') as $i => $q) { if (isset($q['token']) && hash_equals($q['token'], $tk) && $q['status'] !== 'draft') { $found = $i; } } }
+        if ($found < 0) { fail('quote not found', 404); }
+        $q = $db['items']['quotes'][$found]; $ui = find_user($db, 'id', $q['uid']);
+        if (!empty($q['validUntil']) && $q['validUntil'] < gmdate('Y-m-d') && $q['status'] === 'delivered') { $q['status'] = 'expired'; }
+        if (empty($q['viewedAt'])) { db_update(function (&$d2) use ($tk) { foreach (items_of($d2, 'quotes') as $k => $x) { if (isset($x['token']) && $x['token'] === $tk && empty($x['viewedAt'])) { $d2['items']['quotes'][$k]['viewedAt'] = gmdate('c'); } } }); }
+        unset($q['uid'], $q['token'], $q['invoiceId']);
+        $cu = $ui >= 0 ? $db['users'][$ui] : array();
+        out(array('quote' => $q, 'business' => meta_get($db, 'business', new stdClass()), 'customer' => array('name' => isset($cu['name']) ? $cu['name'] : '', 'company' => isset($cu['company']) ? $cu['company'] : '', 'email' => isset($cu['email']) ? $cu['email'] : ''), 'currency' => meta_get($db, 'currency', '') ?: 'EGP'));
 
     case 'public/terms':
         $db = db_read();

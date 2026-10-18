@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { ApiError, post } from '../lib/api';
-import type { Business, Invoice, Order, PayMethod } from '../lib/types';
+import { ApiError, api, post } from '../lib/api';
+import type { Business, Invoice, Order, PayMethod, Quote } from '../lib/types';
 import { PayDetails } from '../site/CartPages';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency, useSite, assetUrl } from '../site/settings';
@@ -237,7 +237,7 @@ export function PortalQuotes() {
         <div className="svc-list">
           {quotes.map((q) => (
             <div key={q.id} className="card">
-              <div className="row-actions" style={{ justifyContent: 'space-between' }}><h3 style={{ margin: 0 }}><span className="latin">{q.number}</span> · {q.subject}</h3><QuoteTag s={q.status} /></div>
+              <div className="row-actions" style={{ justifyContent: 'space-between' }}><h3 style={{ margin: 0 }}><Link className="link" to={`/portal/quotes/${q.id}`}><span className="latin">{q.number}</span> · {q.subject}</Link></h3><QuoteTag s={q.status} /></div>
               <div className="table-wrap"><table className="tbl"><tbody>
                 {(q.items ?? []).map((i, k) => <tr key={k}><td>{L({ ar: i.descAr || i.desc, en: i.desc })}</td><td className="latin">{f(i.amount)}</td></tr>)}
                 {!!q.discount && <tr><td className="muted">{t('خصم', 'Discount')}</td><td className="latin">−{f(q.discount)}</td></tr>}
@@ -246,12 +246,95 @@ export function PortalQuotes() {
               </tbody></table></div>
               <p className="muted">{q.validUntil ? <>{t('صالح لحد', 'Valid until')} <Ltr>{q.validUntil}</Ltr></> : null}</p>
               {q.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{q.notes}</p>}
+              <div className="row-actions"><Link className="btn btn-ghost btn-sm" to={`/portal/quotes/${q.id}`}>{t('التفاصيل / PDF', 'Details / PDF')}</Link></div>
               {q.status === 'delivered' && <div className="row-actions"><button className="btn btn-accent btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, true)}>{t('اقبل العرض', 'Accept the quote')}</button><button className="btn btn-ghost btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, false)}>{t('ارفض', 'Decline')}</button></div>}
               {q.status === 'accepted' && q.invoiceId && <Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${q.invoiceId}`}>{t('افتح الفاتورة', 'Open the invoice')}</Link>}
             </div>
           ))}
         </div>
       )}
+    </Page>
+  );
+}
+
+/** A quote as a printable sheet (browser print → PDF), shared by the portal, the admin and the private link. */
+export function QuoteSheet({ q, biz, customer }: { q: Quote; biz: Business; customer: { name: string; email?: string; company?: string } }) {
+  const { t, L } = useI18n();
+  const { settings } = useSite();
+  const cur = useCurrency();
+  const f = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const logo = settings.brand?.logo;
+  const items = q.items ?? [];
+  const hasQty = items.some((i) => i.price !== undefined);
+  const taxes = q.taxLines ?? [];
+  const taxSum = taxes.reduce((n, x) => n + x.amount, 0);
+  const incl = q.inclusive !== false;
+  const gross = items.reduce((n, i) => n + i.amount, 0);
+  const net = incl ? (q.total ?? 0) - taxSum : gross - (q.discount ?? 0);
+  return (
+    <div className="invoice-sheet print-sheet">
+      <header className="inv-head">
+        <div>{logo ? <img src={assetUrl(logo)} alt="" className="inv-logo" /> : <b className="inv-brand">{settings.site || 'Notch Cloud'}</b>}
+          <div className="muted">{biz.legalName || settings.site}<br />{[biz.address, biz.address2].filter(Boolean).join(', ')}{(biz.city || biz.governorate) && <><br />{[biz.city, biz.governorate, biz.postalCode].filter(Boolean).join(', ')}</>}{biz.country && <><br />{biz.country}</>}{biz.taxId && <><br />{t('الرقم الضريبي', 'Tax ID')}: <Ltr>{biz.taxId}</Ltr></>}</div></div>
+        <div className="inv-meta"><h1>{t('عرض سعر', 'QUOTATION')}</h1><div className="latin"><b>{q.number}</b></div><div className="muted">{q.created && <Ltr>{day(q.created)}</Ltr>}{q.validUntil && <> · {t('صالح لحد', 'Valid until')} <Ltr>{q.validUntil}</Ltr></>}</div><QuoteTag s={q.status} /></div>
+      </header>
+      <section className="inv-bill"><span className="muted">{t('مُقدَّم إلى', 'Prepared for')}</span><b>{customer.company || customer.name}</b>{customer.company && <span>{customer.name}</span>}{customer.email && <span className="latin">{customer.email}</span>}</section>
+      <h3 style={{ margin: '12px 0 6px' }} dir="auto">{q.subject}</h3>
+      <table className="tbl inv-tbl"><thead><tr><th>{t('البند', 'Description')}</th>{hasQty && <><th>{t('الكمية', 'Qty')}</th><th>{t('السعر', 'Unit price')}</th></>}<th>{t('المبلغ', 'Amount')}</th></tr></thead>
+        <tbody>{items.map((l, i) => <tr key={i}><td>{L({ ar: l.descAr || l.desc, en: l.desc })}{l.details && <div className="muted" style={{ whiteSpace: 'pre-wrap', fontSize: '.85rem' }}>{l.details}</div>}</td>{hasQty && <><td className="latin">{l.qty ?? 1}</td><td className="latin">{l.price !== undefined ? f(l.price) : ''}</td></>}<td className="latin">{f(l.amount)}</td></tr>)}</tbody></table>
+      <div className="inv-sum">
+        {!!q.discount && <div><span>{t('خصم', 'Discount')}</span><b className="latin">−{f(q.discount)}</b></div>}
+        {taxes.length > 0 && <div><span>{t('الإجمالي قبل الضريبة', 'Sub total')}</span><b className="latin">{f(net)}</b></div>}
+        {taxes.map((x) => <div key={x.name}><span>{x.name} {x.rate}%</span><b className="latin">{f(x.amount)}</b></div>)}
+        <div className="inv-total"><span>{t('الإجمالي', 'Total')}</span><b className="latin">{f(q.total ?? 0)} {cur}</b></div>
+        {taxes.length > 0 && <small className="muted">{incl ? t('الأسعار شاملة الضريبة.', 'Prices include tax.') : t('الضريبة مضافة على الأسعار.', 'Tax is added to the prices.')}</small>}
+      </div>
+      {q.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{q.notes}</p>}
+      {q.terms && <section><h3>{t('الشروط والأحكام', 'Terms & conditions')}</h3><p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{q.terms}</p></section>}
+      <footer className="muted">{t('شكرًا لاهتمامكم.', 'Thank you for your interest.')}</footer>
+    </div>
+  );
+}
+
+export const quoteLink = (token: string) => (import.meta.env.VITE_ROUTER === 'browser' ? `${window.location.origin}/quote/${token}` : `${window.location.origin}${window.location.pathname}#/quote/${token}`);
+export const copyText = async (s: string) => { try { await navigator.clipboard.writeText(s); return true; } catch { const a = document.createElement('textarea'); a.value = s; document.body.appendChild(a); a.select(); const ok = document.execCommand('copy'); a.remove(); return ok; } };
+
+/** Opened from the private link, no sign-in needed. */
+export function PublicQuote() {
+  const { t } = useI18n();
+  const { token } = useParams();
+  const [d, setD] = useState<{ quote: Quote; business: Business; customer: { name: string; email?: string; company?: string } } | null | 'none'>(null);
+  useEffect(() => { void api<{ quote: Quote; business: Business; customer: { name: string; email?: string; company?: string } }>('public/quote', undefined, { t: token ?? '' }).then(setD).catch(() => setD('none')); }, [token]);
+  return (
+    <div className="mailapp-msg" style={{ maxWidth: 860 }}>
+      <div className="mailapp-head no-print"><span className="mailapp-logo">{t('عرض سعر', 'Quote')}</span><span className="row-actions"><LangToggle />{d && d !== 'none' && <button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button>}</span></div>
+      {d === null ? <p className="muted">…</p> : d === 'none' ? <div className="card"><p className="muted">{t('العرض ده مش موجود أو اللينك غلط.', 'This quote does not exist or the link is wrong.')}</p></div> : (
+        <>
+          <QuoteSheet q={d.quote} biz={d.business} customer={d.customer} />
+          {d.quote.status === 'delivered' && <div className="card no-print"><p>{t('عشان تقبل العرض أو ترفضه سجّل دخول بحسابك.', 'Sign in to your account to accept or decline this quote.')}</p><Link className="btn btn-accent btn-sm" to="/portal/quotes">{t('سجّل دخول واقبل العرض', 'Sign in to accept')}</Link></div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function PortalQuoteView() {
+  const { t } = useI18n();
+  const nav = useNavigate();
+  const { id } = useParams();
+  const { data, reload } = usePortal();
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+  if (!data) return null;
+  const q = (data.quotes ?? []).find((x) => x.id === id);
+  if (!q) return <Navigate to="/portal/quotes" replace />;
+  const answer = async (accept: boolean) => { setErr(''); try { const r = await post<{ invoice?: string }>('quotes/respond', { id: q.id, accept }); await reload(); if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); } catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر الرد على العرض.', 'Could not answer the quote.')); } };
+  return (
+    <Page title={`${t('عرض سعر', 'Quote')} ${q.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button>{q.token && <button className="btn btn-ghost btn-sm" onClick={async () => { setCopied(await copyText(quoteLink(q.token!))); window.setTimeout(() => setCopied(false), 2500); }}>{copied ? t('اتنسخ ✓', 'Copied ✓') : t('نسخ اللينك', 'Copy link')}</button>}<Link to="/portal/quotes" className="btn btn-ghost btn-sm">{t('← العروض', '← Quotes')}</Link></div>}>
+      {err && <div className="form-error" role="alert">{err}</div>}
+      <QuoteSheet q={q} biz={data.business ?? {}} customer={data.me ?? { name: '', email: '' }} />
+      {q.status === 'delivered' && <div className="row-actions no-print" style={{ marginTop: 12 }}><button className="btn btn-accent" onClick={() => void answer(true)}>{t('اقبل العرض', 'Accept the quote')}</button><button className="btn btn-ghost" onClick={() => void answer(false)}>{t('ارفض', 'Decline')}</button></div>}
+      {q.status === 'accepted' && q.invoiceId && <Link className="btn btn-ghost btn-sm no-print" to={`/portal/invoices/${q.invoiceId}`}>{t('افتح الفاتورة', 'Open the invoice')}</Link>}
     </Page>
   );
 }

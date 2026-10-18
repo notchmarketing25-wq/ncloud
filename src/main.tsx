@@ -21,7 +21,7 @@ import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } fr
 import { AdminOrders } from './admin/Orders';
 import { PortalProfile, TermsPage } from './portal/Identity';
 import { MailApp } from './portal/Mail';
-import { ForgotPassword, PortalInvoice, PortalQuotes, RenewPage, ResetPassword } from './portal/Extras';
+import { ForgotPassword, PortalInvoice, PortalQuoteView, PortalQuotes, PublicQuote, RenewPage, ResetPassword } from './portal/Extras';
 import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
 import { AdminClient } from './admin/Client';
 import { AuthProvider } from './auth';
@@ -89,6 +89,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="account" element={<AdminAccount />} />
           </Route>
           <Route path="mail" element={<MailApp />} />
+          <Route path="quote/:token" element={<PublicQuote />} />
           <Route path="portal" element={<PortalLayout />}>
             <Route index element={<Overview />} />
             <Route path="domains" element={<PortalDomains />} />
@@ -101,6 +102,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="orders" element={<PortalOrders />} />
             <Route path="invoices/:id" element={<PortalInvoice />} />
             <Route path="quotes" element={<PortalQuotes />} />
+            <Route path="quotes/:id" element={<PortalQuoteView />} />
             <Route path="profile" element={<PortalProfile />} />
             <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />

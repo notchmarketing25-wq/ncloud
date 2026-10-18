@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { api, apiUrl, post } from '../lib/api';
-import type { Invoice, InvItem, LedgerEntry, PayMethod, Quote } from '../lib/types';
-import { QuoteTag } from '../portal/Extras';
+import type { Business, Invoice, InvItem, LedgerEntry, PayMethod, Quote } from '../lib/types';
+import { QuoteSheet, QuoteTag, copyText, quoteLink } from '../portal/Extras';
 import { IdentityFields, idOf, KycDocs, useTerms, termsAccepted } from '../portal/Identity';
 import { useCurrency } from '../site/settings';
 import { DomainName } from '../site/svc';
@@ -116,9 +116,32 @@ function ServiceTable({ rows, kind, methods, run, all, uid }: { rows: { res: str
 }
 
 /* ───────── a quote ───────── */
+/** The quote as the client sees it, with the PDF, the private link and a WhatsApp share. */
+function QuoteView({ q, u, onClose }: { q: Quote; u: { name: string; email: string; phone?: string; company?: string }; onClose: () => void }) {
+  const { t } = useI18n();
+  const [biz, setBiz] = useState<Business>({});
+  useEffect(() => { void api<{ business?: Business }>('admin/settings').then((r) => setBiz(r.business ?? {})).catch(() => undefined); }, []);
+  const [link, setLink] = useState(q.token ? quoteLink(q.token) : '');
+  const [msg, setMsg] = useState('');
+  const getLink = async () => { if (link) return link; const r = await post<{ token: string }>('admin/quote-token', { id: q.id }); const l = quoteLink(r.token); setLink(l); return l; };
+  const copy = async () => { const l = await getLink(); setMsg((await copyText(l)) ? t('اتنسخ اللينك.', 'Link copied.') : l); };
+  const wa = async () => { const l = await getLink(); const num = (u.phone ?? '').replace(/\D/g, ''); window.open(`https://wa.me/${num}?text=${encodeURIComponent(`${q.subject} (${q.number})\n${l}`)}`, '_blank', 'noopener'); };
+  return (
+    <Modal title={`${t('عرض سعر', 'Quote')} ${q.number}`} wide onClose={onClose}>
+      <div className="row-actions no-print" style={{ marginBottom: 12 }}>
+        <button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => void copy()}>{t('نسخ اللينك', 'Copy link')}</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => void wa()}>WhatsApp</button>
+        {msg && <span className="muted latin" role="status">{msg}</span>}
+      </div>
+      <QuoteSheet q={q} biz={biz} customer={{ name: u.name, email: u.email, company: u.company }} />
+    </Modal>
+  );
+}
+
 function QuoteEditor({ q, uid, onClose, onSaved }: { q?: Quote; uid: string; onClose: () => void; onSaved: () => void }) {
   const { t } = useI18n();
-  const [f, setF] = useState({ subject: q?.subject ?? '', validUntil: q?.validUntil ?? new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10), status: q?.status ?? 'draft', notes: q?.notes ?? '', discount: q?.discount ?? 0 });
+  const [f, setF] = useState({ subject: q?.subject ?? '', validUntil: q?.validUntil ?? new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10), status: q?.status ?? 'draft', notes: q?.notes ?? '', terms: q?.terms ?? '', discount: q?.discount ?? 0 });
   const [items, setItems] = useState<InvItem[]>(q?.items?.length ? q.items.map((i) => ({ ...i })) : [{ desc: '', amount: 0, taxed: true }]);
   const [err, setErr] = useState('');
   const submit = async (e: FormEvent) => { e.preventDefault(); setErr(''); try { await post('admin/quote-save', { id: q?.id ?? '', uid, ...f, items }); onSaved(); } catch (x) { setErr(errText(x, t)); } };
@@ -133,11 +156,16 @@ function QuoteEditor({ q, uid, onClose, onSaved }: { q?: Quote; uid: string; onC
         </div>
         <div className="inv-edit-items">
           {items.map((it, i) => (
-            <div key={i} className="inv-edit-row">
-              <input className="input" aria-label={t('الوصف', 'Description')} placeholder={t('الوصف', 'Description')} value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} />
-              <input className="input latin" aria-label={t('المبلغ', 'Amount')} type="number" step="0.01" value={it.amount} onChange={(e) => setItem(i, { amount: Number(e.target.value) })} />
-              <label className="check"><input type="checkbox" checked={!!it.taxed} onChange={(e) => setItem(i, { taxed: e.target.checked })} /> {t('خاضع للضريبة', 'Taxed')}</label>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={items.length < 2} onClick={() => setItems(items.filter((_, j) => j !== i))}>×</button>
+            <div key={i} className="card" style={{ padding: 10, display: 'grid', gap: 8 }}>
+              <div className="inv-edit-row">
+                <input className="input" aria-label={t('الوصف', 'Description')} placeholder={t('الوصف', 'Description')} value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} />
+                <input className="input latin" aria-label={t('الكمية', 'Qty')} placeholder={t('الكمية', 'Qty')} type="number" min={0} step="0.01" value={it.qty ?? ''} onChange={(e) => { const qty = e.target.value === '' ? undefined : Number(e.target.value); setItem(i, { qty, ...(it.price !== undefined && qty !== undefined ? { amount: Math.round(qty * it.price * 100) / 100 } : {}) }); }} />
+                <input className="input latin" aria-label={t('سعر الوحدة', 'Unit price')} placeholder={t('سعر الوحدة', 'Unit price')} type="number" step="0.01" value={it.price ?? ''} onChange={(e) => { const price = e.target.value === '' ? undefined : Number(e.target.value); setItem(i, { price, ...(price !== undefined ? { amount: Math.round((it.qty ?? 1) * price * 100) / 100 } : {}) }); }} />
+                <input className="input latin" aria-label={t('المبلغ', 'Amount')} type="number" step="0.01" value={it.amount} disabled={it.price !== undefined} onChange={(e) => setItem(i, { amount: Number(e.target.value) })} />
+                <label className="check"><input type="checkbox" checked={!!it.taxed} onChange={(e) => setItem(i, { taxed: e.target.checked })} /> {t('خاضع للضريبة', 'Taxed')}</label>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={items.length < 2} onClick={() => setItems(items.filter((_, j) => j !== i))}>×</button>
+              </div>
+              <input className="input" aria-label={t('تفاصيل البند', 'Item details')} placeholder={t('تفاصيل البند (اختياري)', 'Item details (optional)')} maxLength={400} value={it.details ?? ''} onChange={(e) => setItem(i, { details: e.target.value })} />
             </div>
           ))}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setItems([...items, { desc: '', amount: 0, taxed: true }])}>{t('+ بند', '+ Item')}</button>
@@ -145,6 +173,7 @@ function QuoteEditor({ q, uid, onClose, onSaved }: { q?: Quote; uid: string; onC
         <div className="admin-form">
           <Field id="qt-d" label={t('خصم', 'Discount')}><input id="qt-d" className="input latin" type="number" min={0} step="0.01" value={f.discount} onChange={(e) => setF({ ...f, discount: Number(e.target.value) })} /></Field>
           <Field id="qt-n" label={t('ملاحظات للعميل', 'Notes for the client')} wide><textarea id="qt-n" className="textarea" maxLength={1000} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+          <Field id="qt-t" label={t('الشروط والأحكام (تظهر في الـ PDF)', 'Terms & conditions (shown on the PDF)')} wide><textarea id="qt-t" className="textarea" maxLength={3000} value={f.terms} onChange={(e) => setF({ ...f, terms: e.target.value })} /></Field>
         </div>
         {err && <div className="form-error" role="alert">{err}</div>}
         <button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button>
@@ -182,6 +211,7 @@ export function AdminClient() {
   const [log, setLog] = useState<Log[]>([]);
   const [invEdit, setInvEdit] = useState<{ addFunds?: boolean } | null>(null);
   const [quoteEdit, setQuoteEdit] = useState<Quote | 'new' | null>(null);
+  const [quoteView, setQuoteView] = useState<Quote | null>(null);
   const [mail, setMail] = useState({ subject: '', message: '' });
   const [notes, setNotes] = useState<string | null>(null);
   const [bill, setBill] = useState({ desc: '', amount: '', taxed: true });
@@ -401,6 +431,7 @@ export function AdminClient() {
           <div className="row-actions" style={{ margin: '12px 0' }}><button className="btn btn-accent btn-sm" onClick={() => setQuoteEdit('new')}>{t('+ عرض سعر', '+ Quote')}</button></div>
           <Table head={[t('الرقم', 'No.'), t('الموضوع', 'Subject'), t('الإجمالي', 'Total'), t('صالح لحد', 'Valid until'), t('الحالة', 'Status'), '']} empty={quotes.length === 0 ? t('مفيش عروض.', 'No quotes.') : undefined}>
             {quotes.map((q) => <tr key={q.id}><td className="latin">{q.number}</td><td>{q.subject}</td><td className="latin">{m2(num(q.total))} {cur}</td><td><Ltr>{q.validUntil || '-'}</Ltr></td><td><QuoteTag s={q.status} /></td><td><div className="row-actions">
+              <button className="btn btn-ghost btn-sm" onClick={() => setQuoteView(q)}>{t('عرض / PDF', 'View / PDF')}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setQuoteEdit(q)}>{t('تعديل', 'Edit')}</button>
               {q.status !== 'accepted' && <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/quote-send', { id: q.id }), t('اتبعت العرض للعميل.', 'Quote sent to the client.'))}>{t('إرسال للعميل', 'Send to client')}</button>}
               {q.invoiceId && <Link className="btn btn-ghost btn-sm" to={`/admin/invoices/${q.invoiceId}`}>{t('الفاتورة', 'Invoice')}</Link>}
@@ -425,6 +456,7 @@ export function AdminClient() {
       {tab === 'log' && <Table head={[t('الوقت', 'Time'), t('المستخدم', 'By'), t('العملية', 'Action'), t('التفاصيل', 'Detail')]} empty={myLog.length === 0 ? t('مفيش نشاط مسجّل.', 'No activity recorded.') : undefined}>{myLog.slice(0, 200).map((l, i) => <tr key={i}><td><Ltr>{l.at.replace('T', ' ').slice(0, 16)}</Ltr></td><td>{l.by}</td><td><span className="tag latin">{l.action}</span></td><td>{l.detail}</td></tr>)}</Table>}
 
       {invEdit && <InvoiceEditor users={all.users.filter((x) => x.id === u.id)} presetUid={u.id} cfg={cfg} presetAddFunds={!!invEdit.addFunds} onClose={() => setInvEdit(null)} onSaved={(i) => { setInvEdit(null); setOk(t('اتحفظت الفاتورة.', 'Invoice saved.')); load(); nav(`/admin/invoices/${i.id}`); }} />}
+      {quoteView && u && <QuoteView q={quoteView} u={u} onClose={() => setQuoteView(null)} />}
       {quoteEdit && <QuoteEditor q={quoteEdit === 'new' ? undefined : quoteEdit} uid={u.id} onClose={() => setQuoteEdit(null)} onSaved={() => { setQuoteEdit(null); setOk(t('اتحفظ العرض.', 'Quote saved.')); load(); }} />}
     </Page>
   );
