@@ -7,6 +7,7 @@ import { usePortal } from '../portal/PortalData';
 import { day, InvoiceTag, Modal, Page, Table } from '../ui';
 import { useCart, type CartItem } from './cart';
 import { type CPlan, useCatalog } from './catalog';
+import { clearSetup, readSetup } from '../portal/EmailApp';
 import { Money } from './parts';
 import { assetUrl, useCurrency } from './settings';
 import { useAuth } from '../auth';
@@ -132,7 +133,9 @@ export function Checkout() {
     e.preventDefault();
     setError(''); setBusy(true);
     try {
-      const r = await post<{ order: Order }>('orders/create', { items, method: method || methods[0]?.id || '', domain: domain.trim(), note, coupon: off ? off.code : '' });
+      const setup = readSetup(); const useSetup = !!setup && items.some((i) => i.kind === 'plan' && i.id === setup.planId);
+      const r = await post<{ order: Order }>('orders/create', { items, method: method || methods[0]?.id || '', domain: useSetup ? setup!.domain : domain.trim(), mailboxes: useSetup ? setup!.names : undefined, note, coupon: off ? off.code : '' });
+      if (useSetup) clearSetup();
       clear(); await reload(); nav(`/portal/orders/${r.order.id}`);
     } catch (x) {
       const m = x instanceof ApiError ? x.message : '';
@@ -267,6 +270,7 @@ export function OrderButton({ category, label, fallback }: { category: 'hosting'
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   if (mode !== 'server') return <Link to={fallback} className="btn btn-primary btn-sm">{label}</Link>;
+  if (category === 'email') return <Link to="/portal/email/new" className="btn btn-primary btn-sm">{label}</Link>;
   const plans = of(category);
   return (
     <>

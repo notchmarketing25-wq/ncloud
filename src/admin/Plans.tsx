@@ -7,7 +7,7 @@ import { Page, Table } from '../ui';
 import { errText } from './errors';
 import { usePaged } from './pager';
 
-type P = { id?: string; category: string; nameAr: string; nameEn: string; price: number | ''; per: string; featured: boolean; active: boolean; sort: number | ''; specs: string; features: string };
+type P = { id?: string; category: string; nameAr: string; nameEn: string; price: number | ''; per: string; featured: boolean; active: boolean; sort: number | ''; specs: string; features: string; seats?: number | '' };
 const CATS: [string, string, string][] = [['hosting', 'استضافة', 'Hosting'], ['email', 'إيميلات', 'Email'], ['vps', 'VPS', 'VPS'], ['site', 'تصميم مواقع', 'Web design'], ['bundle', 'باقة كاملة', 'Bundle']];
 const blank: P = { category: 'hosting', nameAr: '', nameEn: '', price: '', per: 'month', featured: false, active: true, sort: '', specs: '', features: '' };
 
@@ -49,6 +49,7 @@ export function AdminPlans() {
           <div className="field"><label htmlFor="pl-e">{t('الاسم (English)', 'Name (English)')}</label><input id="pl-e" className="input latin" maxLength={80} value={form.nameEn} onChange={(e) => set('nameEn', e.target.value)} /></div>
           <div className="field"><label htmlFor="pl-p">{t('السعر', 'Price')} ({cur})</label><input id="pl-p" className="input latin" type="number" min={0} step="any" required value={String(form.price)} onChange={(e) => set('price', e.target.value === '' ? '' : Number(e.target.value))} /></div>
           <div className="field"><label htmlFor="pl-per">{t('الدورة', 'Billing')}</label><select id="pl-per" className="select" value={form.per} onChange={(e) => set('per', e.target.value)}><option value="month">{t('شهري', 'Monthly')}</option><option value="year">{t('سنوي', 'Yearly')}</option><option value="once">{t('مرة واحدة', 'One-time')}</option></select></div>
+          {form.category === 'email' && <div className="field"><label htmlFor="pl-seats">{t('عدد الإيميلات في الباقة', 'Mailboxes in the plan')}</label><input id="pl-seats" className="input latin" type="number" min={0} step={1} value={String(form.seats ?? '')} onChange={(e) => set('seats', e.target.value === '' ? '' : Number(e.target.value))} /></div>}
           <div className="field"><label htmlFor="pl-s">{t('الترتيب', 'Order')}</label><input id="pl-s" className="input latin" type="number" step="any" value={String(form.sort)} onChange={(e) => set('sort', e.target.value === '' ? '' : Number(e.target.value))} /></div>
           <label className="check"><input type="checkbox" checked={form.active} onChange={(e) => set('active', e.target.checked)} /> {t('مفعّلة (تظهر في الموقع)', 'Active (shown on the website)')}</label>
           <label className="check"><input type="checkbox" checked={form.featured} onChange={(e) => set('featured', e.target.checked)} /> {t('الأكثر طلبًا', 'Most popular')}</label>

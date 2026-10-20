@@ -226,7 +226,7 @@ export function PortalQuotes() {
   const quotes = [...(data.quotes ?? [])].sort((a, b) => String(b.created).localeCompare(String(a.created)));
   const answer = async (id: string, accept: boolean) => {
     setErr(''); setBusy(id);
-    try { const r = await post<{ invoice?: string }>('quotes/respond', { id, accept }); await reload(); if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); }
+    try { const r = await post<{ order?: string; invoice?: string }>('quotes/respond', { id, accept }); await reload(); if (accept && r.order) nav(`/portal/orders/${r.order}`); else if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); }
     catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر الرد على العرض.', 'Could not answer the quote.')); } finally { setBusy(''); }
   };
   const f = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -248,7 +248,7 @@ export function PortalQuotes() {
               {q.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{q.notes}</p>}
               <div className="row-actions"><Link className="btn btn-ghost btn-sm" to={`/portal/quotes/${q.id}`}>{t('التفاصيل / PDF', 'Details / PDF')}</Link></div>
               {q.status === 'delivered' && <div className="row-actions"><button className="btn btn-accent btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, true)}>{t('اقبل العرض', 'Accept the quote')}</button><button className="btn btn-ghost btn-sm" disabled={busy === q.id} onClick={() => void answer(q.id, false)}>{t('ارفض', 'Decline')}</button></div>}
-              {q.status === 'accepted' && q.invoiceId && <Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${q.invoiceId}`}>{t('افتح الفاتورة', 'Open the invoice')}</Link>}
+              {q.status === 'accepted' && (q.orderId || q.invoiceId) && <Link className="btn btn-ghost btn-sm" to={q.orderId ? `/portal/orders/${q.orderId}` : `/portal/invoices/${q.invoiceId}`}>{q.orderId ? t('افتح الطلب وادفع', 'Open the order and pay') : t('افتح الفاتورة', 'Open the invoice')}</Link>}
             </div>
           ))}
         </div>
@@ -328,13 +328,13 @@ export function PortalQuoteView() {
   if (!data) return null;
   const q = (data.quotes ?? []).find((x) => x.id === id);
   if (!q) return <Navigate to="/portal/quotes" replace />;
-  const answer = async (accept: boolean) => { setErr(''); try { const r = await post<{ invoice?: string }>('quotes/respond', { id: q.id, accept }); await reload(); if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); } catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر الرد على العرض.', 'Could not answer the quote.')); } };
+  const answer = async (accept: boolean) => { setErr(''); try { const r = await post<{ order?: string; invoice?: string }>('quotes/respond', { id: q.id, accept }); await reload(); if (accept && r.order) nav(`/portal/orders/${r.order}`); else if (accept && r.invoice) nav(`/portal/invoices/${r.invoice}`); } catch (x) { setErr(x instanceof ApiError && x.message ? x.message : t('تعذّر الرد على العرض.', 'Could not answer the quote.')); } };
   return (
     <Page title={`${t('عرض سعر', 'Quote')} ${q.number}`} action={<div className="row-actions"><button className="btn btn-primary btn-sm" onClick={() => window.print()}>{t('طباعة / PDF', 'Print / PDF')}</button>{q.token && <button className="btn btn-ghost btn-sm" onClick={async () => { setCopied(await copyText(quoteLink(q.token!))); window.setTimeout(() => setCopied(false), 2500); }}>{copied ? t('اتنسخ ✓', 'Copied ✓') : t('نسخ اللينك', 'Copy link')}</button>}<Link to="/portal/quotes" className="btn btn-ghost btn-sm">{t('← العروض', '← Quotes')}</Link></div>}>
       {err && <div className="form-error" role="alert">{err}</div>}
       <QuoteSheet q={q} biz={data.business ?? {}} customer={data.me ?? { name: '', email: '' }} />
       {q.status === 'delivered' && <div className="row-actions no-print" style={{ marginTop: 12 }}><button className="btn btn-accent" onClick={() => void answer(true)}>{t('اقبل العرض', 'Accept the quote')}</button><button className="btn btn-ghost" onClick={() => void answer(false)}>{t('ارفض', 'Decline')}</button></div>}
-      {q.status === 'accepted' && q.invoiceId && <Link className="btn btn-ghost btn-sm no-print" to={`/portal/invoices/${q.invoiceId}`}>{t('افتح الفاتورة', 'Open the invoice')}</Link>}
+      {q.status === 'accepted' && (q.orderId || q.invoiceId) && <Link className="btn btn-accent btn-sm no-print" to={q.orderId ? `/portal/orders/${q.orderId}` : `/portal/invoices/${q.invoiceId}`}>{q.orderId ? t('افتح الطلب وادفع', 'Open the order and pay') : t('افتح الفاتورة', 'Open the invoice')}</Link>}
     </Page>
   );
 }

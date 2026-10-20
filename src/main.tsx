@@ -21,6 +21,7 @@ import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } fr
 import { AdminOrders } from './admin/Orders';
 import { PortalProfile, TermsPage } from './portal/Identity';
 import { MailApp } from './portal/Mail';
+import { EmailPlans, PortalEmail } from './portal/EmailApp';
 import { ForgotPassword, PortalInvoice, PortalQuoteView, PortalQuotes, PublicQuote, RenewPage, ResetPassword } from './portal/Extras';
 import { AdminInvoice, AdminInvoices, AdminTransactions } from './admin/Invoices';
 import { AdminClient } from './admin/Client';
@@ -28,7 +29,7 @@ import { AuthProvider } from './auth';
 import { I18nProvider } from './i18n';
 import Layout from './site/Layout';
 import { Cloud, Contact, Domains, EmailPage, Home, Hosting, NotFound, Pricing, Status, Websites } from './site/pages';
-import { Login, Overview, Register, PortalBilling, PortalDomainDetail, PortalDomains, PortalEmail, PortalHosting, PortalHostingDetail, PortalLayout, PortalServers, PortalSupport, PortalWebsiteDetail, PortalWebsites } from './portal/Portal';
+import { Login, Overview, Register, PortalBilling, PortalDomainDetail, PortalDomains, PortalHosting, PortalHostingDetail, PortalLayout, PortalServers, PortalSupport, PortalWebsiteDetail, PortalWebsites } from './portal/Portal';
 
 const Router = import.meta.env.VITE_ROUTER === 'browser' ? BrowserRouter : HashRouter;
 
@@ -107,6 +108,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="renew/:res/:id" element={<RenewPage />} />
             <Route path="orders/:id" element={<PortalOrderDetail />} />
             <Route path="email" element={<PortalEmail />} />
+            <Route path="email/new" element={<EmailPlans />} />
             <Route path="mail" element={<Navigate to="/mail" replace />} />
             <Route path="hosting" element={<PortalHosting />} />
             <Route path="servers" element={<PortalServers />} />

@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-20",
+ "en": [
+  "Quote → order (admin button and client acceptance now create an order + invoice); email plans with mailbox counts, plan chooser and setup wizard (suggested mailboxes reserved until payment, activated when the order is paid); redesigned My email page (status banner, stats, copy buttons, login details, support); row menu no longer clipped"
+ ],
+ "ar": [
+  "تحويل العرض لأوردر (زرار للأدمن وقبول العميل بيعملوا أوردر وفاتورة)؛ باقات إيميل بعدد الصناديق مع اختيار الباقة ومعالج تجهيز (الإيميلات المقترحة بتتحجز لحد الدفع وبتشتغل لما الأوردر يتدفع)؛ صفحة إيميلاتي بتصميم جديد (بانر الحالة وأرقام وأزرار نسخ وبيانات الدخول والدعم)؛ وقائمة ⋮ ما بقتش بتتقطع"
+ ]
+}

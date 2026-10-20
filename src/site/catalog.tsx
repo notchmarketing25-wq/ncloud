@@ -5,10 +5,10 @@ import { api } from '../lib/api';
 import type { Bi } from '../i18n';
 
 export type Category = 'hosting' | 'email' | 'vps' | 'site' | 'bundle';
-export type CPlan = Plan & { per: 'month' | 'year' | 'once'; category: Category; included?: Bi[] };
+export type CPlan = Plan & { per: 'month' | 'year' | 'once'; category: Category; included?: Bi[]; seats?: number };
 type Ctx = { plans: CPlan[]; tlds: Tld[]; ready: boolean; live: boolean; of: (c: Category) => CPlan[] };
 
-type ApiPlan = { id: string; category: Category; nameAr: string; nameEn?: string; price: number; per: 'month' | 'year' | 'once'; featured?: boolean; sort?: number; specs?: string; features?: string };
+type ApiPlan = { id: string; category: Category; nameAr: string; nameEn?: string; price: number; per: 'month' | 'year' | 'once'; featured?: boolean; sort?: number; specs?: string; features?: string; seats?: number };
 
 /** "ar | en" on every side; a missing English half falls back to the Arabic one. */
 const bi = (s: string): Bi => { const [ar, en] = s.split('|').map((x) => x.trim()); return { ar: ar ?? '', en: en || ar || '' }; };
@@ -18,7 +18,7 @@ const spec = (l: string) => { const i = l.indexOf(':'); return i < 0 ? { label: 
 
 export function fromApi(p: ApiPlan): CPlan {
   const features = lines(p.features).map(bi);
-  return { id: p.id, category: p.category, per: p.per, name: { ar: p.nameAr, en: p.nameEn || p.nameAr }, price: p.price, featured: !!p.featured, specs: lines(p.specs).map(spec), features, included: features };
+  return { id: p.id, category: p.category, per: p.per, name: { ar: p.nameAr, en: p.nameEn || p.nameAr }, price: p.price, featured: !!p.featured, specs: lines(p.specs).map(spec), features, included: features, seats: p.seats };
 }
 
 const per = (c: Category): CPlan['per'] => (c === 'site' ? 'once' : c === 'bundle' ? 'year' : 'month');

@@ -434,6 +434,8 @@ export function AdminClient() {
               <button className="btn btn-ghost btn-sm" onClick={() => setQuoteView(q)}>{t('عرض / PDF', 'View / PDF')}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setQuoteEdit(q)}>{t('تعديل', 'Edit')}</button>
               {q.status !== 'accepted' && <button className="btn btn-ghost btn-sm" onClick={() => void run(() => post('admin/quote-send', { id: q.id }), t('اتبعت العرض للعميل.', 'Quote sent to the client.'))}>{t('إرسال للعميل', 'Send to client')}</button>}
+              {!q.orderId && q.status !== 'declined' && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحوّل العرض لأوردر وفاتورة؟', 'Convert this quote into an order and invoice?'))) void run(() => post('admin/quote-to-order', { id: q.id }), t('اتحوّل لأوردر.', 'Converted to an order.')); }}>{t('تحويل لأوردر', 'Convert to order')}</button>}
+              {q.orderId && <Link className="btn btn-ghost btn-sm" to="/admin/orders">{t('الأوردر', 'Order')}</Link>}
               {q.invoiceId && <Link className="btn btn-ghost btn-sm" to={`/admin/invoices/${q.invoiceId}`}>{t('الفاتورة', 'Invoice')}</Link>}
               <button className="btn btn-ghost btn-sm" onClick={() => { if (window.confirm(t('تحذف العرض؟', 'Delete the quote?'))) void run(() => post('admin/item-delete', { id: q.id }, { res: 'quotes' }), t('اتحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button></div></td></tr>)}
           </Table>

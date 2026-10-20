@@ -1,5 +1,6 @@
 import { TechIcon } from '../site/svc';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { Ltr, useI18n } from '../i18n';
 import { api, type User } from '../lib/api';
@@ -64,20 +65,29 @@ export const LtrText = ({ children }: { children: ReactNode }) => <Ltr>{children
 export function StatusMenu({ res, item, run }: { res: string; item: Item; run: (fn: () => Promise<unknown>, done: string) => Promise<boolean> }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
   const st = String(item.status);
+  // The menu is drawn on <body> (fixed), so a table card with overflow:hidden can never clip it.
+  useEffect(() => {
+    if (!open) return;
+    const place = () => { const r = btn.current?.getBoundingClientRect(); if (!r) return; const w = 210; const rtl = document.documentElement.dir === 'rtl'; const left = Math.min(Math.max(8, rtl ? r.left : r.right - w), window.innerWidth - w - 8); const h = 200; const top = r.bottom + h > window.innerHeight ? Math.max(8, r.top - h) : r.bottom + 4; setPos({ top, left }); };
+    place(); const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true); window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [open]);
   const set = (status: string, msg: string) => { setOpen(false); void run(() => api('admin/item-save', { item: { ...item, status } }, { res }), msg); };
   return (
     <span className="menu-wrap" onClick={(e) => e.stopPropagation()}>
-      <button className="btn btn-ghost btn-sm" aria-haspopup="menu" aria-expanded={open} aria-label={t('خيارات', 'Options')} onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)}>⋮</button>
-      {open && (
-        <div className="menu-pop" role="menu">
+      <button ref={btn} className="btn btn-ghost btn-sm" aria-haspopup="menu" aria-expanded={open} aria-label={t('خيارات', 'Options')} onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)}>⋮</button>
+      {open && pos && createPortal(
+        <div className="menu-pop menu-fixed" role="menu" style={{ top: pos.top, left: pos.left }}>
           {st !== 'active' && st !== 'archived' && <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('active', t('اتفعّل.', 'Activated.'))}>{t('تفعيل', 'Activate')}</button>}
           {st === 'active' && <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('stopped', t('اتوقف.', 'Suspended.'))}>{t('إيقاف', 'Suspend')}</button>}
           {st !== 'archived' ? <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('archived', t('اتأرشف وبقى مخفي عن العميل.', 'Archived and hidden from the client.'))}>{t('أرشفة (إخفاء عن العميل)', 'Archive (hide from client)')}</button>
             : <button role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => set('active', t('رجع من الأرشيف.', 'Restored from the archive.'))}>{t('استرجاع من الأرشيف', 'Restore from archive')}</button>}
           <button role="menuitem" className="danger" onMouseDown={(e) => e.preventDefault()} onClick={() => { setOpen(false); if (window.confirm(t('تحذف نهائيًا؟ لا يمكن التراجع.', 'Delete permanently? This cannot be undone.'))) void run(() => api('admin/item-delete', { id: item.id }, { res }), t('اتحذف.', 'Deleted.')); }}>{t('حذف', 'Delete')}</button>
-        </div>
-      )}
+        </div>, document.body)}
     </span>
   );
 }
