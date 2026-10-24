@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { hostingPlans, emailPlans, sitePackages, vpsPlans, bundle, type Plan } from '../data/content';
 import { Ltr, useI18n } from '../i18n';
 import { api, post } from '../lib/api';
 import { useCurrency } from '../site/settings';
@@ -10,14 +9,6 @@ import { usePaged } from './pager';
 type P = { id?: string; category: string; nameAr: string; nameEn: string; price: number | ''; per: string; featured: boolean; active: boolean; sort: number | ''; specs: string; features: string; seats?: number | '' };
 const CATS: [string, string, string][] = [['hosting', 'استضافة', 'Hosting'], ['email', 'إيميلات', 'Email'], ['vps', 'VPS', 'VPS'], ['site', 'تصميم مواقع', 'Web design'], ['bundle', 'باقة كاملة', 'Bundle']];
 const blank: P = { category: 'hosting', nameAr: '', nameEn: '', price: '', per: 'month', featured: false, active: true, sort: '', specs: '', features: '' };
-
-const bi = (b: { ar: string; en: string }) => (b.ar === b.en ? b.ar : `${b.ar} | ${b.en}`);
-const starter = (): P[] => {
-  const conv = (cat: string, per: string, list: Plan[]): P[] => list.map((p) => ({ category: cat, nameAr: p.name.ar, nameEn: p.name.en, price: p.price, per, featured: !!p.featured, active: false, sort: '',
-    specs: p.specs.map((s) => `${bi(s.label)} : ${bi(s.value)}`).join('\n'), features: p.features.map(bi).join('\n') }));
-  return [...conv('hosting', 'month', hostingPlans), ...conv('email', 'month', emailPlans), ...conv('vps', 'month', vpsPlans), ...conv('site', 'once', sitePackages),
-    { category: 'bundle', nameAr: bundle.title.ar, nameEn: bundle.title.en, price: bundle.price, per: 'year', featured: false, active: false, sort: '', specs: '', features: bundle.items.map(bi).join('\n') }];
-};
 
 /** Admin → Plans: the price list shown on the website. Only "active" plans are public. */
 export function AdminPlans() {
@@ -37,7 +28,6 @@ export function AdminPlans() {
   const { rows: planRows, pager: planPager } = usePaged(sorted);
   return (
     <Page title={t('الباقات والأسعار', 'Plans')} action={<div className="row-actions">
-      {items.length === 0 && <button className="btn btn-ghost btn-sm" onClick={() => void run(async () => { for (const p of starter()) await save(p); }, t('اتضافت باقات مبدئية (غير مفعّلة). عدّل الأسعار وفعّلها.', 'Starter plans added (inactive). Edit the prices and activate them.'))}>{t('أضف باقات مبدئية', 'Add starter plans')}</button>}
       <button className="btn btn-primary btn-sm" onClick={() => setForm(form ? null : { ...blank })}>{form ? t('إلغاء', 'Cancel') : t('+ باقة', '+ Plan')}</button></div>}>
       {err && <div className="form-error" role="alert">{err}</div>}
       {ok && <div className="form-ok" role="status">{ok}</div>}
@@ -60,7 +50,7 @@ export function AdminPlans() {
           <div className="admin-form-actions"><button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button></div>
         </form>
       )}
-      <Table head={[t('القسم', 'Category'), t('الباقة', 'Plan'), t('السعر', 'Price'), t('الحالة', 'Status'), '']} empty={items.length === 0 ? t('مفيش باقات لسه. أضف باقات مبدئية أو واحدة جديدة.', 'No plans yet. Add the starter plans or a new one.') : undefined}>
+      <Table head={[t('القسم', 'Category'), t('الباقة', 'Plan'), t('السعر', 'Price'), t('الحالة', 'Status'), '']} empty={items.length === 0 ? t('مفيش باقات لسه. أضف أول باقة.', 'No plans yet. Add your first plan.') : undefined}>
         {planRows.map((p) => (
           <tr key={p.id}>
             <td>{catLabel(p.category)}</td>

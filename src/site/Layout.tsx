@@ -65,7 +65,6 @@ export default function Layout() {
 
   return (
     <>
-      {settings.placeholder && <div className="announce"><span className="dot pulse" /> {t('كل الأرقام والأسعار في الموقع تجريبية لحد الإطلاق', 'All numbers and prices on this site are placeholders until launch')}</div>}
       <header className={`header${scrolled ? ' is-scrolled' : ''}`}>
         <div className="container header-in">
           <Logo />
@@ -116,7 +115,7 @@ function Footer() {
           <div><h5>{t('العميل', 'Clients')}</h5><Link to="/portal/login">{t('دخول العميل', 'Client login')}</Link><Link to="/portal/register">{t('إنشاء حساب', 'Create account')}</Link><Link to="/portal">{t('لوحة التحكم', 'Control panel')}</Link><Link to="/terms">{t('الشروط والأحكام', 'Terms & conditions')}</Link></div>
         </div>
         <div className="footer-word" aria-hidden>NOTCH</div>
-        <div className="footer-bottom latin"><span>© {new Date().getFullYear()} {settings.site ? settings.site.toUpperCase() : 'NOTCH CLOUD SERVICES'}</span>{settings.placeholder && <span>PLACEHOLDER CONTENT</span>}</div>
+        <div className="footer-bottom latin"><span>© {new Date().getFullYear()} {settings.site ? settings.site.toUpperCase() : 'NOTCH CLOUD SERVICES'}</span></div>
       </div>
     </footer>
   );

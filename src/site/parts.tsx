@@ -22,8 +22,8 @@ export function SectionHead({ title, text }: { title: string; text?: string }) {
 export function Ph() {
   const { t } = useI18n();
   const { settings } = useSite();
-  if (!settings.placeholder) return null;
-  return <span className="ph" title={t('رقم تجريبي', 'Placeholder value')}>{t('تجريبي', 'placeholder')}</span>;
+  void settings; void t;
+  return null;
 }
 
 export function Money({ value }: { value: number }) {

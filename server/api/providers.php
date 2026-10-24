@@ -1373,3 +1373,193 @@ function mail_dns_apply($domainId, $actor, $dkim = false, $dmarc = true) {
     });
     return array('added' => $added, 'warning' => prov_dns_autopush($domainId));
 }
+
+/* ───────── operations: backups, financial report, CSV exports (routes admin/ops/*) ───────── */
+function ops_bdir() {
+    $d = NC_DATA . '/backups';
+    if (!is_dir($d)) { @mkdir($d, 0755, true); @file_put_contents($d . '/.htaccess', "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nOrder allow,deny\nDeny from all\n</IfModule>\n"); @file_put_contents($d . '/index.html', ''); }
+    return $d;
+}
+function ops_uploads_dir() { return dirname(NC_DATA, 2) . '/uploads'; }
+function ops_valid_name($n) { return (bool) preg_match('/^ncloud-backup-\d{8}-\d{6}-[a-f0-9]{8}\.zip$/', (string) $n); }
+/** The whole site state as one zip: db.json + the private ID documents + uploaded images + the key that protects mailbox passwords. */
+function ops_backup_create($kind = 'manual') {
+    if (!class_exists('ZipArchive')) { throw new Exception('this server has no PHP zip extension'); }
+    $db = db_read(); unset($db['attempts']);
+    $name = 'ncloud-backup-' . gmdate('Ymd-His') . '-' . bin2hex(function_exists('random_bytes') ? random_bytes(4) : substr(md5(uniqid('', true)), 0, 4)) . '.zip';
+    $path = ops_bdir() . '/' . $name;
+    $z = new ZipArchive();
+    if ($z->open($path, ZipArchive::CREATE) !== true) { throw new Exception('could not create the backup file (check folder permissions)'); }
+    $counts = array('users' => count($db['users']), 'tickets' => count($db['tickets']), 'leads' => count($db['leads']));
+    foreach ($db['items'] as $res => $list) { $counts[$res] = count($list); }
+    $z->addFromString('db.json', json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    $z->addFromString('manifest.json', json_encode(array('app' => 'ncloud', 'version' => NC_VERSION, 'created' => gmdate('c'), 'kind' => $kind, 'storage' => use_sql() ? 'mysql' : 'file', 'counts' => $counts)));
+    $files = 0;
+    foreach (array('kyc' => NC_DATA . '/kyc', 'uploads' => ops_uploads_dir()) as $label => $dir) {
+        if (!is_dir($dir)) { continue; }
+        foreach (scandir($dir) as $f) { if ($f === '.' || $f === '..' || $f === '.htaccess' || $f === 'index.html' || is_dir($dir . '/' . $f)) { continue; } $z->addFile($dir . '/' . $f, 'files/' . $label . '/' . $f); $files++; }
+    }
+    if (is_file(NC_DATA . '/.mailkey')) { $z->addFile(NC_DATA . '/.mailkey', 'files/mailkey'); }
+    $z->close();
+    @chmod($path, 0600);
+    return array('name' => $name, 'size' => (int) @filesize($path), 'files' => $files);
+}
+function ops_backup_list() {
+    $o = array();
+    foreach (is_dir(ops_bdir()) ? scandir(ops_bdir()) : array() as $f) { if (ops_valid_name($f)) { $p = ops_bdir() . '/' . $f; $o[] = array('name' => $f, 'size' => (int) filesize($p), 'created' => gmdate('c', (int) filemtime($p))); } }
+    usort($o, function ($a, $b) { return strcmp($b['created'], $a['created']); });
+    return $o;
+}
+function ops_backup_prune($keepAuto = 7) {
+    $auto = 0;
+    foreach (ops_backup_list() as $b) { // newest first; the daily ones are named in the manifest, so keep simply the newest N overall plus anything newer than 2 days
+        $auto++;
+        if ($auto > max($keepAuto, 7) + 3) { @unlink(ops_bdir() . '/' . $b['name']); }
+    }
+}
+/** Once a day, from the daily job / the first admin visit. */
+function ops_backup_daily() {
+    $db = db_read();
+    if (meta_get($db, 'lastBackup', '') === gmdate('Y-m-d')) { return; }
+    try { ops_backup_create('daily'); ops_backup_prune(); db_update(function (&$d) { $d['meta']['lastBackup'] = gmdate('Y-m-d'); }); } catch (Exception $e) { error_log('ncloud backup: ' . $e->getMessage()); }
+}
+/** Replaces the live data with a backup. A fresh safety copy is taken first. */
+function ops_backup_restore($zipPath, $actor) {
+    if (!class_exists('ZipArchive')) { throw new Exception('this server has no PHP zip extension'); }
+    $z = new ZipArchive();
+    if ($z->open($zipPath) !== true) { throw new Exception('this is not a valid backup file'); }
+    $man = json_decode((string) $z->getFromName('manifest.json'), true);
+    $data = json_decode((string) $z->getFromName('db.json'), true);
+    if (!is_array($man) || !isset($man['app']) || $man['app'] !== 'ncloud' || !is_array($data) || !isset($data['users'], $data['items'], $data['meta'])) { $z->close(); throw new Exception('this is not a Notch Cloud backup'); }
+    $hasAdmin = false; foreach ($data['users'] as $u) { if (isset($u['role']) && $u['role'] === 'admin') { $hasAdmin = true; } }
+    if (!$hasAdmin) { $z->close(); throw new Exception('the backup has no admin account'); }
+    $safety = ops_backup_create('pre-restore');
+    $base = db_default();
+    foreach ($base as $k => $v) { if (!isset($data[$k]) || !is_array($data[$k])) { $data[$k] = $v; } }
+    db_update(function (&$db) use ($data) { $att = $db['attempts']; foreach ($data as $k => $v) { $db[$k] = $v; } $db['attempts'] = $att; });
+    // files: private ID documents, uploaded images, the mailbox key
+    $n = 0;
+    for ($i = 0; $i < $z->numFiles; $i++) {
+        $f = $z->getNameIndex($i);
+        if (!preg_match('#^files/(kyc|uploads)/([A-Za-z0-9._\-]+)$#', $f, $m) && $f !== 'files/mailkey') { continue; }
+        if ($f === 'files/mailkey') { @file_put_contents(NC_DATA . '/.mailkey', $z->getFromIndex($i)); @chmod(NC_DATA . '/.mailkey', 0600); continue; }
+        $dir = $m[1] === 'kyc' ? kyc_dir() : ops_uploads_dir();
+        if (!is_dir($dir)) { @mkdir($dir, 0755, true); }
+        @file_put_contents($dir . '/' . $m[2], $z->getFromIndex($i)); $n++;
+    }
+    $z->close();
+    return array('safety' => $safety['name'], 'files' => $n, 'version' => isset($man['version']) ? $man['version'] : '');
+}
+
+function ops_month($iso) { return substr((string) $iso, 0, 7); }
+/** Money in, money out and what is still owed, per month, per payment method, per service type and per client. */
+function ops_report($from, $to) {
+    $db = db_read(); $cur = meta_get($db, 'currency', '') ?: 'EGP';
+    $m = array(); $ensure = function ($k) use (&$m) { if (!isset($m[$k])) { $m[$k] = array('month' => $k, 'invoiced' => 0, 'tax' => 0, 'collected' => 0, 'refunded' => 0, 'fees' => 0, 'costs' => 0); } };
+    $byMethod = array(); $byClient = array(); $byCat = array(); $outstanding = 0; $overdue = 0; $today = gmdate('Y-m-d');
+    $orders = array(); foreach (items_of($db, 'orders') as $o) { $orders[$o['id']] = $o; }
+    foreach (items_of($db, 'invoices') as $inv) {
+        if (in_array($inv['status'], array('void', 'draft'), true)) { continue; }
+        $d = isset($inv['date']) ? $inv['date'] : substr($inv['created'], 0, 10);
+        if ($d >= $from && $d <= $to) {
+            $ensure(ops_month($d)); $m[ops_month($d)]['invoiced'] += (float) $inv['amount'];
+            foreach (isset($inv['taxLines']) && is_array($inv['taxLines']) ? $inv['taxLines'] : array() as $tl) { $m[ops_month($d)]['tax'] += (float) $tl['amount']; }
+            $oid = isset($inv['orderId']) ? $inv['orderId'] : '';
+            if ($oid !== '' && isset($orders[$oid]) && !empty($orders[$oid]['lines'])) { $sum = 0; foreach ($orders[$oid]['lines'] as $l) { $sum += (float) $l['price']; } foreach ($orders[$oid]['lines'] as $l) { $cat = $l['kind'] === 'domain' ? 'domains' : ($l['kind'] === 'renew' ? 'renewals' : (isset($l['category']) && $l['category'] !== '' ? $l['category'] : 'other')); $byCat[$cat] = (isset($byCat[$cat]) ? $byCat[$cat] : 0) + ($sum > 0 ? (float) $inv['amount'] * (float) $l['price'] / $sum : 0); } }
+            else { $byCat['manual'] = (isset($byCat['manual']) ? $byCat['manual'] : 0) + (float) $inv['amount']; }
+        }
+        $bal = inv_balance($inv); if ($bal > 0 && in_array($inv['status'], array('due', 'collections'), true)) { $outstanding += $bal; if (!empty($inv['dueDate']) && $inv['dueDate'] < $today) { $overdue += $bal; } }
+        foreach (isset($inv['payments']) && is_array($inv['payments']) ? $inv['payments'] : array() as $e) {
+            $pd = substr($e['at'], 0, 10); if ($pd < $from || $pd > $to) { continue; }
+            $ensure(ops_month($pd));
+            if ($e['type'] === 'refund') { $m[ops_month($pd)]['refunded'] += (float) $e['amount']; continue; }
+            $m[ops_month($pd)]['collected'] += (float) $e['amount']; $m[ops_month($pd)]['fees'] += isset($e['fee']) ? (float) $e['fee'] : 0;
+            $mt = $e['method'] !== '' ? $e['method'] : '-'; $byMethod[$mt] = (isset($byMethod[$mt]) ? $byMethod[$mt] : 0) + (float) $e['amount'];
+            $byClient[$inv['uid']] = (isset($byClient[$inv['uid']]) ? $byClient[$inv['uid']] : 0) + (float) $e['amount'];
+        }
+    }
+    foreach (items_of($db, 'purchases') as $p) { $pd = isset($p['date']) ? $p['date'] : substr($p['created'], 0, 10); if ($pd >= $from && $pd <= $to) { $ensure(ops_month($pd)); $m[ops_month($pd)]['costs'] += (float) $p['amount']; } }
+    ksort($m); $rows = array(); $tot = array('invoiced' => 0, 'tax' => 0, 'collected' => 0, 'refunded' => 0, 'fees' => 0, 'costs' => 0);
+    foreach ($m as $r) { foreach ($tot as $k => $_) { $tot[$k] += $r[$k]; $r[$k] = round($r[$k], 2); } $r['profit'] = round($r['collected'] - $r['refunded'] - $r['fees'] - $r['costs'], 2); $rows[] = $r; }
+    foreach ($tot as $k => $v) { $tot[$k] = round($v, 2); } $tot['profit'] = round($tot['collected'] - $tot['refunded'] - $tot['fees'] - $tot['costs'], 2);
+    arsort($byClient); $top = array(); foreach (array_slice($byClient, 0, 10, true) as $uid => $v) { $top[] = array('uid' => $uid, 'name' => user_name($db, $uid), 'collected' => round($v, 2)); }
+    $fmt = function ($a) { arsort($a); $o = array(); foreach ($a as $k => $v) { $o[] = array('key' => (string) $k, 'amount' => round($v, 2)); } return $o; };
+    $credit = 0; foreach ($db['users'] as $u) { $credit += isset($u['credit']) ? (float) $u['credit'] : 0; }
+    return array('currency' => $cur, 'from' => $from, 'to' => $to, 'months' => $rows, 'totals' => $tot, 'outstanding' => round($outstanding, 2), 'overdue' => round($overdue, 2), 'credit' => round($credit, 2), 'byMethod' => $fmt($byMethod), 'byCategory' => $fmt($byCat), 'topClients' => $top);
+}
+function ops_csv_cell($v) { $v = is_array($v) ? json_encode($v, JSON_UNESCAPED_UNICODE) : (string) $v; if ($v !== '' && strpos('=+-@', $v[0]) !== false) { $v = "'" . $v; } return '"' . str_replace('"', '""', $v) . '"'; }
+function ops_csv($name, $header, $rows) {
+    header_remove('Content-Type'); header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="' . $name . '"'); header('Cache-Control: no-store');
+    echo "\xEF\xBB\xBF" . implode(',', array_map('ops_csv_cell', $header)) . "\r\n";
+    foreach ($rows as $r) { echo implode(',', array_map('ops_csv_cell', $r)) . "\r\n"; }
+    exit;
+}
+
+function ops_route($r, $me) {
+    $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+    switch ($r) {
+        case 'admin/ops/backups':
+            $db = db_read();
+            out(array('backups' => ops_backup_list(), 'last' => meta_get($db, 'lastBackup', ''), 'zip' => class_exists('ZipArchive')));
+        case 'admin/ops/backup-create':
+            require_post();
+            try { $b = ops_backup_create('manual'); ops_backup_prune(); } catch (Exception $e) { fail($e->getMessage(), 500); }
+            db_update(function (&$db) use ($me, $b) { log_act($db, $me, 'backup-create', $b['name']); });
+            out(array('ok' => true, 'backup' => $b));
+        case 'admin/ops/backup-download':
+            $n = isset($_GET['name']) ? (string) $_GET['name'] : '';
+            if (!ops_valid_name($n) || !is_file(ops_bdir() . '/' . $n)) { fail('backup not found', 404); }
+            header_remove('Content-Type'); header('Content-Type: application/zip'); header('Content-Disposition: attachment; filename="' . $n . '"'); header('Content-Length: ' . filesize(ops_bdir() . '/' . $n));
+            readfile(ops_bdir() . '/' . $n); exit;
+        case 'admin/ops/backup-delete':
+            require_post(); $b = body(); $n = isset($b['name']) ? (string) $b['name'] : '';
+            if (!ops_valid_name($n) || !is_file(ops_bdir() . '/' . $n)) { fail('backup not found', 404); }
+            @unlink(ops_bdir() . '/' . $n); out(array('ok' => true));
+        case 'admin/ops/backup-restore':
+            require_post();
+            if (!isset($_POST['confirm']) || $_POST['confirm'] !== 'RESTORE') { fail('type RESTORE to confirm', 422); }
+            $tmp = '';
+            if (!empty($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK && is_uploaded_file($_FILES['file']['tmp_name'])) { $tmp = $_FILES['file']['tmp_name']; }
+            elseif (!empty($_POST['name']) && ops_valid_name($_POST['name']) && is_file(ops_bdir() . '/' . $_POST['name'])) { $tmp = ops_bdir() . '/' . $_POST['name']; }
+            else { fail('choose a backup file (is it larger than the upload limit?)', 422); }
+            try { $res = ops_backup_restore($tmp, $me); } catch (Exception $e) { fail($e->getMessage(), 422); }
+            out(array('ok' => true, 'restored' => $res));
+        case 'admin/ops/report':
+            $from = isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']) ? $_GET['from'] : gmdate('Y-m-01', strtotime('-11 months'));
+            $to = isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']) ? $_GET['to'] : gmdate('Y-m-d');
+            out(ops_report($from, $to));
+        case 'admin/ops/export':
+            $kind = isset($_GET['kind']) ? (string) $_GET['kind'] : '';
+            $db = db_read(); $cur = meta_get($db, 'currency', '') ?: 'EGP';
+            $from = isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']) ? $_GET['from'] : '0000-00-00';
+            $to = isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']) ? $_GET['to'] : '9999-12-31';
+            $uname = function ($uid) use ($db) { return $uid === '' ? '' : user_name($db, $uid); };
+            if ($kind === 'invoices') {
+                $rows = array();
+                foreach (items_of($db, 'invoices') as $inv) { $d = isset($inv['date']) ? $inv['date'] : substr($inv['created'], 0, 10); if ($d < $from || $d > $to) { continue; } $tax = 0; foreach (isset($inv['taxLines']) && is_array($inv['taxLines']) ? $inv['taxLines'] : array() as $tl) { $tax += (float) $tl['amount']; } $rows[] = array($inv['number'], $d, isset($inv['dueDate']) ? $inv['dueDate'] : '', $uname($inv['uid']), $inv['item'], $inv['status'], $inv['amount'], round($tax, 2), inv_paid($inv), inv_balance($inv), $cur); }
+                ops_csv('invoices.csv', array('Number', 'Date', 'Due', 'Client', 'Description', 'Status', 'Amount', 'Tax', 'Paid', 'Balance', 'Currency'), $rows);
+            }
+            if ($kind === 'transactions') {
+                $rows = array();
+                foreach (items_of($db, 'invoices') as $inv) { foreach (isset($inv['payments']) && is_array($inv['payments']) ? $inv['payments'] : array() as $e) { $d = substr($e['at'], 0, 10); if ($d < $from || $d > $to) { continue; } $rows[] = array($d, $inv['number'], $uname($inv['uid']), $e['type'], $e['method'], isset($e['ref']) ? $e['ref'] : '', $e['amount'], isset($e['fee']) ? $e['fee'] : 0, $cur); } }
+                usort($rows, function ($a, $b) { return strcmp($a[0], $b[0]); });
+                ops_csv('transactions.csv', array('Date', 'Invoice', 'Client', 'Type', 'Method', 'Reference', 'Amount', 'Fee', 'Currency'), $rows);
+            }
+            if ($kind === 'clients') {
+                $rows = array(); $due = array(); foreach (items_of($db, 'invoices') as $inv) { $due[$inv['uid']] = (isset($due[$inv['uid']]) ? $due[$inv['uid']] : 0) + (in_array($inv['status'], array('due', 'collections'), true) ? inv_balance($inv) : 0); }
+                foreach ($db['users'] as $u) { $rows[] = array(isset($u['no']) ? $u['no'] : '', $u['name'], $u['email'], isset($u['phone']) ? $u['phone'] : '', isset($u['company']) ? $u['company'] : '', $u['role'], isset($u['created']) ? substr($u['created'], 0, 10) : '', isset($u['kyc']['type']) ? $u['kyc']['type'] : '', isset($u['credit']) ? $u['credit'] : 0, isset($due[$u['id']]) ? round($due[$u['id']], 2) : 0); }
+                ops_csv('clients.csv', array('No', 'Name', 'Email', 'Phone', 'Company', 'Role', 'Joined', 'Type', 'Credit', 'Balance due'), $rows);
+            }
+            if ($kind === 'services') {
+                $rows = array();
+                foreach (array('domains' => 'name', 'hosting' => 'plan', 'websites' => 'name', 'servers' => 'name', 'mailboxes' => 'address') as $res => $f) { foreach (items_of($db, $res) as $it) { $rows[] = array($res, isset($it[$f]) ? $it[$f] : '', sub_prefix($res) . '-' . strtoupper(substr(md5($it['id']), 0, 8)), $uname(isset($it['uid']) ? $it['uid'] : ''), isset($it['status']) ? $it['status'] : '', isset($it['expires']) ? $it['expires'] : '', isset($it['price']) ? $it['price'] : '', isset($it['provider']) ? $it['provider'] : ''); } }
+                ops_csv('services.csv', array('Type', 'Name', 'Subscription', 'Client', 'Status', 'Expires', 'Price', 'Provider'), $rows);
+            }
+            if ($kind === 'purchases') {
+                $rows = array(); foreach (items_of($db, 'purchases') as $p) { $rows[] = array($p['number'], isset($p['date']) ? $p['date'] : '', $p['provider'], $p['item'], $p['amount'], isset($p['status']) ? $p['status'] : ''); }
+                ops_csv('purchases.csv', array('Number', 'Date', 'Provider', 'Item', 'Amount', 'Status'), $rows);
+            }
+            fail('unknown export', 422);
+    }
+    fail('not found', 404);
+}

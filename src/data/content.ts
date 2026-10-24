@@ -1,7 +1,7 @@
 import type { Bi } from '../i18n';
 
 /** All prices and numbers below are PLACEHOLDERS. Set to false once real values are in. */
-export const SHOW_PLACEHOLDER = true;
+export const SHOW_PLACEHOLDER = false;
 export const CURRENCY: Bi = { ar: 'ج.م', en: 'EGP' };
 
 export type ServiceKey = 'domains' | 'email' | 'websites' | 'hosting' | 'vps' | 'cloud';

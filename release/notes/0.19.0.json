@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Launch hardening: database + files backups (daily, before updates and restores; download / restore), ticket e-mail notifications both ways, security headers + Content-Security-Policy, two-factor authentication (QR, recovery codes, admin reset), financial reports and CSV exports, automated test suite (npm test); all demo / placeholder content removed from production (demo mode is dev-only, no starter plans, no 'placeholder' marks)"
+ ],
+ "ar": [
+  "تجهيز للإطلاق: نسخ احتياطي للبيانات والملفات (يومي وقبل التحديثات والاسترجاع، مع تحميل واسترجاع)، تنبيهات التذاكر بالإيميل في الاتجاهين، رؤوس أمان وسياسة CSP، تحقق بخطوتين (QR وأكواد استرجاع وإعادة تعيين من الأدمن)، تقارير مالية وتصدير CSV، واختبارات آلية (npm test)؛ وإزالة كل المحتوى التجريبي من النسخة الحقيقية (الديمو للتطوير فقط، من غير باقات مبدئية ولا علامات 'تجريبي')"
+ ]
+}

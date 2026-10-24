@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { SecurityCard } from '../portal/Security';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
-import { api, post } from '../lib/api';
+import { api } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency } from '../site/settings';
 import { Page } from '../ui';
@@ -39,6 +40,7 @@ export function AdminLayout() {
     { to: '/admin/orders', label: t('الطلبات', 'Orders'), badge: badges.orders },
     { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
     { to: '/admin/transactions', label: t('المعاملات', 'Transactions') },
+    { to: '/admin/reports', label: t('التقارير', 'Reports') },
     { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
     { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },
     { to: '/admin/plans', label: t('الباقات والأسعار', 'Plans') },
@@ -46,6 +48,7 @@ export function AdminLayout() {
     { to: '/admin/pricing', label: t('أسعار الدومينات', 'TLD pricing') },
     { to: '/admin/purchases', label: t('فواتير الشراء', 'Purchases') },
     { to: '/admin/updates', label: t('التحديثات', 'Updates') },
+    { to: '/admin/backups', label: t('النسخ الاحتياطي', 'Backups') },
     { to: '/admin/settings', label: t('الإعدادات', 'Settings') },
     { to: '/admin/activity', label: t('سجل النشاط', 'Activity') },
     { to: '/admin/account', label: t('حسابي', 'My account') },
@@ -128,23 +131,5 @@ export function AdminOverview() {
 
 export function AdminAccount() {
   const { t } = useI18n();
-  const [cur, setCur] = useState('');
-  const [next, setNext] = useState('');
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  const submit = async (e: FormEvent) => {
-    e.preventDefault(); setErr(''); setOk('');
-    try { await post('auth/password', { current: cur, new: next }); setOk(t('تم تغيير كلمة السر.', 'Password changed.')); setCur(''); setNext(''); } catch (x) { setErr(errText(x, t)); }
-  };
-  return (
-    <Page title={t('حسابي', 'My account')}>
-      <form className="card form" onSubmit={submit} style={{ maxWidth: 480 }}>
-        <h3>{t('تغيير كلمة السر', 'Change password')}</h3>
-        {err && <div className="form-error" role="alert">{err}</div>}{ok && <div className="form-ok" role="status">{ok}</div>}
-        <div className="field"><label htmlFor="cp">{t('الحالية', 'Current')}</label><input id="cp" className="input latin" type="password" autoComplete="current-password" required value={cur} onChange={(e) => setCur(e.target.value)} /></div>
-        <div className="field"><label htmlFor="np">{t('الجديدة (8+)', 'New (8+)')}</label><input id="np" className="input latin" type="password" minLength={8} autoComplete="new-password" required value={next} onChange={(e) => setNext(e.target.value)} /></div>
-        <button className="btn btn-primary" type="submit">{t('حفظ', 'Save')}</button>
-      </form>
-    </Page>
-  );
+  return <Page title={t('حسابي', 'My account')}><SecurityCard /></Page>;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { SecurityCard } from './Security';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
@@ -166,6 +167,7 @@ export function PortalProfile() {
         {err && <div className="form-error" role="alert">{err}</div>}
         <button className="btn btn-accent" type="submit" disabled={busy}>{busy ? '…' : t('حفظ', 'Save')}</button>
       </form>
+      <SecurityCard />
       <h2 className="sub">{t('مستندات الهوية', 'Identity documents')}</h2>
       <div className="card"><KycDocs kyc={user.kyc} onChange={() => void refresh()} /></div>
       {terms && (terms.ar || terms.en) && (

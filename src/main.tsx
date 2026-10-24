@@ -9,6 +9,7 @@ import './portal/portal.css';
 import { AdminAccount, AdminLayout, AdminOverview } from './admin/Admin';
 import { AdminUsers } from './admin/Customers';
 import { AdminUpdates } from './admin/Updates';
+import { AdminBackups, AdminReports } from './admin/Ops';
 import { AdminPlans } from './admin/Plans';
 import { AdminDomainDetail, AdminHostingDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchaseDetail, AdminPurchases } from './admin/Providers';
@@ -68,6 +69,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="websites" element={<AdminWebsites />} />
             <Route path="plans" element={<AdminPlans />} />
             <Route path="orders" element={<AdminOrders />} />
+            <Route path="reports" element={<AdminReports />} />
+            <Route path="backups" element={<AdminBackups />} />
             <Route path="websites/:id" element={<AdminWebsiteDetail />} />
             <Route path="hosting/:id" element={<AdminHostingDetail />} />
             <Route path="users/:id" element={<AdminClient />} />

@@ -164,9 +164,6 @@ export function AdminSettings() {
                 {field('dl', t('اللغة الأساسية للموقع', 'Default site language'), <select id="dl" className="select" value={s.defaultLang ?? 'ar'} onChange={(e) => set({ defaultLang: e.target.value as 'ar' | 'en' })}><option value="ar">العربية</option><option value="en">English</option></select>, t('اللغة اللي بتفتح بيها الصفحة لأي زائر جديد. اللي بيغيّر اللغة بنفسه بتتفتح له اللغة اللي اختارها.', 'The language a new visitor sees first. Visitors who switch language keep their own choice.'), false)}
                 <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.allowRegistration !== false} onChange={(e) => set({ allowRegistration: e.target.checked })} /> {t('اسمح للعملاء الجدد بإنشاء حساب من الموقع', 'Let new customers create an account on the website')}</label>
               </>)}
-              {card(t('عرض الموقع', 'Website display'), null, <>
-                <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={s.placeholder} onChange={(e) => set({ placeholder: e.target.checked })} /> {t('اعرض علامة "تجريبي" على الأسعار والأرقام', 'Show the "placeholder" marks on prices and numbers')}</label>
-              </>)}
             </>
           )}
 

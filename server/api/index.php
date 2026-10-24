@@ -13,6 +13,10 @@ ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') { header('Strict-Transport-Security: max-age=15552000'); }
 
 define('NC_VERSION', '__NC_VERSION__'); // replaced by scripts/package.mjs
 define('NC_DATA', __DIR__ . '/data');
@@ -197,7 +201,7 @@ function db_update($fn) {
 
 /* ───────── helpers ───────── */
 function next_user_no($db) { $m = 0; foreach ($db['users'] as $x) { if (isset($x['no']) && (int) $x['no'] > $m) { $m = (int) $x['no']; } } return max($m, count($db['users'])) + 1; }
-function public_user($u) { return array('id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0), 'no' => isset($u['no']) ? (int) $u['no'] : 0, 'group' => isset($u['group']) ? $u['group'] : '', 'notes' => isset($u['notes']) ? $u['notes'] : '', 'contacts' => isset($u['contacts']) && is_array($u['contacts']) ? $u['contacts'] : array(), 'taxExempt' => !empty($u['taxExempt']), 'noReminders' => !empty($u['noReminders']), 'addr' => isset($u['addr']) && is_array($u['addr']) ? $u['addr'] : new stdClass(), 'kyc' => kyc_public($u), 'terms' => isset($u['terms']) && is_array($u['terms']) ? $u['terms'] : null); }
+function public_user($u) { return array('twoFactor' => !empty($u['totp']['on']), 'id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created' => isset($u['created']) ? $u['created'] : null, 'phone' => isset($u['phone']) ? $u['phone'] : '', 'company' => isset($u['company']) ? $u['company'] : '', 'source' => isset($u['source']) ? $u['source'] : '', 'disabled' => !empty($u['disabled']), 'credit' => (float) (isset($u['credit']) ? $u['credit'] : 0), 'no' => isset($u['no']) ? (int) $u['no'] : 0, 'group' => isset($u['group']) ? $u['group'] : '', 'notes' => isset($u['notes']) ? $u['notes'] : '', 'contacts' => isset($u['contacts']) && is_array($u['contacts']) ? $u['contacts'] : array(), 'taxExempt' => !empty($u['taxExempt']), 'noReminders' => !empty($u['noReminders']), 'addr' => isset($u['addr']) && is_array($u['addr']) ? $u['addr'] : new stdClass(), 'kyc' => kyc_public($u), 'terms' => isset($u['terms']) && is_array($u['terms']) ? $u['terms'] : null); }
 function new_id() { return function_exists('random_bytes') ? bin2hex(random_bytes(8)) : md5(uniqid('', true)); }
 function find_by($list, $key, $val) { foreach ($list as $i => $u) { if (isset($u[$key]) && $u[$key] === $val) { return $i; } } return -1; }
 function find_user($db, $key, $val) { return find_by($db['users'], $key, $val); }
@@ -742,6 +746,40 @@ function cron_key($db) {
     return $k;
 }
 
+/** Support mail: a client's message goes to the company, the company's reply goes to the client. Never called inside db_update. */
+function ticket_notify($db, $t, $actor, $text, $fromClient) {
+    $excerpt = nc_substr($text, 700);
+    if ($fromClient) {
+        $to = (string) meta_get($db, 'contactEmail', '');
+        if ($to === '') { foreach ($db['users'] as $x) { if ($x['role'] === 'admin') { $to = $x['email']; break; } } }
+        if ($to === '') { return; }
+        $link = site_link($db, '/admin/tickets');
+        nc_mail($db, $to, '[Support] ' . $t['subject'], $actor['name'] . ' <' . $actor['email'] . ">\n\n" . $excerpt . ($link ? "\n\nOpen: " . $link : ''), $actor['email']);
+    } else {
+        $ui = find_user($db, 'id', $t['uid']);
+        if ($ui < 0) { return; }
+        $link = site_link($db, '/portal/support');
+        nc_mail($db, $db['users'][$ui]['email'], 'Re: ' . $t['subject'], "We replied to your support request:\n\n" . $excerpt . ($link ? "\n\nView and answer here: " . $link : ''), (string) meta_get($db, 'contactEmail', ''));
+    }
+}
+
+/* ───────── two-factor (TOTP, RFC 6238) ───────── */
+function b32_enc($bin) { $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; $bits = ''; foreach (str_split($bin) as $c) { $bits .= str_pad(decbin(ord($c)), 8, '0', STR_PAD_LEFT); } $o = ''; foreach (str_split($bits, 5) as $ch) { $o .= $a[bindec(str_pad($ch, 5, '0', STR_PAD_RIGHT))]; } return $o; }
+function b32_dec($s) { $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; $bits = ''; foreach (str_split(strtoupper(preg_replace('/[^A-Za-z2-7]/', '', $s))) as $c) { $bits .= str_pad(decbin(strpos($a, $c)), 5, '0', STR_PAD_LEFT); } $o = ''; foreach (str_split($bits, 8) as $by) { if (strlen($by) === 8) { $o .= chr(bindec($by)); } } return $o; }
+function totp_at($secretBin, $step) { $h = hash_hmac('sha1', pack('N2', 0, $step), $secretBin, true); $off = ord($h[19]) & 15; $v = ((ord($h[$off]) & 0x7f) << 24) | (ord($h[$off + 1]) << 16) | (ord($h[$off + 2]) << 8) | ord($h[$off + 3]); return str_pad((string) ($v % 1000000), 6, '0', STR_PAD_LEFT); }
+/** The matching 30-second step (±1 for clock drift) or 0. */
+function totp_match($secretBin, $code) { $code = preg_replace('/\D/', '', (string) $code); if (strlen($code) !== 6) { return 0; } $now = (int) floor(time() / 30); for ($d = -1; $d <= 1; $d++) { if (hash_equals(totp_at($secretBin, $now + $d), $code)) { return $now + $d; } } return 0; }
+function tfa_secret($u) { require_once __DIR__ . '/providers.php'; return !empty($u['totp']['secret']) ? b32_dec(mail_unseal($u['totp']['secret'])) : ''; }
+/** Checks a login / disable code: an authenticator code (not reused) or a recovery code (consumed). Returns the updated totp array or null. */
+function tfa_check($u, $code) {
+    $t = isset($u['totp']) && is_array($u['totp']) ? $u['totp'] : array();
+    $bin = tfa_secret($u);
+    if ($bin !== '') { $st = totp_match($bin, $code); if ($st > 0 && $st > (int) (isset($t['last']) ? $t['last'] : 0)) { $t['last'] = $st; return $t; } }
+    $norm = strtolower(preg_replace('/[^a-z0-9]/i', '', (string) $code));
+    if (strlen($norm) === 10) { $h = hash('sha256', $norm); foreach (isset($t['rec']) && is_array($t['rec']) ? $t['rec'] : array() as $k => $x) { if (hash_equals($x, $h)) { unset($t['rec'][$k]); $t['rec'] = array_values($t['rec']); return $t; } } }
+    return null;
+}
+
 /* ───────── routing ───────── */
 $r = isset($_GET['r']) ? (string) $_GET['r'] : '';
 if (!is_file(NC_DATA . '/installed.lock')) {
@@ -756,6 +794,12 @@ if ($r === 'admin/update' || $r === 'admin/update/restore') {
     require_once __DIR__ . '/update.php';
     $me = need_admin();
     upd_route($r, $me);
+    fail('not found', 404);
+}
+if (strpos($r, 'admin/ops') === 0) {
+    require_once __DIR__ . '/providers.php';
+    $me = need_admin();
+    ops_route($r, $me);
     fail('not found', 404);
 }
 if (strpos($r, 'admin/provider') === 0 || strpos($r, 'admin/pricing') === 0 || strpos($r, 'admin/domain') === 0 || strpos($r, 'admin/hosting-') === 0) {
@@ -773,7 +817,7 @@ switch ($r) {
 
     case 'public/settings':
         $db = db_read();
-        out(array('site' => meta_get($db, 'site', ''), 'placeholder' => (bool) meta_get($db, 'placeholder', false), 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''),
+        out(array('site' => meta_get($db, 'site', ''), 'placeholder' => false, 'currency' => meta_get($db, 'currency', ''), 'contactEmail' => meta_get($db, 'contactEmail', ''),
             'phone' => meta_get($db, 'phone', ''), 'whatsapp' => meta_get($db, 'whatsapp', ''), 'address' => meta_get($db, 'address', ''), 'allowRegistration' => (bool) meta_get($db, 'allowRegistration', true),
             'brand' => meta_get($db, 'brand', new stdClass()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar')));
 
@@ -848,9 +892,59 @@ switch ($r) {
             db_update(function (&$db) use ($ip) { rate_hit($db, 'login:' . $ip); });
             fail('wrong email or password', 401);
         }
+        if (!empty($db['users'][$i]['totp']['on'])) {
+            $tuid = $db['users'][$i]['id'];
+            $code = isset($b['code']) ? (string) $b['code'] : '';
+            if ($code === '') { fail('two-factor code required', 401); }
+            if (db_update(function (&$d) use ($tuid) { return rate_blocked($d, 'tfa:' . $tuid, 6, 600); })) { fail('too many attempts, try again in 10 minutes', 429); }
+            $nt = tfa_check($db['users'][$i], $code);
+            if ($nt === null) { db_update(function (&$d) use ($tuid) { rate_hit($d, 'tfa:' . $tuid); }); fail('wrong two-factor code', 401); }
+            db_update(function (&$d) use ($tuid, $nt) { $k = find_user($d, 'id', $tuid); if ($k >= 0) { $d['users'][$k]['totp'] = $nt; } });
+        }
         session_regenerate_id(true);
         $_SESSION['uid'] = $db['users'][$i]['id'];
         out(array('user' => public_user($db['users'][$i])));
+
+    case 'auth/2fa-setup':
+        $u = need_user(); require_post();
+        if (!empty($u['totp']['on'])) { fail('two-factor is already on', 409); }
+        require_once __DIR__ . '/providers.php';
+        $raw = b32_enc(function_exists('random_bytes') ? random_bytes(20) : substr(md5(uniqid('', true), true) . md5(uniqid('', true), true), 0, 20));
+        $sealed = mail_seal($raw);
+        db_update(function (&$d) use ($u, $sealed) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { $d['users'][$k]['totp'] = array('secret' => $sealed, 'on' => false, 'last' => 0, 'rec' => array()); } });
+        $dbs = db_read(); $label = rawurlencode(meta_get($dbs, 'site', '') ?: 'Notch Cloud') . ':' . rawurlencode($u['email']);
+        out(array('secret' => $raw, 'uri' => 'otpauth://totp/' . $label . '?secret=' . $raw . '&issuer=' . rawurlencode(meta_get($dbs, 'site', '') ?: 'Notch Cloud') . '&digits=6&period=30'));
+
+    case 'auth/2fa-enable':
+        $u = need_user(); require_post();
+        $b = body();
+        if (!empty($u['totp']['on'])) { fail('two-factor is already on', 409); }
+        $bin = tfa_secret($u);
+        if ($bin === '') { fail('start the setup first', 422); }
+        $st = totp_match($bin, isset($b['code']) ? $b['code'] : '');
+        if ($st <= 0) { fail('wrong two-factor code', 401); }
+        $codes = array(); $hashes = array();
+        for ($n = 0; $n < 8; $n++) { $c = strtolower(substr(bin2hex(function_exists('random_bytes') ? random_bytes(5) : md5(uniqid('', true), true)), 0, 10)); $codes[] = substr($c, 0, 5) . '-' . substr($c, 5); $hashes[] = hash('sha256', $c); }
+        db_update(function (&$d) use ($u, $st, $hashes) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { $d['users'][$k]['totp']['on'] = true; $d['users'][$k]['totp']['last'] = $st; $d['users'][$k]['totp']['rec'] = $hashes; log_act($d, $u, '2fa-on', $u['email']); } });
+        out(array('ok' => true, 'recovery' => $codes));
+
+    case 'auth/2fa-disable':
+        $u = need_user(); require_post();
+        $b = body();
+        if (empty($u['totp']['on'])) { out(array('ok' => true)); }
+        if (!password_verify(isset($b['password']) ? (string) $b['password'] : '', $u['hash'])) { fail('current password is wrong', 403); }
+        if (db_update(function (&$d) use ($u) { return rate_blocked($d, 'tfa:' . $u['id'], 6, 600); })) { fail('too many attempts, try again in 10 minutes', 429); }
+        if (tfa_check($u, isset($b['code']) ? $b['code'] : '') === null) { db_update(function (&$d) use ($u) { rate_hit($d, 'tfa:' . $u['id']); }); fail('wrong two-factor code', 401); }
+        db_update(function (&$d) use ($u) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { unset($d['users'][$k]['totp']); log_act($d, $u, '2fa-off', $u['email']); } });
+        out(array('ok' => true));
+
+    case 'admin/2fa-reset':
+        // For a client / colleague who lost the phone and the recovery codes.
+        $me = need_admin(); require_post();
+        $b = body(); $tuid = isset($b['uid']) ? (string) $b['uid'] : '';
+        $okr = db_update(function (&$d) use ($tuid, $me) { $k = find_user($d, 'id', $tuid); if ($k < 0) { return false; } unset($d['users'][$k]['totp']); log_act($d, $me, '2fa-reset', $d['users'][$k]['email']); return true; });
+        if (!$okr) { fail('user not found', 404); }
+        out(array('ok' => true));
 
     case 'auth/register':
         require_post();
@@ -1088,6 +1182,7 @@ switch ($r) {
         $k = (string) meta_get($db, 'cronKey', '');
         if ($k === '' || !isset($_GET['key']) || !hash_equals($k, (string) $_GET['key'])) { fail('forbidden', 403); }
         $r2 = nc_daily(true);
+        require_once __DIR__ . '/providers.php'; ops_backup_daily();
         out(array('ok' => true, 'created' => isset($r2['created']) ? $r2['created'] : 0));
 
     case 'orders/pay':
@@ -1257,6 +1352,7 @@ switch ($r) {
         $t = array('id' => new_id(), 'uid' => $u['id'], 'subject' => $subject, 'status' => 'open', 'updated' => $now, 'created' => $now,
             'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
         db_update(function (&$db) use ($t, $u) { $db['tickets'][] = $t; log_act($db, $u, 'ticket-create', $t['subject']); });
+        ticket_notify(db_read(), $t, $u, $text, true);
         out(array('ticket' => $t), 201);
 
     case 'tickets/reply':
@@ -1281,6 +1377,8 @@ switch ($r) {
         });
         if ($res === 'missing') { fail('ticket not found', 404); }
         if ($res === 'forbidden') { fail('forbidden', 403); }
+        $dbn = db_read(); $tk = find_by($dbn['tickets'], 'id', $id);
+        if ($tk >= 0) { ticket_notify($dbn, $dbn['tickets'][$tk], $u, $text, $u['role'] !== 'admin' || $dbn['tickets'][$tk]['uid'] === $u['id']); }
         out(array('ok' => true));
 
     case 'tickets/status':
@@ -1308,6 +1406,7 @@ switch ($r) {
     case 'admin/overview':
         need_admin();
         nc_daily(); // once a day, the first time an admin opens the panel (a cron job does it more reliably)
+        require_once __DIR__ . '/providers.php'; ops_backup_daily();
         $db = db_read();
         $admins = admin_count($db);
         $active = 0; $counts = array();
@@ -1635,7 +1734,7 @@ switch ($r) {
         $ce = clean_email(isset($b['contactEmail']) ? $b['contactEmail'] : '');
         if ($ce !== '' && !filter_var($ce, FILTER_VALIDATE_EMAIL)) { fail('invalid email', 422); }
         $cur = clean_text(isset($b['currency']) ? $b['currency'] : '', 8);
-        $ph = !empty($b['placeholder']);
+        $ph = false; // the "placeholder" marks no longer exist
         $extra = array('phone' => clean_text(isset($b['phone']) ? $b['phone'] : '', 30), 'whatsapp' => preg_replace('/[^0-9+]/', '', (string) (isset($b['whatsapp']) ? $b['whatsapp'] : '')), 'address' => clean_text(isset($b['address']) ? $b['address'] : '', 200), 'allowRegistration' => !isset($b['allowRegistration']) || !empty($b['allowRegistration']));
         if (isset($b['payments']) && is_array($b['payments'])) {
             $pm = array();

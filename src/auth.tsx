@@ -14,7 +14,7 @@ type Ctx = {
   /** "Login as owner": the admin becomes the client (and can return). */
   impersonate: (uid: string) => Promise<void>;
   stopImpersonate: () => Promise<void>;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string, code?: string) => Promise<User>;
   logout: () => Promise<void>;
   /** Re-reads the signed-in user (after sign-up). */
   refresh: () => Promise<void>;
@@ -26,7 +26,7 @@ const demoUser: User = { id: 'demo', name: 'Demo', email: 'demo@example.com', ro
 const demoAllowed = () => {
   try {
     const h = window.location.hostname;
-    return import.meta.env.DEV || h === 'localhost' || h === '127.0.0.1' || /[?&#]demo(=|&|$)/.test(window.location.href);
+    return import.meta.env.DEV && (h === 'localhost' || h === '127.0.0.1');
   } catch { return false; }
 };
 const demoOn = () => { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch { return false; } };
@@ -67,10 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, code?: string) => {
     if (mode === 'offline') throw new ApiError('backend offline', 0);
     if (mode === 'server') {
-      const r = await post<{ user: User }>('auth/login', { email, password });
+      const r = await post<{ user: User }>('auth/login', { email, password, ...(code ? { code } : {}) });
       setUser(r.user);
       return r.user;
     }

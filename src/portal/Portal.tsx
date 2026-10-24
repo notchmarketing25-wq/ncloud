@@ -23,6 +23,8 @@ export function Login() {
   const next = qs.get('next') && qs.get('next')!.startsWith('/portal') ? qs.get('next')! : '';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   if (mode !== 'checking' && user) return <Navigate to={user.role === 'admin' ? '/admin' : (next || '/portal')} replace />;
@@ -30,12 +32,13 @@ export function Login() {
     e.preventDefault();
     setError(''); setBusy(true);
     try {
-      const u = await login(email.trim(), password);
+      const u = await login(email.trim(), password, needCode ? code.trim() : undefined);
       nav(u.role === 'admin' ? '/admin' : (next || '/portal'));
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
+      if (err instanceof ApiError && err.message === 'two-factor code required') { setNeedCode(true); setError(''); return; }
       setError(status === 429 ? t('محاولات كتير. جرّب بعد 10 دقايق.', 'Too many attempts. Try again in 10 minutes.')
-        : status === 401 ? t('الإيميل أو كلمة السر غلط.', 'Wrong email or password.')
+        : status === 401 ? (needCode ? t('الكود غلط أو اتستخدم قبل كده.', 'Wrong or already used code.') : t('الإيميل أو كلمة السر غلط.', 'Wrong email or password.'))
         : t('تعذّر الاتصال بالسيرفر.', 'Could not reach the server.'));
     } finally { setBusy(false); }
   };
@@ -56,6 +59,7 @@ export function Login() {
         {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): أي بيانات هتدخلك.', 'Demo build (no server): any details will sign you in.')}</p>}
         <div className="field"><label htmlFor="em">{t('الإيميل', 'Email')}</label><input id="em" className="input latin" type="email" autoComplete="username" required={mode === 'server'} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
         <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" autoComplete="current-password" required={mode === 'server'} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+        {needCode && <div className="field"><label htmlFor="tfa">{t('كود التحقق (من تطبيق المصادقة) أو كود الاسترجاع', 'Authenticator code or a recovery code')}</label><input id="tfa" className="input latin" dir="ltr" inputMode="numeric" autoComplete="one-time-code" autoFocus required value={code} onChange={(e) => setCode(e.target.value)} /></div>}
         {qs.get('reset') && <div className="form-ok" role="status">{t('اتغيّرت كلمة السر. سجّل دخول بيها.', 'Your password was changed. Sign in with it.')}</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn btn-primary" type="submit" disabled={busy || mode === 'checking'}>{busy ? '…' : t('دخول', 'Sign in')}</button>
@@ -183,7 +187,6 @@ export function PortalLayout() {
         <div className="portal-top">
           <button className="burger" onClick={() => setOpen(!open)} aria-label={t('القائمة', 'Menu')}><span /><span /><span /></button>
           <span className="tag"><span className="dot pulse" /> <span className="latin">{mode === 'server' ? user.name : 'ACME TRADING'}</span></span>
-          {mode !== 'server' && <span className="tag ph-tag"><Ph /> {t('بيانات تجريبية', 'demo data')}</span>}
         </div>
         <div className="portal-body"><PortalDataProvider><TermsGate><Outlet /></TermsGate></PortalDataProvider></div>
       </div>

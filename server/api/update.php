@@ -108,6 +108,10 @@ function upd_apply($u, $me) {
     return array('ok' => true, 'from' => $cur, 'version' => $ver, 'files' => count($u['files']), 'migrated' => $migrated, 'backup' => 'api/data/backup/' . $name);
 }
 
+/** A full data backup right before new code is installed (skipped silently when this server cannot make one). */
+function upd_snapshot() {
+    try { require_once __DIR__ . '/providers.php'; if (function_exists('ops_backup_create')) { ops_backup_create('pre-update'); ops_backup_prune(); } } catch (Exception $e) { error_log('ncloud pre-update backup: ' . $e->getMessage()); }
+}
 function upd_route($r, $me) {
     $db = db_read();
     $cur = upd_current();
@@ -145,6 +149,7 @@ function upd_route($r, $me) {
         $u = upd_parse(file_get_contents($f));
         upd_check($u, $cur);
         @unlink($f);
+        upd_snapshot();
         out(upd_apply($u, $me));
     }
     if (empty($_FILES['pkg']) || !is_uploaded_file($_FILES['pkg']['tmp_name'])) { fail('no file received — the host may limit uploads to ' . ini_get('upload_max_filesize'), 422); }
@@ -164,5 +169,6 @@ function upd_route($r, $me) {
         if (@file_put_contents($tmpDir . '/upd-' . $token . '.pkg', $raw) === false) { fail('could not stage the update (is api/data writable?)', 500); }
         out(array('token' => $token, 'version' => $u['version'], 'from' => $cur, 'requires' => $u['requires'], 'date' => $u['date'], 'notes' => $u['notes'], 'files' => $rows, 'delete' => $u['delete']));
     }
+    upd_snapshot();
     out(upd_apply($u, $me)); // upload and install in one step (older clients)
 }
