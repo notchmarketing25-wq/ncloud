@@ -755,6 +755,18 @@ function cron_key($db) {
     return $k;
 }
 
+/** Transactional mail to a client / to the company. Never called inside db_update; failures are ignored (the action already happened). */
+function notify_client($uid, $subject, $text, $path = '') {
+    $db = db_read(); $i = find_user($db, 'id', $uid);
+    if ($i < 0 || empty($db['users'][$i]['email'])) { return; }
+    $link = $path !== '' ? site_link($db, $path) : '';
+    nc_mail($db, $db['users'][$i]['email'], $subject, 'Hello ' . $db['users'][$i]['name'] . ",\n\n" . $text . ($link !== '' ? "\n\n" . $link : '') . "\n\n" . (meta_get($db, 'site', '') ?: 'Notch Cloud'), (string) meta_get($db, 'contactEmail', ''));
+}
+function notify_admin($subject, $text) {
+    $db = db_read(); $to = (string) meta_get($db, 'contactEmail', '');
+    if ($to !== '') { nc_mail($db, $to, $subject, $text); }
+}
+function inv_money($db, $inv, $amount) { return $amount . ' ' . (isset($inv['currency']) && $inv['currency'] !== '' ? $inv['currency'] : (meta_get($db, 'currency', '') ?: 'EGP')); }
 /** The ticket that accompanies an order (older ones are recognised by their subject). */
 function ticket_is_order($t) { return (isset($t['kind']) && $t['kind'] === 'order') || (bool) preg_match('/^(Order|Renewal) ORD-\d+$/', isset($t['subject']) ? $t['subject'] : ''); }
 /** Support mail: a client's message goes to the company, the company's reply goes to the client. Never called inside db_update. */
@@ -942,6 +954,7 @@ switch ($r) {
         $codes = array(); $hashes = array();
         for ($n = 0; $n < 8; $n++) { $c = strtolower(substr(bin2hex(function_exists('random_bytes') ? random_bytes(5) : md5(uniqid('', true), true)), 0, 10)); $codes[] = substr($c, 0, 5) . '-' . substr($c, 5); $hashes[] = hash('sha256', $c); }
         db_update(function (&$d) use ($u, $st, $hashes) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { $d['users'][$k]['totp']['on'] = true; $d['users'][$k]['totp']['last'] = $st; $d['users'][$k]['totp']['rec'] = $hashes; log_act($d, $u, '2fa-on', $u['email']); } });
+        notify_client($u['id'], 'Two-factor sign-in turned on', 'Two-factor authentication is now on for your account. Keep your recovery codes somewhere safe.');
         out(array('ok' => true, 'recovery' => $codes));
 
     case 'auth/2fa-disable':
@@ -952,6 +965,7 @@ switch ($r) {
         if (db_update(function (&$d) use ($u) { return rate_blocked($d, 'tfa:' . $u['id'], 6, 600); })) { fail('too many attempts, try again in 10 minutes', 429); }
         if (tfa_check($u, isset($b['code']) ? $b['code'] : '') === null) { db_update(function (&$d) use ($u) { rate_hit($d, 'tfa:' . $u['id']); }); fail('wrong two-factor code', 401); }
         db_update(function (&$d) use ($u) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { unset($d['users'][$k]['totp']); log_act($d, $u, '2fa-off', $u['email']); } });
+        notify_client($u['id'], 'Two-factor sign-in turned off', 'Two-factor authentication was turned off for your account. If this was not you, change your password immediately and contact us.');
         out(array('ok' => true));
 
     case 'admin/2fa-reset':
@@ -992,6 +1006,7 @@ switch ($r) {
         if ($res === 'rate') { fail('too many attempts, try later', 429); }
         if ($res === 'dup') { fail('this email is already registered', 409); }
         if (!empty($res['to'])) { nc_mail($res['db'], $res['to'], 'New client: ' . $name, "A new client signed up.\nName: $name\nEmail: $email\nPhone: $phone\nCompany: $company", $email); }
+        notify_client($user['id'], 'Welcome to ' . (meta_get(db_read(), 'site', '') ?: 'Notch Cloud'), 'Your account is ready. You can order services, follow your orders and invoices, manage domains and open support tickets from your client area.', '/portal');
         session_regenerate_id(true);
         $_SESSION['uid'] = $user['id'];
         out(array('user' => public_user($user)), 201);
@@ -1264,6 +1279,7 @@ switch ($r) {
             return true;
         });
         if (!$ok) { fail('order not found or already processed', 404); }
+        notify_admin('Payment reported: ' . $id, $u['name'] . ' <' . $u['email'] . "> says they paid (reference: $ref). Check it and confirm the order in the admin panel.");
         out(array('ok' => true));
 
     case 'auth/logout':
@@ -1280,6 +1296,7 @@ switch ($r) {
         check_password(isset($b['new']) ? $b['new'] : '');
         $h = password_hash($b['new'], PASSWORD_DEFAULT);
         db_update(function (&$db) use ($u, $h) { $i = find_user($db, 'id', $u['id']); if ($i >= 0) { $db['users'][$i]['hash'] = $h; log_act($db, $u, 'password', 'changed own password'); } });
+        notify_client($u['id'], 'Your password was changed', 'The password of your account was just changed. If this was not you, reset it now and contact us.', '/portal/forgot');
         out(array('ok' => true));
 
     /* ── client data ── */
@@ -1667,6 +1684,7 @@ switch ($r) {
         $res = db_update(function (&$db) use ($id, $st, $me) { $r = order_set_status($db, $id, $st, $me); if (isset($r['order'])) { $r['uid'] = $r['order']['uid']; $r['db'] = $db; } return $r; });
         if (isset($res['err'])) { fail($res['err'], 404); }
         if ($st === 'active' || $st === 'paid') { $cu = find_user($res['db'], 'id', $res['uid']); if ($cu >= 0) { nc_mail($res['db'], $res['db']['users'][$cu]['email'], 'Order ' . $res['order']['number'] . ($st === 'active' ? ' is active' : ' payment received'), $st === 'active' ? "Your order " . $res['order']['number'] . " is now active. You can see your services in your client area." : "We received the payment for order " . $res['order']['number'] . ". We are setting up your service."); } }
+        if ($st === 'cancelled') { notify_client($res['uid'], 'Order ' . $res['order']['number'] . ' was cancelled', 'Your order ' . $res['order']['number'] . ' was cancelled. If you did not expect this, reply to this email or open a ticket.', '/portal/orders/' . $res['order']['id']); }
         unset($res['db'], $res['uid']);
         out($res);
 
@@ -1970,9 +1988,14 @@ switch ($r) {
                 if ($oi >= 0 && $st === 'void' && $db['items']['orders'][$oi]['status'] !== 'active') { order_set_status($db, $inv['orderId'], 'cancelled', $me, false); }
                 log_act($db, $me, 'invoice-' . $st, $inv['number']);
             }
-            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]));
+            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]), 'uid' => $inv['uid'], 'was' => $inv['status']);
         });
         if (isset($res['err'])) { fail($res['err'], 404); }
+        $iv = $res['invoice'];
+        if ($st === 'paid' && $res['was'] !== 'paid') { notify_client($res['uid'], 'Invoice ' . $iv['number'] . ' is paid', 'Invoice ' . $iv['number'] . ' is now marked as paid. Thank you!', '/portal/invoices/' . $iv['id']); }
+        elseif ($st === 'void' && $res['was'] !== 'void') { notify_client($res['uid'], 'Invoice ' . $iv['number'] . ' was cancelled', 'Invoice ' . $iv['number'] . ' was cancelled. You do not need to pay it.'); }
+        elseif ($st === 'collections' && $res['was'] !== 'collections') { notify_client($res['uid'], 'Invoice ' . $iv['number'] . ' is overdue', 'Invoice ' . $iv['number'] . ' is overdue. Please pay it as soon as possible or contact us.', '/portal/invoices/' . $iv['id']); }
+        unset($res['uid'], $res['was']);
         out($res);
 
     case 'admin/invoice-save':
@@ -2054,9 +2077,12 @@ switch ($r) {
                 if ($toCredit && $ui >= 0) { credit_add($db, $ui, $amount, 'Refund of ' . $inv['number'], $me); }
             }
             inv_refresh($db, $i, $me, true);
-            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]));
+            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]), 'uid' => $inv['uid'], 'amt' => $kind === 'credit' ? $use : $amount);
         });
         if (isset($res['err'])) { fail($res['err'], 422); }
+        $iv = $res['invoice'];
+        notify_client($res['uid'], $kind === 'refund' ? 'Refund for invoice ' . $iv['number'] : 'Payment received for invoice ' . $iv['number'], ($kind === 'refund' ? 'We refunded ' : ($kind === 'credit' ? 'We applied credit of ' : 'We received your payment of ')) . $res['amt'] . ' ' . (isset($iv['currency']) && $iv['currency'] !== '' ? $iv['currency'] : (meta_get(db_read(), 'currency', '') ?: 'EGP')) . ' for invoice ' . $iv['number'] . '.' . ($kind === 'refund' ? '' : ($iv['status'] === 'paid' ? ' The invoice is now fully paid. Thank you!' : ' The remaining balance is still due.')), '/portal/invoices/' . $iv['id']);
+        unset($res['uid'], $res['amt']);
         out($res);
 
     case 'admin/invoice-entry':
@@ -2095,9 +2121,11 @@ switch ($r) {
             if (inv_paid($db['items']['invoices'][$i]) < -0.004) { return array('err' => 'that would leave a negative balance of payments: remove or lower the refund first'); }
             inv_refresh($db, $i, $me, false);
             log_act($db, $me, 'invoice-entry-' . $act, $inv['number'] . ' ' . $old['type'] . ' ' . $old['amount']);
-            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]));
+            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]), 'uid' => $inv['uid'], 'what' => $old['type'] . ' ' . $old['amount']);
         });
         if (isset($res['err'])) { fail($res['err'], 422); }
+        notify_client($res['uid'], 'Invoice ' . $res['invoice']['number'] . ' was updated', 'We corrected the payment records of invoice ' . $res['invoice']['number'] . ' (' . ($act === 'delete' ? 'removed' : 'changed') . ': ' . $res['what'] . '). Open it to see the current balance.', '/portal/invoices/' . $res['invoice']['id']);
+        unset($res['uid'], $res['what']);
         out($res);
 
     case 'admin/invoice-fee':
@@ -2357,6 +2385,8 @@ switch ($r) {
             return $res;
         });
         if (isset($out['err'])) { fail($out['err'], 422); }
+        notify_admin('Quote ' . ($accept ? 'accepted' : 'declined') . ': ' . $qid, $u['name'] . ' <' . $u['email'] . '> ' . ($accept ? 'accepted' : 'declined') . ' a quote.' . ($accept ? ' An unpaid invoice was created from it.' : ''));
+        notify_client($u['id'], $accept ? 'Quote accepted' : 'Quote declined', $accept ? 'Thank you for accepting the quote. An invoice was created: pay it from your client area to get started.' : 'You declined the quote. Tell us if something should change and we will send a new one.', $accept ? '/portal/orders' : '');
         out($out);
 
     case 'admin/client-email':

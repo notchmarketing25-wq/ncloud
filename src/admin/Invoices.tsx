@@ -6,7 +6,7 @@ import type { Business, Invoice, InvItem, LedgerEntry, PayMethod } from '../lib/
 import { Sheet, toLines } from '../portal/Extras';
 import { useCurrency } from '../site/settings';
 import { day, InvoiceTag, Modal, Page, Table } from '../ui';
-import { errText } from './errors';
+import { errText, methodLabel } from './errors';
 import { ClientLine, Field, Notice, Strip, Tabs, useAll, type AllData } from './kit';
 import { usePaged } from './pager';
 
@@ -349,7 +349,7 @@ export function LedgerTable({ rows, empty, withInvoice = false, users, onEdit, o
         <tr key={e.id}>
           <td><Ltr>{(e.at || '').slice(0, 16).replace('T', ' ')}</Ltr></td><td>{label(e)}{e.note && <small className="muted"> · {e.note}</small>}</td>
           {withInvoice && <><td><Link className="link latin" to={`/admin/invoices/${e.invoiceId}`}>{e.number}</Link></td><td>{users?.find((u) => u.id === e.uid)?.name ?? '-'}</td></>}
-          <td>{e.method || '-'}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin" style={{ color: e.type === 'refund' ? '#c0321b' : undefined }}>{e.type === 'refund' ? '−' : ''}{money(e.amount)} {cur}</td><td className="latin">{money(e.fee)}</td>
+          <td>{methodLabel(e.method, t)}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin" style={{ color: e.type === 'refund' ? '#c0321b' : undefined }}>{e.type === 'refund' ? '−' : ''}{money(e.amount)} {cur}</td><td className="latin">{money(e.fee)}</td>
           {(onEdit || onDelete) && <td><div className="row-actions">{onEdit && <button className="btn btn-ghost btn-sm" onClick={() => onEdit(e)}>{t('تعديل', 'Edit')}</button>}{onDelete && <button className="btn btn-ghost btn-sm" onClick={() => onDelete(e)}>{t('حذف', 'Delete')}</button>}</div></td>}
         </tr>
       ))}

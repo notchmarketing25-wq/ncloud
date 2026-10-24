@@ -4,9 +4,8 @@ import { api, ApiError, post, type User } from './lib/api';
 /**
  * 'server' = the PHP API answered (real accounts).
  * 'offline' = a real website whose backend does not answer: sign-in is blocked and `problem` says why.
- * 'demo' = only on localhost / a preview (or with ?demo): any login works and data is local.
  */
-type Mode = 'checking' | 'server' | 'demo' | 'offline';
+type Mode = 'checking' | 'server' | 'offline';
 /** Why the backend is not connected: no api folder, installer not finished, or the API itself is failing. */
 export type Problem = 'no-api' | 'not-installed' | 'error';
 type Ctx = {
@@ -20,16 +19,6 @@ type Ctx = {
   refresh: () => Promise<void>;
 };
 const Auth = createContext<Ctx | null>(null);
-const DEMO_KEY = 'ncloud-auth';
-const demoUser: User = { id: 'demo', name: 'Demo', email: 'demo@example.com', role: 'client' };
-/** A demo is only offered where nobody can mistake it for the real site. */
-const demoAllowed = () => {
-  try {
-    const h = window.location.hostname;
-    return import.meta.env.DEV && (h === 'localhost' || h === '127.0.0.1');
-  } catch { return false; }
-};
-const demoOn = () => { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch { return false; } };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<Mode>('checking');
@@ -60,28 +49,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (alive) { setUser(me.user); setImp(!!me.impersonating); setMode('server'); }
       } catch {
         if (!alive) return;
-        if (demoAllowed()) { setUser(demoOn() ? demoUser : null); setMode('demo'); }
-        else { setProblem(why); setDetail(info); setMode('offline'); }
+        setProblem(why); setDetail(info); setMode('offline');
       }
     })();
     return () => { alive = false; };
   }, []);
 
   const login = useCallback(async (email: string, password: string, code?: string) => {
-    if (mode === 'offline') throw new ApiError('backend offline', 0);
-    if (mode === 'server') {
-      const r = await post<{ user: User }>('auth/login', { email, password, ...(code ? { code } : {}) });
-      setUser(r.user);
-      return r.user;
-    }
-    try { localStorage.setItem(DEMO_KEY, '1'); } catch { /* ignore */ }
-    setUser(demoUser);
-    return demoUser;
+    if (mode !== 'server') throw new ApiError('backend offline', 0);
+    const r = await post<{ user: User }>('auth/login', { email, password, ...(code ? { code } : {}) });
+    setUser(r.user);
+    return r.user;
   }, [mode]);
 
   const logout = useCallback(async () => {
     if (mode === 'server') { try { await post('auth/logout'); } catch { /* session already gone */ } }
-    try { localStorage.removeItem(DEMO_KEY); } catch { /* ignore */ }
     setUser(null); setImp(false);
   }, [mode]);
 

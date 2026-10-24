@@ -1,3 +1,4 @@
+import { methodLabel } from '../admin/errors';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
@@ -172,7 +173,7 @@ export function Sheet({ inv, biz, customer, methods = [], payLink }: { inv: Invo
       {(inv.payments ?? []).length > 0 && (
         <section className="inv-ledger">
           <h3>{t('الدفعات', 'Payments')}</h3>
-          {(inv.payments ?? []).map((e) => <div key={e.id}><span><Ltr>{(e.at || '').slice(0, 10)}</Ltr> · {e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')} · {e.method}{e.ref && <> · <Ltr>{e.ref}</Ltr></>}</span><b className="latin">{e.type === 'refund' ? '−' : ''}{f(e.amount)}</b></div>)}
+          {(inv.payments ?? []).map((e) => <div key={e.id}><span><Ltr>{(e.at || '').slice(0, 10)}</Ltr> · {e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')} · {methodLabel(e.method, t)}{e.ref && <> · <Ltr>{e.ref}</Ltr></>}</span><b className="latin">{e.type === 'refund' ? '−' : ''}{f(e.amount)}</b></div>)}
         </section>
       )}
       {inv.notes && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{inv.notes}</p>}

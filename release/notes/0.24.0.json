@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Emails for every event (welcome, password and 2FA changes, payments, refunds, invoice and order status, quote answers, payment reports); all server errors translated; demo mode and placeholder data removed; ledger methods translated."
+ ],
+ "ar": [
+  "إيميلات لكل حدث (ترحيب، تغيير كلمة السر والتحقق بخطوتين، الدفعات، الاسترداد، حالة الفواتير والطلبات، رد العميل على عروض الأسعار، إبلاغ الدفع)؛ ترجمة كل رسائل الخطأ؛ حذف النسخة التجريبية والبيانات الوهمية؛ ترجمة وسائل الدفع."
+ ]
+}

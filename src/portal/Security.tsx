@@ -5,6 +5,7 @@ import qrcode from 'qrcode-generator';
 import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
 import { ApiError, post } from '../lib/api';
+import { errText } from '../admin/errors';
 import { copyText } from './Extras';
 
 const msgOf = (x: unknown, t: (a: string, e: string) => string) => {
@@ -88,12 +89,12 @@ export function CardSection() {
   const session = qs.get('card');
   useEffect(() => {
     if (!session) return;
-    void post('cards/confirm', { session }).then(async () => { setOk(t('اتحفظ الكارت. التجديدات هتتدفع أوتوماتيك.', 'Card saved. Renewals will be paid automatically.')); await reload(); }).catch((e) => setErr(e instanceof ApiError && e.message ? e.message : t('تعذّر حفظ الكارت.', 'Could not save the card.'))).finally(() => { const n = new URLSearchParams(qs); n.delete('card'); setQs(n, { replace: true }); });
+    void post('cards/confirm', { session }).then(async () => { setOk(t('اتحفظ الكارت. التجديدات هتتدفع أوتوماتيك.', 'Card saved. Renewals will be paid automatically.')); await reload(); }).catch((e) => setErr(errText(e, t))).finally(() => { const n = new URLSearchParams(qs); n.delete('card'); setQs(n, { replace: true }); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
   if (!data || !data.cardsAvailable) return null;
   const c = data.card;
-  const run = async (fn: () => Promise<void>) => { setErr(''); setOk(''); setBusy(true); try { await fn(); await reload(); } catch (e) { setErr(e instanceof ApiError && e.message ? e.message : t('تعذّر تنفيذ الطلب.', 'The request failed.')); } finally { setBusy(false); } };
+  const run = async (fn: () => Promise<void>) => { setErr(''); setOk(''); setBusy(true); try { await fn(); await reload(); } catch (e) { setErr(errText(e, t)); } finally { setBusy(false); } };
   return (
     <div className="card form card-soft" style={{ marginBottom: 16 }}>
       <h3>{t('الدفع التلقائي للتجديدات', 'Automatic payment of renewals')}</h3>

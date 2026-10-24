@@ -1,4 +1,4 @@
-/** Thin client for api/index.php. Static hosts (no PHP) answer with HTML/404, which callers treat as "demo mode". */
+/** Thin client for api/index.php. Static hosts (no PHP) answer with HTML/404. */
 export type Kyc = { type: 'individual' | 'company'; nationalId: string; commercialReg: string; taxId: string; front: boolean; back: boolean; tax: boolean };
 export type TermsStamp = { version: string; at: string; by: string; ip?: string };
 export type User = { twoFactor?: boolean; phone?: string; company?: string; kyc?: Kyc; terms?: TermsStamp | null; addr?: Record<string, string>; disabled?: boolean; credit?: number; id: string; name: string; email: string; role: 'admin' | 'client'; created?: string | null };

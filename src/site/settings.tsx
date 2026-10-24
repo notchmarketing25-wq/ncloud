@@ -1,14 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { CURRENCY, SHOW_PLACEHOLDER } from '../data/content';
+import { CURRENCY } from '../data/content';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import type { Settings } from '../lib/types';
 
-const defaults: Settings = { site: '', contactEmail: '', placeholder: SHOW_PLACEHOLDER, currency: '' };
+const defaults: Settings = { site: '', contactEmail: '', currency: '' };
 type Ctx = { settings: Settings; refresh: () => Promise<void> };
 const SiteCtx = createContext<Ctx>({ settings: defaults, refresh: async () => {} });
 
-/** Public site settings from the API (company name, placeholder tags on/off, currency). Static hosts keep the defaults. */
+/** Public site settings from the API (company name, currency). Static hosts keep the defaults. */
 export function SiteProvider({ children }: { children: ReactNode }) {
   const { applyDefault } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);

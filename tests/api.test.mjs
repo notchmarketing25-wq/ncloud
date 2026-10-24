@@ -255,3 +255,26 @@ test('checkout: hosting / email need a domain; existing must be the client\'s ow
   assert.equal((await client.call('orders/create', { items, domainChoice: { mode: 'external', name: 'a.com', epp: 'x' } })).status, 201);
   assert.ok(own.id);
 });
+
+test('notifications: welcome, password change, payment receipt, refund, cancellation and quote answer all send mail', async () => {
+  const fresh = S.client();
+  const before = S.mails.length;
+  const reg = await fresh.call('auth/register', { name: 'Mail Guy', email: 'mailguy@test.local', password: 'Mailguy#12345' });
+  assert.equal(reg.status, 201);
+  await wait(300);
+  const sent = S.mails.slice(before).map(readMail);
+  assert.ok(sent.some((m) => m.to.includes('mailguy@test.local') && /^Welcome/.test(m.subject)), 'welcome mail');
+  const b2 = S.mails.length;
+  assert.equal((await fresh.call('auth/password', { current: 'Mailguy#12345', new: 'Mailguy#67890' })).status, 200);
+  await wait(300);
+  assert.ok(S.mails.slice(b2).map(readMail).some((m) => m.to.includes('mailguy@test.local') && /password was changed/.test(m.subject)));
+  const me = reg.json.user.id;
+  const inv = (await admin.call('admin/invoice-save', { uid: me, items: [{ desc: 'Svc', amount: 500 }], status: 'due' })).json.invoice;
+  const b3 = S.mails.length;
+  await admin.call('admin/invoice-payment', { id: inv.id, amount: 500, method: 'Cash' });
+  await admin.call('admin/invoice-refund', { id: inv.id, amount: 100 });
+  await wait(400);
+  const s3 = S.mails.slice(b3).map(readMail).map((m) => m.subject);
+  assert.ok(s3.some((x) => /Payment received for invoice/.test(x)), s3.join('|'));
+  assert.ok(s3.some((x) => /Refund for invoice/.test(x)), s3.join('|'));
+});

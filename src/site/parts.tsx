@@ -4,10 +4,9 @@ import { api } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from './cart';
 import { DomainName } from './svc';
-import { tlds } from '../data/content';
 import type { CPlan } from './catalog';
 import { useI18n } from '../i18n';
-import { useCurrency, useSite } from './settings';
+import { useCurrency } from './settings';
 
 export function SectionHead({ title, text }: { title: string; text?: string }) {
   return (
@@ -16,14 +15,6 @@ export function SectionHead({ title, text }: { title: string; text?: string }) {
       {text && <p>{text}</p>}
     </div>
   );
-}
-
-/** Marks a number as a placeholder until real pricing is set (see SHOW_PLACEHOLDER). */
-export function Ph() {
-  const { t } = useI18n();
-  const { settings } = useSite();
-  void settings; void t;
-  return null;
 }
 
 export function Money({ value }: { value: number }) {
@@ -43,7 +34,7 @@ export function PlanCard({ plan, ctaLabel }: { plan: CPlan; ctaLabel?: string })
         {plan.featured && <span className="tag volt">{t('الأكثر طلبًا', 'Most popular')}</span>}
       </header>
       <div className="plan-price">
-        <Money value={plan.price} /> <span className="per">/ {per}</span> <Ph />
+        <Money value={plan.price} /> <span className="per">/ {per}</span>
       </div>
       <dl className="plan-specs">
         {plan.specs.map((s) => (
@@ -74,15 +65,10 @@ export function Faq({ items }: { items: { q: { ar: string; en: string }; a: { ar
 }
 
 /** Deterministic mock availability so results are stable while typing. Replace with a registrar API. */
-function mockTaken(name: string, ext: string): boolean {
-  let h = 0;
-  for (const c of name + ext) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return h % 5 === 0;
-}
 
 type Found = { domain: string; tld: string; available: boolean; sell: number; renewSell: number; currency: string };
 
-/** Domain search. Connected to the registrars (cheapest provider per extension, with your margin) when the backend runs; a demo list otherwise. */
+/** Domain search. Connected to the registrars (cheapest provider per extension, with your margin). */
 export function DomainSearch({ dark = false, showResults = true }: { dark?: boolean; showResults?: boolean }) {
   const { t } = useI18n();
   const { mode } = useAuth();
@@ -135,12 +121,7 @@ export function DomainSearch({ dark = false, showResults = true }: { dark?: bool
               {live && live.length === 0 && <li className="dnote">{t('مفيش نتائج للامتدادات دي.', 'No results for these extensions.')}</li>}
               {err && <li className="dnote">{err}</li>}
             </>
-          ) : (
-            <>
-              {tlds.slice(0, 6).map((tl) => row(`${name}${tl.ext}`, mockTaken(name, tl.ext), <><Money value={tl.register} /> <Ph /></>, tl.ext))}
-              <li className="dnote">{t('نتائج تجريبية لعرض التصميم فقط، مش ربط حقيقي بالـ registrar.', 'Demo results to show the design only, not a live registrar lookup.')}</li>
-            </>
-          )}
+          ) : <li className="dnote">{t('البحث عن الدومينات مش متاح حاليًا.', 'Domain search is not available right now.')}</li>}
         </ul>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { methodLabel } from '../admin/errors';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { RegistrarCard } from '../admin/Registrar';
 import { CardSection } from './Security';
@@ -7,7 +8,7 @@ import { useAuth } from '../auth';
 import { Ltr, useI18n } from '../i18n';
 import { ApiError, post } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
-import { DomainSearch, Money, Ph } from '../site/parts';
+import { DomainSearch, Money } from '../site/parts';
 import { useCurrency } from '../site/settings';
 import { OrderButton } from '../site/CartPages';
 import { RenewButton } from './Extras';
@@ -16,7 +17,7 @@ import { DomainName, SubLine, SvcCard, TechIcon } from '../site/svc';
 import { day, InvoiceTag, Meter, Page, pct, StatusTag, Table, TicketTag } from '../ui';
 import { PortalDataProvider, usePortal } from './PortalData';
 
-/* ───────── Login (demo only: any input signs in) ───────── */
+/* ───────── Login ───────── */
 export function Login() {
   const { t } = useI18n();
   const nav = useNavigate();
@@ -53,12 +54,10 @@ export function Login() {
           <h1>{t('لوحة العميل', 'Client area')}</h1>
           <p>{t('دومينات، إيميلات، استضافة وسيرفرات في لوحة واحدة.', 'Domains, email, hosting and servers in one panel.')}</p>
         </div>
-        {mode === 'demo' && <span className="tag volt latin">DEMO</span>}
       </div>
       <form className="login-form" onSubmit={submit}>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle /></div>
         <h2>{t('تسجيل الدخول', 'Sign in')}</h2>
-        {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): أي بيانات هتدخلك.', 'Demo build (no server): any details will sign you in.')}</p>}
         <div className="field"><label htmlFor="em">{t('الإيميل', 'Email')}</label><input id="em" className="input latin" type="email" autoComplete="username" required={mode === 'server'} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
         <div className="field"><label htmlFor="pw">{t('كلمة السر', 'Password')}</label><input id="pw" className="input latin" type="password" autoComplete="current-password" required={mode === 'server'} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
         {needCode && <div className="field"><label htmlFor="tfa">{t('كود التحقق (من تطبيق المصادقة) أو كود الاسترجاع', 'Authenticator code or a recovery code')}</label><input id="tfa" className="input latin" dir="ltr" inputMode="numeric" autoComplete="one-time-code" autoFocus required value={code} onChange={(e) => setCode(e.target.value)} /></div>}
@@ -110,7 +109,6 @@ export function Register() {
       <form className="login-form" onSubmit={submit}>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle /></div>
         <h2>{t('إنشاء حساب', 'Create an account')}</h2>
-        {mode === 'demo' && <p className="muted">{t('نسخة تجريبية (من غير سيرفر): التسجيل بيشتغل بس بعد تثبيت الموقع على استضافة PHP.', 'Demo build (no server): sign-up works once the site is installed on a PHP host.')}</p>}
         <IdentityFields v={f} set={(p) => setF({ ...f, ...p })} idp="rg" />
         <div className="field"><label htmlFor="rn">{t('الاسم', 'Full name')}</label><input id="rn" className="input" required maxLength={80} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
         <div className="field"><label htmlFor="re">{t('الإيميل', 'Email')}</label><input id="re" className="input latin" type="email" autoComplete="username" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
@@ -364,24 +362,10 @@ export function PortalWebsites() {
 
 export function PortalEmail() {
   const { t } = useI18n();
-  const { data, demo } = usePortal();
-  const [adding, setAdding] = useState(false);
-  const [local, setLocal] = useState('');
-  const [quota, setQuota] = useState(5);
+  const { data } = usePortal();
   if (!data) return <Loading />;
-  const domain = data.domains[0]?.name ?? 'example.com';
-  const create = (e: FormEvent) => { e.preventDefault(); if (demo && local) { demo.addMailbox(`${local.toLowerCase()}@${domain}`, quota); setLocal(''); setAdding(false); } };
   return (
-    <Page title={t('الإيميلات', 'Email')} action={demo
-      ? <button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>{adding ? t('إلغاء', 'Cancel') : t('+ صندوق جديد', '+ New mailbox')}</button>
-      : <div className="row-actions"><OrderButton category="email" fallback="/portal/support?new=mailbox" label={t('+ اطلب إيميلات', '+ Order email')} /><Link to="/portal/support?new=mailbox" className="btn btn-ghost btn-sm">{t('صندوق إضافي', 'Extra mailbox')}</Link></div>}>
-      {adding && demo && (
-        <form className="card inline-form" onSubmit={create} style={{ gridTemplateColumns: '1fr 120px auto' }}>
-          <div className="field"><label htmlFor="ml">{t('الاسم', 'Name')}</label><input id="ml" className="input latin" value={local} onChange={(e) => setLocal(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))} placeholder="support" required /></div>
-          <div className="field"><label htmlFor="mq">{t('المساحة', 'Quota')}</label><select id="mq" className="select" value={quota} onChange={(e) => setQuota(Number(e.target.value))}>{[5, 30, 100].map((q) => <option key={q} value={q}>{q} GB</option>)}</select></div>
-          <button className="btn btn-accent" type="submit">{t('إنشاء', 'Create')}</button>
-        </form>
-      )}
+    <Page title={t('الإيميلات', 'Email')} action={<div className="row-actions"><OrderButton category="email" fallback="/portal/support?new=mailbox" label={t('+ اطلب إيميلات', '+ Order email')} /><Link to="/portal/support?new=mailbox" className="btn btn-ghost btn-sm">{t('صندوق إضافي', 'Extra mailbox')}</Link></div>}>
       {data.mailboxes.length === 0 ? <Empty>{t('مفيش صناديق إيميل لسه.', 'No mailboxes yet.')}</Empty> : (
         <Table head={[t('الإيميل', 'Address'), t('المساحة', 'Usage'), t('الحالة', 'Status'), '']}>
           {data.mailboxes.map((m) => (
@@ -389,7 +373,7 @@ export function PortalEmail() {
               <td><Ltr>{m.address}</Ltr></td>
               <td className="usage"><Meter value={pct(m.usedGb, m.quotaGb)} /><span className="latin">{m.usedGb} / {m.quotaGb} GB</span></td>
               <td><StatusTag s={m.status} /></td>
-              <td><div className="row-actions">{!demo && <Link className="btn btn-primary btn-sm" to={`/mail?box=${m.id}`}>N Emails</Link>}<MailOpen address={m.address} url={data.webmail} />{demo && <button className="btn btn-ghost btn-sm" onClick={() => demo.delMailbox(m.id)}>{t('حذف', 'Delete')}</button>}</div></td>
+              <td><div className="row-actions"><Link className="btn btn-primary btn-sm" to={`/mail?box=${m.id}`}>N Emails</Link><MailOpen address={m.address} url={data.webmail} /></div></td>
             </tr>
           ))}
         </Table>
@@ -501,12 +485,10 @@ export function PortalWebsiteDetail() {
 
 export function PortalServers() {
   const { t } = useI18n();
-  const { data, power, snapshot, demo } = usePortal();
+  const { data, power, snapshot } = usePortal();
   if (!data) return <Loading />;
   return (
-    <Page title={t('السيرفرات', 'Servers')} action={demo
-      ? <button className="btn btn-primary btn-sm" onClick={demo.addServer}>{t('+ سيرفر جديد', '+ New server')}</button>
-      : <OrderButton category="vps" fallback="/portal/support?new=server" label={t('+ اطلب سيرفر', '+ Order server')} />}>
+    <Page title={t('السيرفرات', 'Servers')} action={<OrderButton category="vps" fallback="/portal/support?new=server" label={t('+ اطلب سيرفر', '+ Order server')} />}>
       {data.servers.length === 0 ? <Empty>{t('مفيش سيرفرات لسه.', 'No servers yet.')}</Empty> : (
         <div className="grid g3">
           {data.servers.map((s) => (
@@ -530,7 +512,7 @@ export function PortalServers() {
 export function PortalBilling() {
   const { t } = useI18n();
   const cur = useCurrency();
-  const { data, demo } = usePortal();
+  const { data } = usePortal();
   if (!data) return <Loading />;
   const visible = data.invoices.filter((i) => i.status !== 'draft');
   const due = visible.filter((i) => i.status === 'due' || i.status === 'collections');
@@ -539,30 +521,30 @@ export function PortalBilling() {
   const m = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <Page title={t('الفواتير', 'Billing')}>
-      {!demo && <div className="stat-strip">
+      {<div className="stat-strip">
         <div><span>{t('المستحق', 'Amount due')}</span><b className="latin">{m(owed)} {cur}</b></div>
         <div><span>{t('فواتير متأخرة', 'Overdue')}</span><b className="latin">{overdue}</b></div>
         <div><span>{t('رصيدك', 'Credit balance')}</span><b className="latin">{m(data.credit ?? 0)} {cur}</b></div>
       </div>}
-      {!demo && <CardSection />}
-      {due.length > 0 && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الفاتورة وشوف طرق الدفع، أو الطلب المرتبط بيها وادفع منه.', 'You have invoices due. Open the invoice to see how to pay, or the order behind it.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
+      <CardSection />
+      {due.length > 0 && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الفاتورة وشوف طرق الدفع، أو الطلب المرتبط بيها وادفع منه.', 'You have invoices due. Open the invoice to see how to pay, or the order behind it.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
       {visible.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
         <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('الاستحقاق', 'Due'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('المتبقي', 'Balance'), t('الحالة', 'Status'), '']}>
           {visible.map((i) => (
             <tr key={i.id}>
-              <td>{demo ? <Ltr>{i.number}</Ltr> : <Link className="link latin" to={`/portal/invoices/${i.id}`}>{i.number}</Link>}</td><td><Ltr>{day(i.date)}</Ltr></td><td><Ltr>{i.dueDate || '-'}</Ltr></td><td>{i.item}</td>
-              <td><b className="latin">{i.amount}</b> {cur} {demo && <Ph />}</td>
+              <td><Link className="link latin" to={`/portal/invoices/${i.id}`}>{i.number}</Link></td><td><Ltr>{day(i.date)}</Ltr></td><td><Ltr>{i.dueDate || '-'}</Ltr></td><td>{i.item}</td>
+              <td><b className="latin">{i.amount}</b> {cur}</td>
               <td className="latin">{i.status === 'due' || i.status === 'collections' ? m(i.balance ?? i.amount) : '-'}</td>
               <td><InvoiceTag s={i.status} /></td>
-              <td>{demo && i.status === 'due' && <button className="btn btn-accent btn-sm" onClick={() => demo.pay(i.id)}>{t('ادفع', 'Pay')}</button>}{!demo && <Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${i.id}`}>{t('عرض', 'View')}</Link>}</td>
+              <td><Link className="btn btn-ghost btn-sm" to={`/portal/invoices/${i.id}`}>{t('عرض', 'View')}</Link></td>
             </tr>
           ))}
         </Table>
       )}
-      {!demo && (data.transactions ?? []).length > 0 && <>
+      {(data.transactions ?? []).length > 0 && <>
         <h2 className="sub">{t('المعاملات', 'Transactions')}</h2>
         <Table head={[t('التاريخ', 'Date'), t('الفاتورة', 'Invoice'), t('النوع', 'Type'), t('وسيلة الدفع', 'Method'), t('المرجع', 'Reference'), t('المبلغ', 'Amount')]}>
-          {(data.transactions ?? []).map((e) => <tr key={e.id}><td><Ltr>{(e.at || '').slice(0, 10)}</Ltr></td><td><Link className="link latin" to={`/portal/invoices/${e.invoiceId}`}>{e.number}</Link></td><td>{e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')}</td><td>{e.method || '-'}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin">{e.type === 'refund' ? '−' : ''}{m(e.amount)} {cur}</td></tr>)}
+          {(data.transactions ?? []).map((e) => <tr key={e.id}><td><Ltr>{(e.at || '').slice(0, 10)}</Ltr></td><td><Link className="link latin" to={`/portal/invoices/${e.invoiceId}`}>{e.number}</Link></td><td>{e.type === 'refund' ? t('استرداد', 'Refund') : e.type === 'credit' ? t('رصيد', 'Credit') : t('دفعة', 'Payment')}</td><td>{methodLabel(e.method, t)}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin">{e.type === 'refund' ? '−' : ''}{m(e.amount)} {cur}</td></tr>)}
         </Table>
       </>}
     </Page>

@@ -262,7 +262,7 @@ export function PortalOrderDetail() {
   );
 }
 
-/** "Order …" button for a portal page: opens the plans of that category; picking one puts it in the cart and goes to checkout. Falls back to a support ticket in the demo build. */
+/** "Order …" button for a portal page: opens the plans of that category; picking one puts it in the cart and goes to checkout.. */
 export function OrderButton({ category, label, fallback }: { category: 'hosting' | 'email' | 'vps' | 'site'; label: string; fallback: string }) {
   const { t, L } = useI18n();
   const { mode } = useAuth();

@@ -169,6 +169,7 @@ function CostCell({ it }: { it: Item }) {
   const margin = cost > 0 && price > 0 ? Math.round(((price - cost) / cost) * 100) : null;
   return <span className="latin">{String(it.provider || '-')} · {cost} → {price} {cur}{margin !== null ? ` (${margin}%)` : ''}{it.billing ? ` / ${it.billing === 'yearly' ? 'yr' : 'mo'}` : ''}</span>;
 }
+const Tr = ({ a, e }: { a: string; e: string }) => { const { t } = useI18n(); return <>{t(a, e)}</>; };
 const status = (it: Item) => <StatusTag s={it.status as 'active'} />;
 
 function TransferLink() { const { t } = useI18n(); return <Link to="/admin/domains/transfer" className="btn btn-ghost btn-sm">{t('نقل دومين إليك', 'Transfer in')}</Link>; }
@@ -217,7 +218,7 @@ export const AdminHosting = () => (
     ]}
     columns={[
       { label: ['الخطة', 'Plan'], render: (it) => <Link className="link" to={`/admin/hosting/${it.id}`}>{String(it.plan)}</Link> }, { label: ['الدومين', 'Domain'], render: (it) => <Ltr>{String(it.domain || '-')}</Ltr> },
-      { label: ['النوع', 'Type'], render: (it) => it.mode === 'shared' ? <span className="tag volt">Shared</span> : <span className="tag">Dedicated</span> }, { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
+      { label: ['النوع', 'Type'], render: (it) => it.mode === 'shared' ? <span className="tag volt"><Tr a="مشتركة" e="Shared" /></span> : <span className="tag"><Tr a="خاصة" e="Dedicated" /></span> }, { label: ['المساحة', 'Disk'], render: (it) => <span className="latin">{num(it.usedGb)} / {num(it.diskGb)} GB</span> }, { label: ['الحالة', 'Status'], render: status },
       { label: ['المزوّد / التكلفة / البيع', 'Provider / cost / price'], render: (it) => <CostCell it={it} /> },
       { label: ['التجديد', 'Renews'], render: (it) => <Ltr>{String(it.expires || '-')}</Ltr> },
     ]} />

@@ -27,7 +27,7 @@ export function AdminLayout() {
   }, [mode, user, pathname]);
   if (mode === 'checking') return <div className="boot-loading" role="status">…</div>;
   if (!user) return <Navigate to="/portal/login" replace />;
-  if (mode === 'demo') return <DemoNotice />;
+  if (mode === 'offline') return <OfflineNotice />;
   if (user.role !== 'admin') return <Navigate to="/portal" replace />;
   type NavItem = { to: string; label: string; end?: boolean; badge?: number };
   const groups: { title?: string; items: NavItem[] }[] = [
@@ -69,13 +69,13 @@ export function AdminLayout() {
   );
 }
 
-function DemoNotice() {
+function OfflineNotice() {
   const { t } = useI18n();
   return (
     <div className="login-page" style={{ gridTemplateColumns: '1fr' }}>
       <div className="login-form">
         <h2>{t('لوحة الإدارة محتاجة سيرفر PHP', 'The admin panel needs the PHP server')}</h2>
-        <p className="muted">{t('الموقع شغال حاليًا كنسخة تجريبية (من غير API). ثبّته بملف install.php على استضافة فيها PHP عشان تنشئ حساب الأدمن.', 'The site is running as a static demo (no API). Install it with install.php on a PHP host to create the admin account.')}</p>
+        <p className="muted">{t('الموقع مش متصل بالسيرفر حاليًا. ثبّته بملف install.php على استضافة فيها PHP عشان تنشئ حساب الأدمن.', 'The site is not connected to its server. Install it with install.php on a PHP host to create the admin account.')}</p>
         <Link to="/" className="btn btn-primary">{t('رجوع للموقع', 'Back to site')}</Link>
       </div>
     </div>

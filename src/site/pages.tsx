@@ -1,17 +1,17 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { faqs, services, stats, steps } from '../data/content';
+import { faqs, services, steps } from '../data/content';
 import { useCatalog, type CPlan } from './catalog';
 import { useSite } from './settings';
 import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
 import { post } from '../lib/api';
-import { DomainSearch, Faq, Money, Ph, PlanCard, SectionHead } from './parts';
+import { DomainSearch, Faq, Money, PlanCard, SectionHead } from './parts';
 
 /* ───────── Home ───────── */
 export function Home() {
   const { t, L } = useI18n();
-  const { tlds, of, live } = useCatalog();
+  const { tlds, of } = useCatalog();
   const hosting = of('hosting');
   return (
     <>
@@ -21,7 +21,7 @@ export function Home() {
           <p>{t('دومينات، إيميلات أعمال، تصميم مواقع، استضافة وخدمات كلاود كاملة. ابدأ باسم براندك.', 'Domains, business email, web design, hosting and full cloud services. Start with your brand name.')}</p>
           <DomainSearch dark />
           {tlds.length > 0 && <div className="hero-tlds latin">
-            {tlds.slice(0, 4).map((x) => <span key={x.ext}>{x.ext} <b>{x.register}</b></span>)}{!live && <Ph />}
+            {tlds.slice(0, 4).map((x) => <span key={x.ext}>{x.ext} <b>{x.register}</b></span>)}
           </div>}
         </div>
       </section>
@@ -52,15 +52,6 @@ export function Home() {
         </div>
       </section>}
 
-      {!live && <section className="section stats-wrap on-dark">
-        <div className="container">
-          <SectionHead title={t('أرقام نفتخر بيها', 'Numbers we stand behind')} />
-          <div className="grid g4 stats">
-            {stats.map((s) => <div key={s.label.en}><b className="latin">{s.value}</b><span>{L(s.label)}</span></div>)}
-          </div>
-          <p className="stats-note"><Ph /> {t('أرقام تجريبية لحد ما نحط الأرقام الحقيقية.', 'Placeholder numbers until real figures are available.')}</p>
-        </div>
-      </section>}
 
       <section className="section container">
         <SectionHead title={t('إزاي بنشتغل', 'How it works')} />
@@ -120,7 +111,7 @@ export function CtaBand() {
 
 function TldTable() {
   const { t } = useI18n();
-  const { tlds, live } = useCatalog();
+  const { tlds } = useCatalog();
   const [q, setQ] = useState('');
   if (tlds.length === 0) return null;
   const rows = tlds.filter((x) => !q.trim() || x.ext.includes(q.trim().toLowerCase().replace(/^\.?/, '.')));
@@ -134,7 +125,7 @@ function TldTable() {
             {rows.map((x) => (
               <tr key={x.ext}>
                 <td><b className="tld-ext latin" dir="ltr">{x.ext}</b> {x.popular && <span className="tag dark">{t('الأشهر', 'Popular')}</span>}</td>
-                <td><Money value={x.register} /> {!live && <Ph />}</td>
+                <td><Money value={x.register} /> </td>
                 <td><Money value={x.renew} /></td>
               </tr>
             ))}
@@ -336,7 +327,7 @@ export function Contact() {
     const f = new FormData(e.currentTarget);
     setError('');
     if (mode === 'offline') { setError(t('الموقع مش متصل بالباك إند حاليًا، فالرسالة ما اتبعتتش.', 'The site is not connected to its backend, so the message was not sent.')); return; }
-    if (mode !== 'server') { setSent(true); return; }
+    if (mode !== 'server') return;
     setBusy(true);
     try {
       await post('public/lead', { name: f.get('name'), email: f.get('email'), phone: f.get('phone'), service: f.get('service'), message: f.get('message'), website: f.get('website') });
@@ -351,7 +342,7 @@ export function Contact() {
       <section className="section container contact">
         <ContactDetails />
         {sent ? (
-          <div className="card"><h3>{t('وصلتنا رسالتك', 'Message received')}</h3><p>{mode === 'server' ? t('هنرد عليك في أقرب وقت.', 'We will get back to you shortly.') : t('(نموذج تجريبي: مفيش إرسال فعلي لحد تثبيت الموقع على استضافة PHP.)', '(Demo form: nothing is sent until the site is installed on a PHP host.)')}</p></div>
+          <div className="card"><h3>{t('وصلتنا رسالتك', 'Message received')}</h3><p>{t('هنرد عليك في أقرب وقت.', 'We will get back to you shortly.')}</p></div>
         ) : (
           <form className="card form" onSubmit={submit}>
             <div className="field"><label htmlFor="n">{t('الاسم', 'Name')}</label><input id="n" name="name" className="input" required maxLength={80} /></div>

@@ -1,6 +1,6 @@
+import { type Plan, type Tld } from '../data/content';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth';
-import { bundle as demoBundle, emailPlans, hostingPlans, sitePackages, tlds as demoTlds, vpsPlans, type Plan, type Tld } from '../data/content';
 import { api } from '../lib/api';
 import type { Bi } from '../i18n';
 
@@ -21,25 +21,15 @@ export function fromApi(p: ApiPlan): CPlan {
   return { id: p.id, category: p.category, per: p.per, name: { ar: p.nameAr, en: p.nameEn || p.nameAr }, price: p.price, featured: !!p.featured, specs: lines(p.specs).map(spec), features, included: features, seats: p.seats };
 }
 
-const per = (c: Category): CPlan['per'] => (c === 'site' ? 'once' : c === 'bundle' ? 'year' : 'month');
-const demo: CPlan[] = [
-  ...hostingPlans.map((p) => ({ ...p, category: 'hosting' as const, per: per('hosting') })),
-  ...emailPlans.map((p) => ({ ...p, category: 'email' as const, per: per('email') })),
-  ...vpsPlans.map((p) => ({ ...p, category: 'vps' as const, per: per('vps') })),
-  ...sitePackages.map((p) => ({ ...p, category: 'site' as const, per: per('site') })),
-  { id: 'bundle', category: 'bundle', per: 'year', name: demoBundle.title, price: demoBundle.price, specs: [], features: demoBundle.items, included: demoBundle.items },
-];
-
 const Cat = createContext<Ctx>({ plans: [], tlds: [], ready: false, live: false, of: () => [] });
 export const useCatalog = () => useContext(Cat);
 
-/** What the website sells. With the backend running it is exactly what you set in Admin → Plans and TLD pricing; the demo list only exists in local previews. */
+/** What the website sells. With the backend running it is exactly what you set in Admin → Plans and TLD pricing. */
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const { mode } = useAuth();
   const [state, setState] = useState<{ plans: CPlan[]; tlds: Tld[]; ready: boolean }>({ plans: [], tlds: [], ready: false });
   useEffect(() => {
     if (mode === 'checking') return;
-    if (mode === 'demo') { setState({ plans: demo, tlds: demoTlds, ready: true }); return; }
     if (mode === 'offline') { setState({ plans: [], tlds: [], ready: true }); return; }
     api<{ plans: ApiPlan[]; tlds: Tld[] }>('public/catalog')
       .then((r) => setState({ plans: r.plans.map(fromApi), tlds: r.tlds, ready: true }))

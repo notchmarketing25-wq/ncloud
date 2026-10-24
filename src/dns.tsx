@@ -4,7 +4,7 @@ import type { DnsRec } from './lib/types';
 
 const TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'];
 
-/** The DNS records of one domain: list, delete and add. The caller decides where changes go (the API, or the demo store). */
+/** The DNS records of one domain: list, delete and add. The caller decides where changes go. */
 export function DnsEditor({ records, onAdd, onDelete, err, readOnly = false }: { readOnly?: boolean; records: DnsRec[]; onAdd: (r: Omit<DnsRec, 'id'>) => Promise<void>; onDelete: (id: string) => Promise<void>; err?: string }) {
   const { t } = useI18n();
   const [f, setF] = useState({ type: 'A', host: '', value: '', ttl: 3600 });
