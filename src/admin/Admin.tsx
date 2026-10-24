@@ -2,7 +2,7 @@ import { SecurityCard } from '../portal/Security';
 import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { Ltr, useI18n } from '../i18n';
+import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { LangToggle, Logo } from '../site/Layout';
 import { useCurrency } from '../site/settings';
@@ -29,36 +29,28 @@ export function AdminLayout() {
   if (!user) return <Navigate to="/portal/login" replace />;
   if (mode === 'demo') return <DemoNotice />;
   if (user.role !== 'admin') return <Navigate to="/portal" replace />;
-  const items = [
-    { to: '/admin', label: t('نظرة عامة', 'Overview'), end: true },
-    { to: '/admin/users', label: t('العملاء', 'Customers') },
-    { to: '/admin/domains', label: t('الدومينات', 'Domains') },
-    { to: '/admin/email', label: t('الإيميلات', 'Email') },
-    { to: '/admin/hosting', label: t('الاستضافة', 'Hosting') },
-    { to: '/admin/websites', label: t('المواقع', 'Websites') },
-    { to: '/admin/servers', label: t('السيرفرات', 'Servers') },
-    { to: '/admin/orders', label: t('الطلبات', 'Orders'), badge: badges.orders },
-    { to: '/admin/invoices', label: t('الفواتير', 'Invoices') },
-    { to: '/admin/transactions', label: t('المعاملات', 'Transactions') },
-    { to: '/admin/reports', label: t('التقارير', 'Reports') },
-    { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets },
-    { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads },
-    { to: '/admin/plans', label: t('الباقات والأسعار', 'Plans') },
-    { to: '/admin/apps', label: t('التطبيقات', 'Apps') },
-    { to: '/admin/pricing', label: t('أسعار الدومينات', 'TLD pricing') },
-    { to: '/admin/purchases', label: t('فواتير الشراء', 'Purchases') },
-    { to: '/admin/updates', label: t('التحديثات', 'Updates') },
-    { to: '/admin/backups', label: t('النسخ الاحتياطي', 'Backups') },
-    { to: '/admin/settings', label: t('الإعدادات', 'Settings') },
-    { to: '/admin/activity', label: t('سجل النشاط', 'Activity') },
-    { to: '/admin/account', label: t('حسابي', 'My account') },
+  type NavItem = { to: string; label: string; end?: boolean; badge?: number };
+  const groups: { title?: string; items: NavItem[] }[] = [
+    { items: [{ to: '/admin', label: t('نظرة عامة', 'Overview'), end: true }] },
+    { title: t('العملاء والدعم', 'Clients & support'), items: [
+      { to: '/admin/users', label: t('العملاء', 'Customers') }, { to: '/admin/orders', label: t('الطلبات', 'Orders'), badge: badges.orders },
+      { to: '/admin/tickets', label: t('تذاكر الدعم', 'Tickets'), badge: badges.tickets }, { to: '/admin/leads', label: t('طلبات التواصل', 'Leads'), badge: badges.leads }] },
+    { title: t('الخدمات', 'Services'), items: [
+      { to: '/admin/domains', label: t('الدومينات', 'Domains') }, { to: '/admin/email', label: t('الإيميلات', 'Email') }, { to: '/admin/hosting', label: t('الاستضافة', 'Hosting') },
+      { to: '/admin/websites', label: t('المواقع', 'Websites') }, { to: '/admin/servers', label: t('السيرفرات', 'Servers') }] },
+    { title: t('المالية', 'Finance'), items: [
+      { to: '/admin/invoices', label: t('الفواتير', 'Invoices') }, { to: '/admin/transactions', label: t('المعاملات', 'Transactions') }, { to: '/admin/reports', label: t('التقارير', 'Reports') },
+      { to: '/admin/purchases', label: t('فواتير الشراء', 'Purchases') }, { to: '/admin/plans', label: t('الباقات والأسعار', 'Plans') }, { to: '/admin/pricing', label: t('أسعار الدومينات', 'TLD pricing') }] },
+    { title: t('النظام', 'System'), items: [
+      { to: '/admin/apps', label: t('التطبيقات', 'Apps') }, { to: '/admin/settings', label: t('الإعدادات', 'Settings') }, { to: '/admin/updates', label: t('التحديثات', 'Updates') },
+      { to: '/admin/backups', label: t('النسخ الاحتياطي', 'Backups') }, { to: '/admin/activity', label: t('سجل النشاط', 'Activity') }, { to: '/admin/account', label: t('حسابي', 'My account') }] },
   ];
   const signOut = async () => { await logout(); nav('/portal/login'); };
   return (
     <div className="portal">
       <aside className={`side on-dark${open ? ' is-open' : ''}`}>
         <Logo dark />
-        <nav onClick={() => setOpen(false)}>{items.map((i) => <NavLink key={i.to} to={i.to} end={i.end}>{i.label}{i.badge ? <span className="badge-n latin">{i.badge}</span> : null}</NavLink>)}</nav>
+        <nav onClick={() => setOpen(false)}>{groups.map((g, gi) => <div key={gi} className="nav-section">{g.title && <div className="nav-group">{g.title}</div>}{g.items.map((i) => <NavLink key={i.to} to={i.to} end={i.end}>{i.label}{i.badge ? <span className="badge-n latin">{i.badge}</span> : null}</NavLink>)}</div>)}</nav>
         <div className="side-foot">
           <LangToggle />
           <Link to="/portal" className="side-link">{t('لوحة العميل', 'Client area')}</Link>
@@ -112,16 +104,25 @@ export function AdminOverview() {
             <div className="card kpi"><span className="nt-mono">{t('مدفوع', 'Paid')}</span><b className="latin">{d.paid.toLocaleString('en-US')} <small>{cur}</small></b></div>
             <Link to="/admin/invoices" className="card kpi"><span className="nt-mono">{t('مستحق', 'Due')}</span><b className="latin">{d.due.toLocaleString('en-US')} <small>{cur}</small></b></Link>
           </div>
-          <div className="grid g2" style={{ marginTop: 16 }}>
-            <div className="card"><h3>{t('دومينات قربت تنتهي', 'Domains expiring soon')}</h3>
-              {d.expiring.length === 0 ? <p className="muted">{t('مفيش.', 'None.')}</p> : (
-                <ul className="attn">{d.expiring.map((x) => <li key={x.id}><i className="dot bad" /> <Ltr>{x.name}</Ltr> · {x.owner} · <Ltr>{x.expires}</Ltr></li>)}</ul>)}
-            </div>
-            <div className="card"><h3>{t('آخر النشاط', 'Recent activity')}</h3>
+          <div className="grid g2 top-gap">
+            <section className="card">
+              <div className="card-head"><h3>{t('محتاج انتباه', 'Needs attention')}</h3></div>
+              {(() => {
+                const rows: { key: string; tone: 'bad' | 'warn'; title: string; to: string; cta: string }[] = [
+                  ...((d.pendingOrders ?? 0) > 0 ? [{ key: 'o', tone: 'warn' as const, title: t(`${d.pendingOrders} طلب في انتظار المراجعة`, `${d.pendingOrders} order(s) waiting`), to: '/admin/orders', cta: t('افتح', 'Open') }] : []),
+                  ...(d.openTickets > 0 ? [{ key: 't', tone: 'warn' as const, title: t(`${d.openTickets} تذكرة دعم مفتوحة`, `${d.openTickets} open support ticket(s)`), to: '/admin/tickets', cta: t('افتح', 'Open') }] : []),
+                  ...(d.newLeads > 0 ? [{ key: 'l', tone: 'warn' as const, title: t(`${d.newLeads} طلب تواصل جديد`, `${d.newLeads} new lead(s)`), to: '/admin/leads', cta: t('افتح', 'Open') }] : []),
+                  ...(d.due > 0 ? [{ key: 'd', tone: 'bad' as const, title: t(`مستحق على العملاء ${d.due.toLocaleString('en-US')} ${cur}`, `${d.due.toLocaleString('en-US')} ${cur} owed by clients`), to: '/admin/invoices', cta: t('الفواتير', 'Invoices') }] : []),
+                  ...d.expiring.map((x) => ({ key: x.id, tone: 'bad' as const, title: `${x.name} · ${x.owner} · ${x.expires}`, to: `/admin/domains/${x.id}`, cta: t('افتح', 'Open') })),
+                ];
+                return rows.length === 0 ? <p className="muted">{t('مفيش حاجة محتاجة انتباه.', 'Nothing needs attention.')}</p> : <ul className="rows">{rows.map((r) => <li key={r.key} className={`row-item ${r.tone}`}><i className="dot" /><div className="row-main"><b>{r.title}</b></div><Link className="btn btn-ghost btn-sm" to={r.to}>{r.cta}</Link></li>)}</ul>;
+              })()}
+            </section>
+            <section className="card">
+              <div className="card-head"><h3>{t('آخر النشاط', 'Recent activity')}</h3><Link to="/admin/activity" className="link">{t('كل السجل', 'Full log')}</Link></div>
               {d.recent.length === 0 ? <p className="muted">{t('مفيش نشاط لسه.', 'No activity yet.')}</p> : (
-                <ul className="attn">{d.recent.map((x, i) => <li key={i}><span className="tag latin">{x.action}</span> {x.by} <span className="muted">{x.detail}</span></li>)}</ul>)}
-              <p style={{ marginTop: 10 }}><Link to="/admin/activity" className="link">{t('كل السجل', 'Full log')}</Link></p>
-            </div>
+                <ul className="rows">{d.recent.slice(0, 8).map((x, i) => <li key={i} className="row-item"><div className="row-main"><span><span className="tag latin">{x.action}</span> <b>{x.by}</b></span><span className="muted">{x.detail}</span></div></li>)}</ul>)}
+            </section>
           </div>
         </>
       )}

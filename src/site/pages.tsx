@@ -11,14 +11,12 @@ import { DomainSearch, Faq, Money, Ph, PlanCard, SectionHead } from './parts';
 /* ───────── Home ───────── */
 export function Home() {
   const { t, L } = useI18n();
-  const { mode } = useAuth();
   const { tlds, of, live } = useCatalog();
   const hosting = of('hosting');
   return (
     <>
       <section className="container hero-wrap">
         <div className="hero on-dark">
-          {mode === 'server' && <span className="status-pill"><span className="dot pulse" /> <span className="latin">SERVICES ONLINE</span></span>}
           <h1>{t('كل اللي شركتك محتاجاه ', 'Everything your business needs ')}<em>{t('أونلاين', 'online')}</em>{t('… في مكان واحد', ', in one place')}</h1>
           <p>{t('دومينات، إيميلات أعمال، تصميم مواقع، استضافة وخدمات كلاود كاملة. ابدأ باسم براندك.', 'Domains, business email, web design, hosting and full cloud services. Start with your brand name.')}</p>
           <DomainSearch dark />

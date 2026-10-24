@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { RegistrarCard } from '../admin/Registrar';
 import { CardSection } from './Security';
 import { Link, Navigate, NavLink, Outlet, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -205,35 +205,63 @@ function Loading() {
 }
 function Empty({ children }: { children: string }) { return <div className="empty-note nt-hatch">{children}</div>; }
 
+const daysLeft = (d?: string) => (d ? Math.ceil((Date.parse(d + 'T00:00:00Z') - Date.now()) / 86400000) : null);
+
 export function Overview() {
   const { t } = useI18n();
   const cur = useCurrency();
+  const { user } = useAuth();
   const { data } = usePortal();
   if (!data) return <Loading />;
-  const due = data.invoices.filter((i) => i.status === 'due');
+  const m = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const today = new Date().toISOString().slice(0, 10);
+  const due = data.invoices.filter((i) => i.status === 'due' || i.status === 'collections');
+  const owed = due.reduce((n, i) => n + (i.balance ?? i.amount), 0);
+  const orderOf = (i: { orderId?: string }) => (data.orders ?? []).find((o) => o.id === i.orderId && o.status === 'pending');
+  const services = [
+    ...data.domains.map((d) => ({ id: d.id, kind: 'domains' as const, name: d.name, expires: d.expires, status: d.status, to: `/portal/domains/${d.id}` })),
+    ...data.hosting.map((h) => ({ id: h.id, kind: 'hosting' as const, name: h.plan + (h.domain ? ` · ${h.domain}` : ''), expires: h.expires, status: h.status, to: `/portal/hosting/${h.id}` })),
+  ].filter((x) => x.expires && x.status !== 'archived').sort((a, b) => String(a.expires).localeCompare(String(b.expires)));
+  const soon = services.filter((x) => (daysLeft(x.expires) ?? 999) <= 30);
+  const stopped = data.servers.filter((x) => x.status === 'stopped');
+  const openTickets = (data.tickets ?? []).filter((x) => x.status !== 'closed').length;
+  const rows: { key: string; tone: 'bad' | 'warn'; title: ReactNode; meta: ReactNode; action?: ReactNode }[] = [
+    ...due.slice(0, 5).map((i) => { const o = orderOf(i); const overdue = !!i.dueDate && i.dueDate < today; return { key: i.id, tone: overdue ? 'bad' as const : 'warn' as const, title: <>{t('فاتورة مستحقة', 'Invoice due')} <Ltr>{i.number}</Ltr></>, meta: <>{i.item} · <Ltr>{m(i.balance ?? i.amount)} {cur}</Ltr>{overdue && <> · <b>{t('متأخرة', 'overdue')}</b></>}</>, action: <Link className="btn btn-accent btn-sm" to={o ? `/portal/orders/${o.id}` : `/portal/invoices/${i.id}`}>{t('ادفع', 'Pay')}</Link> }; }),
+    ...soon.slice(0, 5).map((x) => { const d = daysLeft(x.expires) ?? 0; return { key: x.kind + x.id, tone: d <= 7 ? 'bad' as const : 'warn' as const, title: <>{d < 0 ? t('انتهى', 'Expired') : t('بينتهي قريب', 'Expires soon')}: <Ltr>{x.name}</Ltr></>, meta: <>{d < 0 ? t(`من ${-d} يوم`, `${-d} days ago`) : t(`بعد ${d} يوم`, `in ${d} days`)} · <Ltr>{x.expires}</Ltr></>, action: <Link className="btn btn-ghost btn-sm" to={x.kind === 'domains' ? `/portal/renew/domains/${x.id}` : `/portal/renew/hosting/${x.id}`}>{t('جدّد', 'Renew')}</Link> }; }),
+    ...stopped.map((x) => ({ key: x.id, tone: 'warn' as const, title: <><Ltr>{x.name}</Ltr> {t('متوقف', 'is stopped')}</>, meta: t('تواصل مع الدعم لو محتاج تشغّله.', 'Contact support if you need it running.'), action: <Link className="btn btn-ghost btn-sm" to="/portal/servers">{t('السيرفرات', 'Servers')}</Link> })),
+  ];
   const kpis = [
     { to: '/portal/domains', label: t('دومينات', 'Domains'), v: data.domains.length },
     { to: '/portal/email', label: t('إيميلات', 'Mailboxes'), v: data.mailboxes.length },
     { to: '/portal/hosting', label: t('استضافة', 'Hosting'), v: data.hosting.length },
     { to: '/portal/servers', label: t('سيرفرات', 'Servers'), v: data.servers.length },
   ];
-  const attention = data.domains.filter((d) => d.status === 'expiring').length + due.length + data.servers.filter((s) => s.status === 'stopped').length;
   return (
-    <Page title={t('نظرة عامة', 'Overview')}>
+    <Page title={t(`أهلًا ${user?.name?.split(' ')[0] ?? ''}`, `Hello ${user?.name?.split(' ')[0] ?? ''}`)} action={<div className="row-actions"><Link to="/pricing" className="btn btn-ghost btn-sm">{t('+ اطلب خدمة', '+ Order a service')}</Link><Link to="/portal/support" className="btn btn-ghost btn-sm">{t('الدعم', 'Support')}</Link></div>}>
       <div className="grid g4 kpis">
         {kpis.map((k) => <Link to={k.to} className="card kpi" key={k.to}><span className="nt-mono">{k.label}</span><b className="latin">{k.v}</b></Link>)}
       </div>
-      <div className="grid g2" style={{ marginTop: 16 }}>
-        <div className="card"><h3>{t('محتاج انتباه', 'Needs attention')}</h3>
-          {attention === 0 && <p className="muted">{t('كل حاجة تمام.', 'Everything looks good.')}</p>}
-          <ul className="attn">
-            {data.domains.filter((d) => d.status === 'expiring').map((d) => <li key={d.id}><i className="dot bad" /> <Ltr>{d.name}</Ltr> {t('بينتهي في', 'expires')} <Ltr>{d.expires}</Ltr></li>)}
-            {due.map((i) => <li key={i.id}><i className="dot bad" /> {t('فاتورة مستحقة', 'Invoice due')}: <Ltr>{i.number}</Ltr> · {i.item} · <Ltr>{i.amount} {cur}</Ltr></li>)}
-            {data.servers.filter((s) => s.status === 'stopped').map((s) => <li key={s.id}><i className="dot idle" /> <Ltr>{s.name}</Ltr> {t('متوقف', 'is stopped')}</li>)}
-          </ul>
-        </div>
-        <div className="card"><h3>{t('حالة الخدمات', 'Service health')}</h3>
-          <p className="status-line-d"><i className="dot pulse" /> <span className="latin">ALL SYSTEMS OPERATIONAL</span></p>
+      <div className="grid g2 top-gap">
+        <section className="card">
+          <div className="card-head"><h3>{t('محتاج انتباه', 'Needs attention')}</h3>{rows.length > 0 && <span className="tag latin">{rows.length}</span>}</div>
+          {rows.length === 0 ? <p className="muted">{t('كل حاجة تمام. مفيش فواتير مستحقة ولا تجديدات قريبة.', 'All good. No invoices due and no renewals coming up.')}</p> : (
+            <ul className="rows">{rows.map((r) => <li key={r.key} className={`row-item ${r.tone}`}><i className="dot" /><div className="row-main"><b>{r.title}</b><span className="muted">{r.meta}</span></div>{r.action}</li>)}</ul>
+          )}
+        </section>
+        <div className="stack">
+          <section className="card">
+            <div className="card-head"><h3>{t('الفواتير', 'Billing')}</h3><Link to="/portal/billing" className="link">{t('الكل', 'All')}</Link></div>
+            <div className="mini-kv"><span className="muted">{t('المستحق', 'Amount due')}</span><b className="latin">{m(owed)} {cur}</b></div>
+            <div className="mini-kv"><span className="muted">{t('رصيدك', 'Credit')}</span><b className="latin">{m(data.credit ?? 0)} {cur}</b></div>
+          </section>
+          <section className="card">
+            <div className="card-head"><h3>{t('التجديدات القادمة', 'Upcoming renewals')}</h3></div>
+            {services.length === 0 ? <p className="muted">-</p> : <ul className="rows">{services.slice(0, 4).map((x) => <li key={x.kind + x.id} className="row-item"><div className="row-main"><Link className="link" to={x.to}><Ltr>{x.name}</Ltr></Link><span className="muted latin">{x.expires} · {daysLeft(x.expires)}d</span></div></li>)}</ul>}
+          </section>
+          <section className="card">
+            <div className="card-head"><h3>{t('الدعم', 'Support')}</h3><Link to="/portal/support" className="link">{t('افتح', 'Open')}</Link></div>
+            <p className="muted" style={{ margin: 0 }}>{openTickets > 0 ? t(`عندك ${openTickets} تذكرة مفتوحة.`, `You have ${openTickets} open ticket(s).`) : t('مفيش تذاكر مفتوحة.', 'No open tickets.')}</p>
+          </section>
         </div>
       </div>
     </Page>

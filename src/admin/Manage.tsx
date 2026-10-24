@@ -264,7 +264,7 @@ export function AdminTickets() {
       <Table head={[t('الموضوع', 'Subject'), t('العميل', 'Client'), t('آخر تحديث', 'Updated'), t('الحالة', 'Status'), '']} empty={shown.length === 0 ? t('مفيش تذاكر.', 'No tickets.') : undefined}>
         {ticketRows.map((k) => (
           <tr key={k.id} className={k.id === open ? 'is-sel' : ''}>
-            <td>{k.subject}</td><td>{k.owner}</td><td><Ltr>{day(k.updated)}</Ltr></td><td><TicketTag s={k.status} /></td>
+            <td>{k.subject} {(k as { kind?: string }).kind === 'order' && <span className="tag">{t('أوردر', 'Order')}</span>}</td><td>{k.owner}</td><td><Ltr>{day(k.updated)}</Ltr></td><td><TicketTag s={k.status} /></td>
             <td><button className="btn btn-ghost btn-sm" onClick={() => setOpen(open === k.id ? null : k.id)}>{t('فتح', 'Open')}</button></td>
           </tr>
         ))}

@@ -95,7 +95,7 @@ export function CardSection() {
   const c = data.card;
   const run = async (fn: () => Promise<void>) => { setErr(''); setOk(''); setBusy(true); try { await fn(); await reload(); } catch (e) { setErr(e instanceof ApiError && e.message ? e.message : t('تعذّر تنفيذ الطلب.', 'The request failed.')); } finally { setBusy(false); } };
   return (
-    <div className="card form" style={{ marginBottom: 16 }}>
+    <div className="card form card-soft" style={{ marginBottom: 16 }}>
       <h3>{t('الدفع التلقائي للتجديدات', 'Automatic payment of renewals')}</h3>
       {err && <div className="form-error" role="alert">{err}</div>}{ok && <div className="form-ok" role="status">{ok}</div>}
       {c ? (
@@ -107,7 +107,7 @@ export function CardSection() {
       ) : (
         <>
           <p className="muted">{t('احفظ كارتك مرة واحدة، وهنسحب تلقائيًا قيمة تجديد الدومينات والاستضافة قبل انتهائها. بيانات الكارت بتتحفظ عند Stripe مش عندنا، وتقدر تمسحه في أي وقت.', 'Save your card once and we charge domain and hosting renewals automatically before they expire. The card is kept by Stripe, not by us, and you can remove it any time.')}</p>
-          <button className="btn btn-accent btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await post<{ url: string }>('cards/setup', {}); window.location.href = r.url; })}>{t('حفظ كارت', 'Save a card')}</button>
+          <div><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await post<{ url: string }>('cards/setup', {}); window.location.href = r.url; })}>{t('حفظ كارت', 'Save a card')}</button></div>
         </>
       )}
     </div>

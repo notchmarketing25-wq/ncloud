@@ -545,7 +545,7 @@ function nc_new_order(&$db, $u, $lines, $total, $o) {
     $db['items']['orders'][] = $order;
     $db['items']['invoices'][] = $inv;
     $text = ($order['auto'] ? 'Renewal order ' : 'New order ') . $order['number'] . ' — ' . $order['total'] . ' ' . $cur . "\n" . implode("\n", array_map(function ($l) { return '• ' . $l['nameEn'] . ' × ' . $l['qty'] . ' = ' . $l['price']; }, $lines)) . ($order['domain'] !== '' ? "\nDomain: " . $order['domain'] : '') . ($order['note'] !== '' ? "\n\n" . $order['note'] : '');
-    $db['tickets'][] = array('id' => new_id(), 'uid' => $u['id'], 'subject' => ($order['auto'] ? 'Renewal ' : 'Order ') . $order['number'], 'status' => $order['auto'] ? 'answered' : 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
+    $db['tickets'][] = array('kind' => 'order', 'id' => new_id(), 'uid' => $u['id'], 'subject' => ($order['auto'] ? 'Renewal ' : 'Order ') . $order['number'], 'status' => $order['auto'] ? 'answered' : 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
     return array('order' => $order, 'invoice' => $inv, 'text' => $text);
 }
 /** Turns a quote into an order (+ its invoice), once. The quote's own items, discount and taxes are kept on the invoice. */
@@ -747,6 +747,8 @@ function cron_key($db) {
     return $k;
 }
 
+/** The ticket that accompanies an order (older ones are recognised by their subject). */
+function ticket_is_order($t) { return (isset($t['kind']) && $t['kind'] === 'order') || (bool) preg_match('/^(Order|Renewal) ORD-\d+$/', isset($t['subject']) ? $t['subject'] : ''); }
 /** Support mail: a client's message goes to the company, the company's reply goes to the client. Never called inside db_update. */
 function ticket_notify($db, $t, $actor, $text, $fromClient) {
     $excerpt = nc_substr($text, 700);
@@ -1258,7 +1260,8 @@ switch ($r) {
             // Our cost and supplier are never shown to clients.
             $o[$res] = array_values(array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote']); return $it; }, array_filter(deco_list($res, mine($db, $res, $u['id'])), function ($it) { return !isset($it['status']) || $it['status'] !== 'archived'; })));
         }
-        $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { return $t['uid'] === $u['id']; }));
+        // The automatic ticket that accompanies every order is for the company; the client sees it only once we have answered in it.
+        $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { if ($t['uid'] !== $u['id']) { return false; } if (ticket_is_order($t)) { foreach ($t['messages'] as $m) { if ($m['from'] === 'admin') { return true; } } return false; } return true; }));
         // Sites of this client that sit on somebody else's (shared) hosting: only the plan name is shown.
         $o['sharedHosting'] = array(); $seenH = array();
         foreach ($o['websites'] as $w) {
@@ -1445,7 +1448,7 @@ switch ($r) {
         }
         $paid = 0; $due = 0;
         foreach (items_of($db, 'invoices') as $inv) { $paid += inv_paid($inv); if ($inv['status'] === 'due' || $inv['status'] === 'collections') { $due += inv_balance($inv); } }
-        $open = 0; foreach ($db['tickets'] as $t) { if ($t['status'] === 'open') { $open++; } } // open = waiting for an admin reply
+        $open = 0; foreach ($db['tickets'] as $t) { if ($t['status'] === 'open' && !ticket_is_order($t)) { $open++; } } // open = waiting for an admin reply
         $pendingOrders = 0; foreach (items_of($db, 'orders') as $od) { if ($od['status'] === 'pending') { $pendingOrders++; } }
         $newLeads = 0; foreach ($db['leads'] as $l) { if ($l['status'] === 'new') { $newLeads++; } }
         $soon = date('Y-m-d', time() + 30 * 86400);
@@ -1682,7 +1685,7 @@ switch ($r) {
     case 'admin/tickets':
         need_admin();
         $db = db_read();
-        $list = array_map(function ($t) use ($db) { $t['owner'] = user_name($db, $t['uid']); return $t; }, $db['tickets']);
+        $list = array_map(function ($t) use ($db) { $t['owner'] = user_name($db, $t['uid']); $t['kind'] = ticket_is_order($t) ? 'order' : 'support'; return $t; }, $db['tickets']);
         usort($list, function ($a, $b) { return strcmp($b['updated'], $a['updated']); });
         out(array('tickets' => $list));
 

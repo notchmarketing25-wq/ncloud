@@ -495,3 +495,37 @@
 .reg-admin { border-top: 1px solid var(--nt-fog); padding-top: 8px; display: grid; gap: 8px; }
 .reg-admin h4 { margin: 0; }
 .reg-admin select { width: auto; }
+
+/* Design pass: overview rows, cards, grouped navigation, search */
+.top-gap { margin-top: 16px; }
+.portal-body .grid.g2 { align-items: start; }
+.stack { display: grid; gap: 16px; align-content: start; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card-head h3 { margin: 0; }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.row-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--nt-fog); }
+.row-item:first-child { border-top: 0; padding-top: 4px; }
+.row-item .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--nt-slate); align-self: flex-start; margin-top: 6px; }
+.row-item.bad .dot { background: var(--nt-error); }
+.row-item.warn .dot { background: #d9a400; }
+.row-main { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.row-main b { overflow-wrap: anywhere; }
+.row-main .muted { font-size: .9rem; overflow-wrap: anywhere; }
+.mini-kv { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+.mini-kv b { font-size: 1.1rem; }
+.portal-body .dsearch .input { border: 1px solid var(--nt-fog); background: #fff; }
+.side nav .nav-group { margin: 18px 14px 6px; font: 500 11px/1 var(--nt-font-mono); letter-spacing: var(--nt-mono-ls); text-transform: uppercase; color: #7d7d7d; }
+.card:has(> .muted:only-child) { padding-block: 18px; }
+.side nav .nav-section { display: grid; gap: 2px; }
+.card-soft { background: transparent; border-style: dashed; }
+.card-soft h3 { font-size: 1rem; }
+.tbl .tag { white-space: nowrap; }
+.tbl th:last-child, .tbl td:last-child { padding-inline-end: 18px; }
+@media (max-width: 640px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
+  .kpi { padding: 14px; }
+  .kpi b { font-size: 28px; }
+  .stat-strip { grid-template-columns: minmax(0, 1fr) !important; }
+}
+.tbl td .row-actions { flex-wrap: nowrap; white-space: nowrap; }
+.tbl td .sub-line { flex-wrap: nowrap; white-space: nowrap; }

@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Design pass (same Notch identity): client overview with action rows (Pay / Renew), billing, upcoming renewals and support summary; admin overview with real 'needs attention'; admin navigation grouped by area; order tickets no longer clutter the support list or the open-ticket count; compact tables and mobile KPI grid; fake status claims removed"
+ ],
+ "ar": [
+  "تحسين التصميم (بنفس هوية نوتش): نظرة عامة للعميل بصفوف فيها أزرار (ادفع / جدّد) وملخص الفواتير والتجديدات القادمة والدعم؛ نظرة عامة للأدمن بـ'محتاج انتباه' حقيقي؛ قايمة الأدمن مقسّمة بمجموعات؛ تذاكر الأوردرات التلقائية ما بقتش تزحم الدعم ولا عدّاد التذاكر المفتوحة؛ جداول أنضف وشبكة أرقام للموبايل؛ وإزالة ادعاءات الحالة الوهمية"
+ ]
+}
