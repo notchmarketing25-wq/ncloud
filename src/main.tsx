@@ -10,6 +10,7 @@ import { AdminAccount, AdminLayout, AdminOverview } from './admin/Admin';
 import { AdminUsers } from './admin/Customers';
 import { AdminUpdates } from './admin/Updates';
 import { AdminBackups, AdminReports } from './admin/Ops';
+import { AdminTransferIn } from './admin/Registrar';
 import { AdminPlans } from './admin/Plans';
 import { AdminDomainDetail, AdminHostingDetail, AdminWebsiteDetail, AdminWebsites } from './admin/Detail';
 import { AdminApps, AdminPricing, AdminPurchaseDetail, AdminPurchases } from './admin/Providers';
@@ -65,6 +66,7 @@ createRoot(document.getElementById('root')!).render(
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="domains" element={<AdminDomains />} />
+            <Route path="domains/transfer" element={<AdminTransferIn />} />
             <Route path="domains/:id" element={<AdminDomainDetail />} />
             <Route path="websites" element={<AdminWebsites />} />
             <Route path="plans" element={<AdminPlans />} />

@@ -12,7 +12,7 @@ export type AllData = { users: (User & { phone?: string; company?: string; sourc
 export const PROVIDERS = ['hostinger', 'namecheap', 'resellerclub'];
 export const STATUS: [string, string, string][] = [['active', 'نشط', 'Active'], ['pending', 'قيد التفعيل', 'Pending'], ['expiring', 'قرب ينتهي', 'Expiring'], ['stopped', 'متوقف', 'Stopped'], ['archived', 'مؤرشف (مخفي عن العميل)', 'Archived (hidden from client)']];
 export const DNS_PULL = ['hostinger', 'namecheap', 'resellerclub'];
-export const DNS_PUSH = ['hostinger', 'namecheap'];
+export const DNS_PUSH = ['hostinger', 'namecheap', 'resellerclub'];
 
 /** The whole account in one request: every detail page reads from it and reloads after a change. */
 export function useAll() {

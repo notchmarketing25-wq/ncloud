@@ -492,3 +492,6 @@
 .mini-bars i { display: block; height: 6px; border-radius: 4px; background: var(--nt-black); }
 .mini-bars i.cost { background: var(--nt-volt); }
 @media (max-width: 900px) { .rp-stats, .rp-cols { grid-template-columns: minmax(0, 1fr); } }
+.reg-admin { border-top: 1px solid var(--nt-fog); padding-top: 8px; display: grid; gap: 8px; }
+.reg-admin h4 { margin: 0; }
+.reg-admin select { width: auto; }

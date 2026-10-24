@@ -57,7 +57,8 @@ function DnsAdmin({ domainId, records, onChange }: { domainId: string; records: 
 /* ───────── Generic resource manager ───────── */
 type Col = { label: [string, string]; render: (it: Item, owner: string) => ReactNode };
 
-function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions, detail }: {
+function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions, detail, extra }: {
+  extra?: ReactNode;
   res: string; title: [string, string]; newLabel: [string, string]; fields: Field[]; defaults: Record<string, unknown>; columns: Col[];
   actions?: (it: Item, run: (fn: () => Promise<unknown>, done: string) => Promise<boolean>) => ReactNode;
   /** Where a row opens (a detail page), when the resource has one. */
@@ -92,7 +93,7 @@ function ResourcePage({ res, title, newLabel, fields, defaults, columns, actions
   const { rows: pageRows, pager } = usePaged(shown, `${tab}|${q}`);
 
   return (
-    <Page title={t(title[0], title[1])} action={<button className="btn btn-accent btn-sm" onClick={() => setForm({ uid: users.find((u) => u.role === 'client')?.id ?? users[0]?.id ?? '', ...defaults })}>{t(newLabel[0], newLabel[1])}</button>}>
+    <Page title={t(title[0], title[1])} action={<div className="row-actions">{extra}<button className="btn btn-accent btn-sm" onClick={() => setForm({ uid: users.find((u) => u.role === 'client')?.id ?? users[0]?.id ?? '', ...defaults })}>{t(newLabel[0], newLabel[1])}</button></div>}>
       <Notice err={err} ok={ok} />
       <div className="stat-strip">
         <div><span>{t('الإجمالي', 'Total')}</span><b className="latin">{items.length}</b></div>
@@ -170,8 +171,9 @@ function CostCell({ it }: { it: Item }) {
 }
 const status = (it: Item) => <StatusTag s={it.status as 'active'} />;
 
+function TransferLink() { const { t } = useI18n(); return <Link to="/admin/domains/transfer" className="btn btn-ghost btn-sm">{t('نقل دومين إليك', 'Transfer in')}</Link>; }
 export const AdminDomains = () => (
-  <ResourcePage res="domains" detail={(it) => `/admin/domains/${it.id}`} title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
+  <ResourcePage res="domains" extra={<TransferLink />} detail={(it) => `/admin/domains/${it.id}`} title={['الدومينات', 'Domains']} newLabel={['+ دومين', '+ Domain']} defaults={{ name: '', status: 'active', expires: '', autoRenew: true, provider: '', cost: 0, price: 0 }}
     fields={[
       { key: 'name', label: ['الدومين', 'Domain'], type: 'text', latin: true, req: true },
       { key: 'status', label: ['الحالة', 'Status'], type: 'select', options: [...statusOpts.slice(0, 2), ['expiring', 'قرب ينتهي', 'Expiring'], statusOpts[2], statusOpts[3]] },

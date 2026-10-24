@@ -29,10 +29,10 @@ function prov_defs() {
         ),
         'resellerclub' => array(
             'name' => 'ResellerClub',
-            'caps' => array('domains', 'tlds', 'check', 'dnsread'),
+            'caps' => array('domains', 'tlds', 'check', 'dns'),
             'base' => 'https://httpapi.com',
             'sandbox' => 'https://test.httpapi.com',
-            'fields' => array('userId' => array('Reseller ID (auth-userid)', false), 'apiKey' => array('API key', true)),
+            'fields' => array('userId' => array('Reseller ID (auth-userid)', false), 'apiKey' => array('API key', true), 'ns1' => array('Default nameserver 1 (for new registrations)', false, true), 'ns2' => array('Default nameserver 2', false, true)),
             'help' => array('Settings → API: copy your Reseller ID and key, and whitelist the server IP', 'Settings ← API: انسخ Reseller ID والمفتاح وأضف IP السيرفر'),
         ),
     );
@@ -42,7 +42,7 @@ function prov_cfg($db, $id) { $a = prov_cfg_all($db); return isset($a[$id]) && i
 function prov_has_keys($id, $cfg) {
     $defs = prov_defs();
     if (!isset($defs[$id])) { return false; }
-    foreach (array_keys($defs[$id]['fields']) as $k) { if (empty($cfg[$k])) { return false; } }
+    foreach ($defs[$id]['fields'] as $k => $f) { if (empty($f[2]) && empty($cfg[$k])) { return false; } }
     return true;
 }
 function prov_base($id, $cfg) {
@@ -479,7 +479,7 @@ function resellerclub_dns_get($cfg, $domain) {
     if (!$okAny && $firstErr) { throw $firstErr; }
     return $o;
 }
-function dns_can_write($id) { return in_array($id, array('hostinger', 'namecheap'), true); }
+function dns_can_write($id) { return in_array($id, array('hostinger', 'namecheap', 'resellerclub'), true); }
 function dns_clean($records) {
     $o = array(); $seen = array();
     foreach ($records as $r) {
@@ -675,7 +675,7 @@ function prov_masked($db) {
     foreach (prov_defs() as $id => $d) {
         $cfg = prov_cfg($db, $id);
         $fields = array();
-        foreach ($d['fields'] as $k => $f) { $fields[] = array('key' => $k, 'label' => $f[0], 'secret' => $f[1], 'value' => $f[1] ? '' : (isset($cfg[$k]) ? $cfg[$k] : ''), 'set' => !empty($cfg[$k])); }
+        foreach ($d['fields'] as $k => $f) { $fields[] = array('key' => $k, 'label' => $f[0], 'secret' => $f[1], 'optional' => !empty($f[2]), 'value' => $f[1] ? '' : (isset($cfg[$k]) ? $cfg[$k] : ''), 'set' => !empty($cfg[$k])); }
         $out[] = array('id' => $id, 'name' => $d['name'], 'caps' => $d['caps'], 'help' => $d['help'], 'fields' => $fields, 'sandbox' => isset($d['sandbox']), 'useSandbox' => !empty($cfg['sandbox']),
             'baseUrl' => isset($cfg['baseUrl']) ? $cfg['baseUrl'] : '', 'connected' => prov_has_keys($id, $cfg), 'test' => isset($cfg['test']) ? $cfg['test'] : null);
     }
@@ -736,6 +736,11 @@ function prov_route($r, $me) {
                 'mailboxes' => $related('mailboxes', function ($m) use ($name) { return substr(strtolower($m['address']), -strlen($name) - 1) === '@' . $name; }),
                 'canPull' => $pv !== '' && isset(prov_defs()[$pv]) && (in_array('dns', prov_defs()[$pv]['caps'], true) || in_array('dnsread', prov_defs()[$pv]['caps'], true)),
                 'canPush' => dns_can_write($pv)));
+
+        case 'admin/domain-registrar':
+            reg_route($r, $me);
+        case 'admin/domain-transfer':
+            reg_transfer_in($me);
 
         case 'admin/domain-dns':
             require_post();
@@ -999,7 +1004,6 @@ function hostinger_register($cfg, $domain, $years, $c) {
     $r = hostinger_call($cfg, 'POST', '/api/domains/v1/portfolio', array('domain' => $domain, 'item_id' => $item, 'domain_contacts' => array('owner_id' => $cid, 'admin_id' => $cid, 'billing_id' => $cid, 'tech_id' => $cid)));
     return array('ref' => isset($r['id']) ? (string) $r['id'] : $domain, 'charged' => '');
 }
-function resellerclub_register($cfg, $domain, $years, $c) { throw new Exception('Registering through ResellerClub needs a customer/contact set-up that is not supported yet: register it in the ResellerClub panel'); }
 
 /* ───────── online payment gateways ───────── */
 function gw_cfg($db, $id) { $g = meta_get($db, 'gateways', array()); return isset($g[$id]) && is_array($g[$id]) && !empty($g[$id]['enabled']) ? $g[$id] : null; }
@@ -1562,4 +1566,366 @@ function ops_route($r, $me) {
             fail('unknown export', 422);
     }
     fail('not found', 404);
+}
+
+/* ───────── registrar operations: nameservers, lock, renew at the registrar, EPP code, transfer in, ResellerClub write access ───────── */
+/** ResellerClub call that may POST and may answer a bare value (an order id). */
+function rc_call($cfg, $path, $params = array(), $method = 'GET') {
+    $q = array(); foreach (array_merge(array('auth-userid' => $cfg['userId'], 'api-key' => $cfg['apiKey']), $params) as $k => $v) { foreach ((array) $v as $one) { $q[] = rawurlencode($k) . '=' . rawurlencode((string) $one); } } // repeated keys (ns=a&ns=b) the way the API wants them
+    $q = implode('&', $q);
+    if ($method === 'POST') { list($st, $body) = prov_http('POST', prov_base('resellerclub', $cfg) . '/api/' . $path, array('Content-Type: application/x-www-form-urlencoded'), $q); }
+    else { list($st, $body) = prov_http('GET', prov_base('resellerclub', $cfg) . '/api/' . $path . '?' . $q, array()); }
+    $j = json_decode($body, true);
+    if ($st >= 400 && !is_array($j)) { throw new Exception('ResellerClub: HTTP ' . $st); }
+    if (is_array($j) && isset($j['status']) && strtolower((string) $j['status']) === 'error') { throw new Exception('ResellerClub: ' . clean_text(isset($j['message']) ? $j['message'] : 'request failed', 180)); }
+    if (is_array($j) && isset($j['message']) && !isset($j['status']) && $st >= 400) { throw new Exception('ResellerClub: ' . clean_text($j['message'], 180)); }
+    return $j === null ? trim($body) : $j;
+}
+function rc_order($cfg, $domain) { $o = rc_call($cfg, 'domains/orderid.json', array('domain-name' => $domain)); if (is_array($o) || !ctype_digit((string) $o)) { throw new Exception('ResellerClub: this domain is not in the reseller account'); } return (string) $o; }
+function prov_ns_list($v) {
+    $o = array();
+    if (is_array($v)) { foreach ($v as $k => $x) { if (is_array($x)) { $x = isset($x['host']) ? $x['host'] : (isset($x['name']) ? $x['name'] : ''); } $x = strtolower(trim((string) $x)); if ($x !== '' && preg_match('/^[a-z0-9.\-]+$/', $x)) { $o[] = rtrim($x, '.'); } } }
+    return array_values(array_unique($o));
+}
+function ns_clean($list) {
+    $o = array();
+    foreach ((array) $list as $x) { $x = strtolower(rtrim(trim((string) $x), '.')); if ($x === '') { continue; } if (!preg_match('/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $x)) { throw new Exception('invalid nameserver: ' . clean_text($x, 80)); } $o[] = $x; }
+    $o = array_values(array_unique($o));
+    if ($o && count($o) < 2) { throw new Exception('a domain needs at least two nameservers'); }
+    if (count($o) > 5) { throw new Exception('at most 5 nameservers'); }
+    return $o;
+}
+
+/* Hostinger */
+function hostinger_dominfo($cfg, $domain) {
+    $d = hostinger_call($cfg, 'GET', '/api/domains/v1/portfolio/' . rawurlencode($domain));
+    $d = isset($d['data']) && is_array($d['data']) ? $d['data'] : $d;
+    $ns = array();
+    foreach (array('name_servers', 'nameservers', 'ns') as $k) { if (isset($d[$k])) { $ns = prov_ns_list($d[$k]); break; } }
+    if (!$ns) { $ns = prov_ns_list(array_filter(array(isset($d['ns1']) ? $d['ns1'] : '', isset($d['ns2']) ? $d['ns2'] : '', isset($d['ns3']) ? $d['ns3'] : '', isset($d['ns4']) ? $d['ns4'] : ''))); }
+    $lock = null; foreach (array('domain_lock', 'is_locked', 'locked', 'transfer_lock') as $k) { if (isset($d[$k])) { $lock = (bool) $d[$k]; break; } }
+    $ar = null; foreach (array('is_auto_renewed', 'auto_renew') as $k) { if (isset($d[$k])) { $ar = (bool) $d[$k]; break; } }
+    return array('ns' => $ns, 'locked' => $lock, 'autoRenew' => $ar, 'expires' => prov_date(prov_pick($d, array('expires_at', 'expiration_date', 'expiry'), '')));
+}
+function hostinger_setns($cfg, $domain, $ns) {
+    if (!$ns) { throw new Exception('Hostinger: enter at least two nameservers (the default ones are set in hPanel)'); }
+    $b = array(); foreach (array_slice($ns, 0, 4) as $i => $x) { $b['ns' . ($i + 1)] = $x; }
+    hostinger_call($cfg, 'PUT', '/api/domains/v1/portfolio/' . rawurlencode($domain) . '/nameservers', $b);
+}
+function hostinger_setlock($cfg, $domain, $on) { hostinger_call($cfg, $on ? 'PUT' : 'DELETE', '/api/domains/v1/portfolio/' . rawurlencode($domain) . '/domain-lock'); }
+function hostinger_renew($cfg, $domain, $years, $expires) { throw new Exception('Hostinger renews domains through its own billing: renew it in hPanel (or turn auto-renew on there)'); }
+function hostinger_epp($cfg, $domain) { throw new Exception('Hostinger: get the transfer (EPP) code in hPanel → Domains → Transfer out'); }
+function hostinger_transfer($cfg, $domain, $epp, $years, $c) { throw new Exception('Hostinger: start incoming transfers in hPanel (its API does not offer them)'); }
+
+/* Namecheap */
+function namecheap_dominfo($cfg, $domain) {
+    list($sld, $tld) = nc_split_domain($domain);
+    $x = namecheap_call($cfg, 'namecheap.domains.dns.getList', array('SLD' => $sld, 'TLD' => $tld));
+    $r = $x->CommandResponse->DomainDNSGetListResult; $ns = array();
+    foreach ($r->Nameserver as $n) { $ns[] = (string) $n; }
+    $lock = null;
+    try { $l = namecheap_call($cfg, 'namecheap.domains.getRegistrarLock', array('DomainName' => $domain)); $lock = strtolower((string) $l->CommandResponse->DomainGetRegistrarLockResult['RegistrarLockStatus']) === 'true'; } catch (Exception $e) { /* some TLDs have no lock */ }
+    return array('ns' => (string) $r['IsUsingOurDNS'] === 'true' ? array() : prov_ns_list($ns), 'defaultDns' => (string) $r['IsUsingOurDNS'] === 'true', 'locked' => $lock, 'autoRenew' => null, 'expires' => '');
+}
+function namecheap_setns($cfg, $domain, $ns) {
+    list($sld, $tld) = nc_split_domain($domain);
+    if (!$ns) { $x = namecheap_call($cfg, 'namecheap.domains.dns.setDefault', array('SLD' => $sld, 'TLD' => $tld)); $ok = (string) $x->CommandResponse->DomainDNSSetDefaultResult['Updated'] === 'true'; }
+    else { $x = namecheap_call($cfg, 'namecheap.domains.dns.setCustom', array('SLD' => $sld, 'TLD' => $tld, 'Nameservers' => implode(',', $ns))); $ok = (string) $x->CommandResponse->DomainDNSSetCustomResult['Update'] === 'true'; }
+    if (!$ok) { throw new Exception('Namecheap: the nameservers were not accepted'); }
+}
+function namecheap_setlock($cfg, $domain, $on) { namecheap_call($cfg, 'namecheap.domains.setRegistrarLock', array('DomainName' => $domain, 'LockAction' => $on ? 'LOCK' : 'UNLOCK')); }
+function namecheap_renew($cfg, $domain, $years, $expires) {
+    $x = namecheap_call($cfg, 'namecheap.domains.renew', array('DomainName' => $domain, 'Years' => max(1, (int) $years)));
+    $r = $x->CommandResponse->DomainRenewResult;
+    if (!$r || strtolower((string) $r['Renew']) !== 'true') { throw new Exception('Namecheap did not confirm the renewal'); }
+    return array('charged' => (string) $r['ChargedAmount'], 'expires' => isset($r->DomainDetails->ExpiredDate) ? prov_date((string) $r->DomainDetails->ExpiredDate) : '');
+}
+function namecheap_epp($cfg, $domain) { throw new Exception('Namecheap does not give the transfer (EPP) code through its API: get it in the Namecheap panel → Domain List → Manage → Sharing & Transfer'); }
+function namecheap_transfer($cfg, $domain, $epp, $years, $c) {
+    $x = namecheap_call($cfg, 'namecheap.domains.transfer.create', array('DomainName' => $domain, 'Years' => max(1, (int) $years), 'EPPCode' => $epp, 'PromotionCode' => '', 'AddFreeWhoisguard' => 'yes', 'WGEnabled' => 'yes'));
+    $r = $x->CommandResponse->DomainTransferCreateResult;
+    if (!$r || strtolower((string) $r['Transfer']) !== 'true') { throw new Exception('Namecheap did not accept the transfer'); }
+    return array('ref' => (string) $r['TransferID'], 'charged' => (string) $r['ChargedAmount']);
+}
+
+/* ResellerClub */
+function resellerclub_dominfo($cfg, $domain) {
+    $o = rc_order($cfg, $domain);
+    $d = rc_call($cfg, 'domains/details.json', array('order-id' => $o, 'options' => 'All'));
+    $ns = array(); for ($i = 1; $i <= 6; $i++) { if (!empty($d['ns' . $i])) { $ns[] = $d['ns' . $i]; } }
+    $st = isset($d['orderstatus']) ? (is_array($d['orderstatus']) ? implode(',', $d['orderstatus']) : (string) $d['orderstatus']) : '';
+    $lock = isset($d['orderstatus']) ? (stripos($st, 'transferlock') !== false ? true : false) : null;
+    return array('ns' => prov_ns_list($ns), 'locked' => $lock, 'autoRenew' => null, 'expires' => prov_date(isset($d['endtime']) ? $d['endtime'] : ''), 'order' => $o);
+}
+function resellerclub_setns($cfg, $domain, $ns) {
+    if (count($ns) < 2) { throw new Exception('ResellerClub: enter at least two nameservers'); }
+    $p = array('order-id' => rc_order($cfg, $domain)); foreach (array_slice($ns, 0, 5) as $i => $x) { $p['ns' . ($i + 1)] = $x; }
+    $r = rc_call($cfg, 'domains/modify-ns.json', $p, 'POST');
+    if (is_array($r) && isset($r['actionstatus']) && strtolower((string) $r['actionstatus']) === 'failed') { throw new Exception('ResellerClub: ' . clean_text(isset($r['actionstatusdesc']) ? $r['actionstatusdesc'] : 'the nameservers were not accepted', 160)); }
+}
+function resellerclub_setlock($cfg, $domain, $on) { rc_call($cfg, $on ? 'domains/enable-theft-protection.json' : 'domains/disable-theft-protection.json', array('order-id' => rc_order($cfg, $domain)), 'POST'); }
+function resellerclub_epp($cfg, $domain) {
+    $d = rc_call($cfg, 'domains/details.json', array('order-id' => rc_order($cfg, $domain), 'options' => 'All'));
+    if (empty($d['domsecret'])) { throw new Exception('ResellerClub did not return a transfer code (is the domain locked or too new?)'); }
+    return (string) $d['domsecret'];
+}
+function resellerclub_renew($cfg, $domain, $years, $expires) {
+    $o = rc_order($cfg, $domain);
+    $exp = $expires !== '' ? strtotime($expires . ' 00:00:00 UTC') : 0;
+    if (!$exp) { $d = rc_call($cfg, 'domains/details.json', array('order-id' => $o, 'options' => 'OrderDetails')); $exp = isset($d['endtime']) ? (int) $d['endtime'] : 0; }
+    $r = rc_call($cfg, 'domains/renew.json', array('order-id' => $o, 'years' => max(1, (int) $years), 'exp-date' => $exp, 'invoice-option' => 'NoInvoice'), 'POST');
+    if (is_array($r) && isset($r['status']) && strtolower((string) $r['status']) !== 'success') { throw new Exception('ResellerClub did not confirm the renewal'); }
+    return array('charged' => is_array($r) && isset($r['sellingamount']) ? (string) $r['sellingamount'] : '', 'expires' => '');
+}
+/** A reseller customer + contact for the client (created once, found again by e-mail). */
+function rc_contact($cfg, $c) {
+    $email = $c['email'];
+    $cust = '';
+    try { $d = rc_call($cfg, 'customers/details.json', array('username' => $email)); if (is_array($d) && !empty($d['customerid'])) { $cust = (string) $d['customerid']; } } catch (Exception $e) { /* not found: create */ }
+    $phone = preg_replace('/\D/', '', nc_phone_intl($c['phone'])); $cc = substr($phone, 0, 2); $num = substr($phone, 2);
+    $addr = array('name' => $c['name'], 'company' => !empty($c['company']) ? $c['company'] : $c['name'], 'address-line-1' => $c['address'] ?: 'N/A', 'city' => $c['city'] ?: 'Cairo', 'state' => $c['state'] ?: 'Cairo', 'country' => !empty($c['country']) && strlen($c['country']) === 2 ? strtoupper($c['country']) : 'EG', 'zipcode' => $c['zip'] ?: '11511', 'phone-cc' => $cc, 'phone' => $num);
+    if ($cust === '') {
+        $pw = substr(bin2hex(function_exists('random_bytes') ? random_bytes(8) : md5(uniqid('', true), true)), 0, 14) . 'Aa1!';
+        $cust = rc_call($cfg, 'customers/v2/signup.json', array_merge($addr, array('username' => $email, 'passwd' => $pw, 'lang-pref' => 'en')), 'POST');
+        if (is_array($cust) || !ctype_digit((string) $cust)) { throw new Exception('ResellerClub could not create the customer'); }
+    }
+    $ct = rc_call($cfg, 'contacts/add.json', array_merge($addr, array('email' => $email, 'customer-id' => $cust, 'type' => 'Contact')), 'POST');
+    if (is_array($ct) || !ctype_digit((string) $ct)) { throw new Exception('ResellerClub could not create the contact'); }
+    return array((string) $cust, (string) $ct);
+}
+function resellerclub_register($cfg, $domain, $years, $c) {
+    if (empty($cfg['ns1']) || empty($cfg['ns2'])) { throw new Exception('ResellerClub: set the two default nameservers in the provider settings first (they are used for new registrations)'); }
+    list($cust, $ct) = rc_contact($cfg, $c);
+    $r = rc_call($cfg, 'domains/register.json', array('domain-name' => $domain, 'years' => max(1, (int) $years), 'ns' => array($cfg['ns1'], $cfg['ns2']), 'customer-id' => $cust, 'reg-contact-id' => $ct, 'admin-contact-id' => $ct, 'tech-contact-id' => $ct, 'billing-contact-id' => $ct, 'invoice-option' => 'NoInvoice', 'protect-privacy' => 'true'), 'POST');
+    if (!is_array($r) || (isset($r['status']) && strtolower((string) $r['status']) === 'error') || (isset($r['actionstatus']) && strtolower((string) $r['actionstatus']) === 'failed')) { throw new Exception('ResellerClub did not accept the registration'); }
+    return array('ref' => isset($r['entityid']) ? (string) $r['entityid'] : $domain, 'charged' => isset($r['sellingamount']) ? (string) $r['sellingamount'] : '');
+}
+function resellerclub_transfer($cfg, $domain, $epp, $years, $c) {
+    list($cust, $ct) = rc_contact($cfg, $c);
+    $r = rc_call($cfg, 'domains/transfer.json', array('domain-name' => $domain, 'auth-code' => $epp, 'customer-id' => $cust, 'reg-contact-id' => $ct, 'admin-contact-id' => $ct, 'tech-contact-id' => $ct, 'billing-contact-id' => $ct, 'invoice-option' => 'NoInvoice', 'protect-privacy' => 'true'), 'POST');
+    if (!is_array($r) || (isset($r['status']) && strtolower((string) $r['status']) === 'error')) { throw new Exception('ResellerClub did not accept the transfer'); }
+    return array('ref' => isset($r['entityid']) ? (string) $r['entityid'] : $domain, 'charged' => isset($r['sellingamount']) ? (string) $r['sellingamount'] : '');
+}
+/** Writes the zone by difference: records that vanished are deleted, new ones added (ResellerClub has one call per record type). */
+function resellerclub_dns_set($cfg, $domain, $records) {
+    $cur = resellerclub_dns_get($cfg, $domain);
+    $key = function ($r) { return $r['type'] . '|' . strtolower($r['host']) . '|' . dns_norm($r['value']); };
+    $want = array(); foreach ($records as $r) { $want[$key($r)] = $r; }
+    $have = array(); foreach ($cur as $r) { $have[$key($r)] = $r; }
+    $types = array('A' => 'ipv4', 'AAAA' => 'ipv6', 'CNAME' => 'cname', 'MX' => 'mx', 'TXT' => 'txt', 'NS' => 'ns');
+    try { rc_call($cfg, 'dns/activate.json', array('order-id' => rc_order($cfg, $domain)), 'POST'); } catch (Exception $e) { /* already active */ }
+    foreach ($have as $k => $r) {
+        if (isset($want[$k]) || !isset($types[$r['type']]) || ($r['type'] === 'NS' && $r['host'] === '@')) { continue; } // the zone's own NS records are managed with the nameservers
+        $v = $r['value']; if ($r['type'] === 'MX' && preg_match('/^\d+\s+(\S+)$/', $v, $m)) { $v = $m[1]; }
+        rc_call($cfg, 'dns/manage/delete-' . $types[$r['type']] . '-record.json', array('domain-name' => $domain, 'host' => $r['host'] === '@' ? '' : $r['host'], 'value' => $v), 'POST');
+    }
+    foreach ($want as $k => $r) {
+        if (isset($have[$k])) { continue; }
+        if (!isset($types[$r['type']])) { throw new Exception('ResellerClub: ' . $r['type'] . ' records cannot be written through its API'); }
+        $p = array('domain-name' => $domain, 'host' => $r['host'] === '@' ? '' : $r['host'], 'ttl' => max(300, (int) $r['ttl']), 'value' => $r['value']);
+        if ($r['type'] === 'MX') { if (preg_match('/^(\d+)\s+(\S+)$/', $r['value'], $m)) { $p['priority'] = $m[1]; $p['value'] = $m[2]; } else { $p['priority'] = 10; } }
+        if ($r['type'] === 'TXT') { $p['value'] = trim($r['value'], '"'); }
+        rc_call($cfg, 'dns/manage/add-' . $types[$r['type']] . '-record.json', $p, 'POST');
+    }
+}
+
+/** Which operations a provider offers (the UI hides the rest). */
+function reg_caps($pid) {
+    return array('ns' => true, 'lock' => true, 'renew' => $pid !== 'hostinger', 'epp' => $pid === 'resellerclub', 'transfer' => $pid !== 'hostinger');
+}
+/** Domain management at the registrar for a domain item. Used by the admin and (ns / lock only) by the owner. */
+function reg_domain($db, $d) {
+    $pid = isset($d['provider']) ? (string) $d['provider'] : '';
+    if ($pid === '' || !isset(prov_defs()[$pid]) || !in_array('domains', prov_defs()[$pid]['caps'], true)) { throw new Exception('this domain is not linked to a provider'); }
+    return $pid;
+}
+
+function reg_find($db, $id) { $i = find_by(items_of($db, 'domains'), 'id', $id); return $i < 0 ? null : array($i, $db['items']['domains'][$i]); }
+/** Renews a domain at its registrar (spends money) and records it. Called from the admin action and from the daily job. */
+function reg_renew_now($domainId, $years, $actor) {
+    $db = db_read(); $f = reg_find($db, $domainId);
+    if (!$f) { throw new Exception('domain not found'); }
+    $d = $f[1]; $pid = reg_domain($db, $d);
+    $years = max(1, min(10, (int) $years));
+    $res = prov_run($pid, 'renew', $db, strtolower($d['name']), $years, isset($d['expires']) ? $d['expires'] : '');
+    db_update(function (&$db) use ($domainId, $years, $res, $actor, $pid) {
+        $k = find_by(items_of($db, 'domains'), 'id', $domainId); if ($k < 0) { return; }
+        unset($db['items']['domains'][$k]['renewPending'], $db['items']['domains'][$k]['renewError']);
+        if (!empty($res['expires'])) { $db['items']['domains'][$k]['expires'] = $res['expires']; }
+        $db['items']['domains'][$k]['renewedAt'] = gmdate('c');
+        log_act($db, $actor, 'domain-renew-provider', $db['items']['domains'][$k]['name'] . ' x' . $years . ' at ' . $pid . (!empty($res['charged']) ? ' charged ' . $res['charged'] : ''));
+    });
+    return $res;
+}
+/** Domains whose renewal the client paid and that still need renewing at the registrar. */
+function reg_pending($db) { $o = array(); foreach (items_of($db, 'domains') as $d) { if (!empty($d['renewPending']) && !empty($d['provider'])) { $o[] = $d; } } return $o; }
+/** The daily job: when "renew at the registrar automatically" is on, pay the registrar for every renewal a client already paid us. */
+function reg_auto_renew() {
+    $db = db_read();
+    if (!meta_get($db, 'providerRegister', false) || !meta_get($db, 'providerRenew', false)) { return 0; }
+    $n = 0;
+    foreach (reg_pending($db) as $d) {
+        try { reg_renew_now($d['id'], (int) $d['renewPending'], array('id' => 'system', 'name' => 'System', 'email' => '')); $n++; }
+        catch (Exception $e) { db_update(function (&$db) use ($d, $e) { $k = find_by(items_of($db, 'domains'), 'id', $d['id']); if ($k >= 0) { $db['items']['domains'][$k]['renewError'] = nc_substr($e->getMessage(), 200); } }); }
+    }
+    return $n;
+}
+
+function reg_route($r, $me) {
+    $b = $_SERVER['REQUEST_METHOD'] === 'POST' ? body() : $_GET;
+    $db = db_read();
+    $f = reg_find($db, isset($b['id']) ? (string) $b['id'] : '');
+    if (!$f) { fail('domain not found', 404); }
+    $d = $f[1]; $name = strtolower($d['name']);
+    try { $pid = reg_domain($db, $d); } catch (Exception $e) { fail($e->getMessage(), 422); }
+    if ($r === 'admin/domain-registrar' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $o = array('provider' => $pid, 'caps' => reg_caps($pid), 'canRenewPaid' => (bool) meta_get($db, 'providerRegister', false), 'pending' => !empty($d['renewPending']) ? (int) $d['renewPending'] : 0, 'renewError' => isset($d['renewError']) ? $d['renewError'] : '', 'info' => null, 'error' => '');
+        try { $o['info'] = prov_run($pid, 'dominfo', $db, $name); } catch (Exception $e) { $o['error'] = $e->getMessage(); }
+        out($o);
+    }
+    require_post();
+    $act = isset($b['action']) ? (string) $b['action'] : '';
+    try {
+        if ($act === 'setns') {
+            $ns = ns_clean(isset($b['ns']) && is_array($b['ns']) ? $b['ns'] : array());
+            prov_run($pid, 'setns', $db, $name, $ns);
+            db_update(function (&$db) use ($d, $ns, $me) { $k = find_by(items_of($db, 'domains'), 'id', $d['id']); if ($k >= 0) { $db['items']['domains'][$k]['ns'] = $ns; log_act($db, $me, 'domain-ns', $d['name'] . ' → ' . ($ns ? implode(' ', $ns) : 'default')); } });
+            out(array('ok' => true));
+        }
+        if ($act === 'setlock') {
+            $on = !empty($b['lock']);
+            prov_run($pid, 'setlock', $db, $name, $on);
+            db_update(function (&$db) use ($d, $on, $me) { $k = find_by(items_of($db, 'domains'), 'id', $d['id']); if ($k >= 0) { $db['items']['domains'][$k]['locked'] = $on; log_act($db, $me, 'domain-lock', $d['name'] . ($on ? ' locked' : ' unlocked')); } });
+            out(array('ok' => true));
+        }
+        if ($act === 'epp') { out(array('code' => prov_run($pid, 'epp', $db, $name))); }
+        if ($act === 'renew') {
+            if (!meta_get($db, 'providerRegister', false)) { fail('turn on "Register / renew domains at the provider" in Settings → Renewals & providers first', 409); }
+            if (empty($b['confirm'])) { fail('confirmation required', 422); }
+            $res = reg_renew_now($d['id'], isset($b['years']) ? (int) $b['years'] : 1, $me);
+            out(array('ok' => true, 'charged' => isset($res['charged']) ? $res['charged'] : ''));
+        }
+    } catch (Exception $e) { fail($e->getMessage(), 502); }
+    fail('unknown action', 422);
+}
+
+/** Transfer a domain in from another registrar (spends money; needs the EPP code the client got from the old registrar). */
+function reg_transfer_in($me) {
+    require_post(); $b = body(); $db = db_read();
+    if (!meta_get($db, 'providerRegister', false)) { fail('turn on "Register / renew domains at the provider" in Settings → Renewals & providers first', 409); }
+    if (empty($b['confirm'])) { fail('confirmation required', 422); }
+    $name = strtolower(trim(isset($b['name']) ? (string) $b['name'] : '')); $pid = isset($b['provider']) ? (string) $b['provider'] : '';
+    if (!preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $name)) { fail('invalid domain name', 422); }
+    if (!isset(prov_defs()[$pid]) || !reg_caps($pid)['transfer']) { fail('this provider cannot start transfers here', 422); }
+    $epp = trim(isset($b['epp']) ? (string) $b['epp'] : ''); if ($epp === '' || strlen($epp) > 100) { fail('enter the transfer (EPP) code', 422); }
+    $ui = find_user($db, 'id', isset($b['uid']) ? (string) $b['uid'] : ''); if ($ui < 0) { fail('choose a client', 422); }
+    foreach (items_of($db, 'domains') as $x) { if (strtolower($x['name']) === $name) { fail('this domain already exists in the system', 409); } }
+    $cu = $db['users'][$ui]; $bz = meta_get($db, 'business', array()); $ad = isset($cu['addr']) && is_array($cu['addr']) ? $cu['addr'] : array();
+    $contact = array('name' => $cu['name'], 'email' => $cu['email'], 'phone' => isset($cu['phone']) ? $cu['phone'] : '', 'company' => isset($cu['company']) ? $cu['company'] : '', 'address' => isset($ad['address1']) ? $ad['address1'] : (isset($bz['address']) ? $bz['address'] : ''), 'city' => isset($ad['city']) ? $ad['city'] : '', 'state' => isset($ad['state']) ? $ad['state'] : '', 'zip' => isset($ad['zip']) ? $ad['zip'] : '', 'country' => isset($ad['country']) ? $ad['country'] : '');
+    $years = max(1, min(10, (int) (isset($b['years']) ? $b['years'] : 1)));
+    try { $r = prov_run($pid, 'transfer', $db, $name, $epp, $years, $contact); } catch (Exception $e) { fail($e->getMessage(), 502); }
+    $uid = $cu['id'];
+    $made = db_update(function (&$db) use ($name, $pid, $r, $uid, $me, $years) {
+        global $SCHEMA; $e = '';
+        $d = clean_fields($SCHEMA['domains'], array('name' => $name, 'status' => 'pending', 'autoRenew' => true, 'notes' => 'Transfer in progress at ' . $pid), $e);
+        $rec = array_merge($d, array('id' => new_id(), 'uid' => $uid, 'created' => gmdate('c'), 'dns' => array(), 'provider' => $pid, 'ref' => $r['ref'], 'regYears' => $years));
+        $db['items']['domains'][] = $rec; log_act($db, $me, 'domain-transfer-in', $name . ' at ' . $pid); return $rec;
+    });
+    out(array('ok' => true, 'domain' => $made, 'charged' => isset($r['charged']) ? $r['charged'] : ''), 201);
+}
+
+/** The domain owner's own view: nameservers and the transfer lock (not renewals or codes). */
+function reg_client_route($r, $u) {
+    $b = $_SERVER['REQUEST_METHOD'] === 'POST' ? body() : $_GET;
+    $db = db_read(); $f = reg_find($db, isset($b['id']) ? (string) $b['id'] : '');
+    if (!$f || $f[1]['uid'] !== $u['id'] || (isset($f[1]['status']) && $f[1]['status'] === 'archived')) { fail('domain not found', 404); }
+    $d = $f[1]; $name = strtolower($d['name']);
+    try { $pid = reg_domain($db, $d); } catch (Exception $e) { out(array('managed' => false)); }
+    if ($r === 'svc/domain-registrar') {
+        $o = array('managed' => true, 'off' => !empty($d['dnsOff']), 'info' => null);
+        try { $i = prov_run($pid, 'dominfo', $db, $name); $o['info'] = array('ns' => $i['ns'], 'locked' => $i['locked']); } catch (Exception $e) { $o['error'] = 'unavailable'; }
+        out($o);
+    }
+    require_post();
+    if (!empty($d['dnsOff'])) { fail('changes are turned off for this domain — contact support', 403); }
+    $rate = 'regch:' . $u['id'];
+    if (db_update(function (&$db) use ($rate) { return rate_blocked($db, $rate, 20, 3600); })) { fail('too many changes, try again later', 429); }
+    db_update(function (&$db) use ($rate) { rate_hit($db, $rate); });
+    try {
+        if ($r === 'svc/domain-ns') { $ns = ns_clean(isset($b['ns']) && is_array($b['ns']) ? $b['ns'] : array()); prov_run($pid, 'setns', $db, $name, $ns); db_update(function (&$db) use ($d, $ns, $u) { $k = find_by(items_of($db, 'domains'), 'id', $d['id']); if ($k >= 0) { $db['items']['domains'][$k]['ns'] = $ns; log_act($db, $u, 'domain-ns', $d['name'] . ' → ' . ($ns ? implode(' ', $ns) : 'default')); } }); out(array('ok' => true)); }
+        if ($r === 'svc/domain-lock') { $on = !empty($b['lock']); prov_run($pid, 'setlock', $db, $name, $on); db_update(function (&$db) use ($d, $on, $u) { $k = find_by(items_of($db, 'domains'), 'id', $d['id']); if ($k >= 0) { $db['items']['domains'][$k]['locked'] = $on; log_act($db, $u, 'domain-lock', $d['name'] . ($on ? ' locked' : ' unlocked')); } }); out(array('ok' => true)); }
+    } catch (Exception $e) { fail($e->getMessage(), 422); }
+    fail('not found', 404);
+}
+
+/* ───────── saved card + automatic payment of renewals (Stripe) ───────── */
+function stripe_call($db, $method, $path, $form = array()) {
+    $c = gw_cfg($db, 'stripe');
+    if (!$c || empty($c['secret'])) { throw new Exception('online card payments are not set up'); }
+    $base = !empty($c['base']) ? $c['base'] : 'https://api.stripe.com';
+    $url = $base . $path . ($method === 'GET' && $form ? '?' . http_build_query($form) : '');
+    list($st, $raw) = prov_http($method, $url, array('Authorization: Basic ' . base64_encode($c['secret'] . ':'), 'Content-Type: application/x-www-form-urlencoded'), $method === 'GET' ? null : http_build_query($form));
+    $j = json_decode($raw, true);
+    if ($st >= 300 || !is_array($j)) { throw new Exception('Stripe: ' . (is_array($j) && isset($j['error']['message']) ? clean_text($j['error']['message'], 160) : 'HTTP ' . $st)); }
+    return $j;
+}
+function card_public($u) { return !empty($u['card']['pm']) ? array('brand' => $u['card']['brand'], 'last4' => $u['card']['last4'], 'exp' => $u['card']['exp'], 'autopay' => !empty($u['autopay'])) : null; }
+/** Starts "save my card": a Stripe-hosted page that never shows us the card number. Returns the URL. */
+function card_setup_url($db, $u, $okUrl, $backUrl) {
+    $cust = !empty($u['stripeCustomer']) ? $u['stripeCustomer'] : '';
+    if ($cust === '') {
+        $j = stripe_call($db, 'POST', '/v1/customers', array('email' => $u['email'], 'name' => $u['name'], 'metadata[uid]' => $u['id']));
+        $cust = (string) $j['id'];
+        db_update(function (&$d) use ($u, $cust) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { $d['users'][$k]['stripeCustomer'] = $cust; } });
+    }
+    $j = stripe_call($db, 'POST', '/v1/checkout/sessions', array('mode' => 'setup', 'customer' => $cust, 'payment_method_types[0]' => 'card', 'success_url' => $okUrl, 'cancel_url' => $backUrl, 'metadata[uid]' => $u['id'], 'currency' => strtolower(meta_get($db, 'currency', '') ?: 'EGP')));
+    if (empty($j['url'])) { throw new Exception('Stripe did not return a page to open'); }
+    return $j['url'];
+}
+/** After the client comes back: read the session from Stripe (never trust the browser) and keep the card's reference, brand and last 4 digits. */
+function card_confirm($db, $u, $sessionId) {
+    if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $sessionId)) { throw new Exception('invalid session'); }
+    $s = stripe_call($db, 'GET', '/v1/checkout/sessions/' . $sessionId, array('expand[0]' => 'setup_intent.payment_method'));
+    if (empty($s['customer']) || empty($u['stripeCustomer']) || $s['customer'] !== $u['stripeCustomer']) { throw new Exception('this card session is not yours'); }
+    if (empty($s['setup_intent']['status']) || $s['setup_intent']['status'] !== 'succeeded' || empty($s['setup_intent']['payment_method']['id'])) { throw new Exception('the card was not saved'); }
+    $pm = $s['setup_intent']['payment_method']; $card = isset($pm['card']) ? $pm['card'] : array();
+    $rec = array('pm' => (string) $pm['id'], 'brand' => isset($card['brand']) ? clean_text($card['brand'], 20) : 'card', 'last4' => isset($card['last4']) ? preg_replace('/\D/', '', $card['last4']) : '', 'exp' => (isset($card['exp_month']) ? sprintf('%02d', $card['exp_month']) : '??') . '/' . (isset($card['exp_year']) ? substr((string) $card['exp_year'], -2) : '??'));
+    db_update(function (&$d) use ($u, $rec) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { $d['users'][$k]['card'] = $rec; $d['users'][$k]['autopay'] = true; log_act($d, $u, 'card-saved', $rec['brand'] . ' ••' . $rec['last4']); } });
+    return $rec;
+}
+function card_remove($db, $u) {
+    if (!empty($u['card']['pm'])) { try { stripe_call($db, 'POST', '/v1/payment_methods/' . rawurlencode($u['card']['pm']) . '/detach'); } catch (Exception $e) { /* already gone at Stripe */ } }
+    db_update(function (&$d) use ($u) { $k = find_user($d, 'id', $u['id']); if ($k >= 0) { unset($d['users'][$k]['card']); $d['users'][$k]['autopay'] = false; log_act($d, $u, 'card-removed', $u['email']); } });
+}
+/** Charges the saved card for a pending order. Returns the PaymentIntent id; throws with Stripe's own message when it fails (declined, 3-D Secure needed…). */
+function autopay_charge($db, $o, $u) {
+    $j = stripe_call($db, 'POST', '/v1/payment_intents', array('amount' => (int) round($o['total'] * 100), 'currency' => strtolower($o['currency']), 'customer' => $u['stripeCustomer'], 'payment_method' => $u['card']['pm'], 'off_session' => 'true', 'confirm' => 'true', 'description' => 'Order ' . $o['number'], 'metadata[orderId]' => $o['id']));
+    if (empty($j['status']) || $j['status'] !== 'succeeded') { throw new Exception('the card payment needs the client\'s action (status ' . (isset($j['status']) ? $j['status'] : '?') . ')'); }
+    return (string) $j['id'];
+}
+/** Daily (cron): pay every pending renewal order whose owner keeps a card and has automatic payment on. Up to 3 tries, one per day; the client is told. */
+function autopay_run() {
+    $db = db_read();
+    if (!gw_cfg($db, 'stripe')) { return array('paid' => 0, 'failed' => 0); }
+    $today = gmdate('Y-m-d'); $paid = 0; $failed = 0;
+    foreach (items_of($db, 'orders') as $o) {
+        if ($o['status'] !== 'pending' || empty($o['auto'])) { continue; }
+        $ui = find_user($db, 'id', $o['uid']); if ($ui < 0) { continue; }
+        $u = $db['users'][$ui];
+        if (empty($u['autopay']) || empty($u['card']['pm']) || empty($u['stripeCustomer'])) { continue; }
+        $ap = isset($o['autopay']) && is_array($o['autopay']) ? $o['autopay'] : array('tries' => 0, 'last' => '');
+        if ((int) $ap['tries'] >= 3 || $ap['last'] === $today) { continue; }
+        $oid = $o['id'];
+        try {
+            $ref = autopay_charge($db, $o, $u);
+            gw_mark_paid($oid, 'stripe-autopay:' . $ref); $paid++;
+            nc_mail($db, $u['email'], 'Automatic payment for ' . $o['number'], 'We charged your saved card (' . $u['card']['brand'] . ' ••' . $u['card']['last4'] . ') ' . $o['total'] . ' ' . $o['currency'] . " for order " . $o['number'] . ". Thank you!");
+        } catch (Exception $e) {
+            $failed++; $msg = nc_substr($e->getMessage(), 160); $tries = (int) $ap['tries'] + 1;
+            db_update(function (&$d) use ($oid, $tries, $today, $msg) { $k = find_by(items_of($d, 'orders'), 'id', $oid); if ($k >= 0) { $d['items']['orders'][$k]['autopay'] = array('tries' => $tries, 'last' => $today, 'error' => $msg); } });
+            $link = site_link($db, '/portal/orders/' . $oid);
+            nc_mail($db, $u['email'], 'We could not charge your card for ' . $o['number'], "Your saved card was declined for order " . $o['number'] . " (" . $o['total'] . ' ' . $o['currency'] . ").\nReason: " . $msg . "\n" . ($tries >= 3 ? "We will not retry automatically. " : "We will try again tomorrow. ") . "You can update your card or pay manually here: " . ($link ?: '(your client area → Orders)'));
+        }
+    }
+    return array('paid' => $paid, 'failed' => $failed);
 }

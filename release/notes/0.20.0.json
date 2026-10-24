@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Registrar tools: nameservers and transfer lock (client and admin), renew at the registrar (manual or automatic from the daily job), EPP code, transfer in, ResellerClub registration + DNS writing; saved card with automatic payment of renewals (Stripe, 3 daily retries, client notified); 23 automated tests"
+ ],
+ "ar": [
+  "أدوات المسجّل: الـ nameservers وقفل النقل (للعميل والأدمن)، التجديد عند المسجّل (يدوي أو أوتوماتيك من الـ cron)، كود النقل EPP، نقل دومين إليك، تسجيل ResellerClub وكتابة الـ DNS؛ كارت محفوظ ودفع تلقائي للتجديدات (Stripe، 3 محاولات يومية، وإشعار للعميل)؛ و23 اختبار آلي"
+ ]
+}

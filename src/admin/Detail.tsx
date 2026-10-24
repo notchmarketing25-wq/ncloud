@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { RegistrarCard } from './Registrar';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DnsEditor } from '../dns';
 import { Ltr, useI18n } from '../i18n';
@@ -69,6 +70,7 @@ export function AdminDomainDetail() {
       <div className="cust-layout">
         <div>
           <Tabs value={tab} onChange={setTab} tabs={[['overview', t('نظرة عامة', 'Overview')], ['dns', 'DNS', dns.length], ['subs', t('الدومينات الفرعية', 'Subdomains'), subs.length], ['hosting', t('الاستضافة والمواقع', 'Hosting & sites'), hostings.length + websites.length], ['email', t('الإيميلات', 'Email'), mails.length]]} />
+          {tab === 'overview' && provider !== '' && <RegistrarCard id={d.id} admin />}
           {tab === 'overview' && (
             <div className="card"><Kv rows={[[t('العميل', 'Client'), <ClientLine users={all.users} uid={d.uid} />], [t('تجديد تلقائي', 'Auto-renew'), d.autoRenew ? t('مفعّل', 'On') : t('مقفول', 'Off')], [t('الإيميل', 'Email'), d.mail === 'hostinger' ? 'Hostinger Email' : '-'],
               [t('المواقع', 'Websites'), <span className="latin">{websites.length}</span>], [t('الاستضافة', 'Hosting'), <span className="latin">{hostings.length}</span>], [t('ملاحظات', 'Notes'), String(d.notes || '-')]]} /></div>

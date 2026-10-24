@@ -1,4 +1,6 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { usePortal } from './PortalData';
 import qrcode from 'qrcode-generator';
 import { useAuth } from '../auth';
 import { useI18n } from '../i18n';
@@ -74,5 +76,40 @@ export function SecurityCard() {
         </div>
       </div>
     </>
+  );
+}
+
+/** "Pay my renewals automatically": a card saved at Stripe (we keep only its brand, last 4 digits and expiry). */
+export function CardSection() {
+  const { t } = useI18n();
+  const { data, reload } = usePortal();
+  const [qs, setQs] = useSearchParams();
+  const [err, setErr] = useState(''); const [ok, setOk] = useState(''); const [busy, setBusy] = useState(false);
+  const session = qs.get('card');
+  useEffect(() => {
+    if (!session) return;
+    void post('cards/confirm', { session }).then(async () => { setOk(t('اتحفظ الكارت. التجديدات هتتدفع أوتوماتيك.', 'Card saved. Renewals will be paid automatically.')); await reload(); }).catch((e) => setErr(e instanceof ApiError && e.message ? e.message : t('تعذّر حفظ الكارت.', 'Could not save the card.'))).finally(() => { const n = new URLSearchParams(qs); n.delete('card'); setQs(n, { replace: true }); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+  if (!data || !data.cardsAvailable) return null;
+  const c = data.card;
+  const run = async (fn: () => Promise<void>) => { setErr(''); setOk(''); setBusy(true); try { await fn(); await reload(); } catch (e) { setErr(e instanceof ApiError && e.message ? e.message : t('تعذّر تنفيذ الطلب.', 'The request failed.')); } finally { setBusy(false); } };
+  return (
+    <div className="card form" style={{ marginBottom: 16 }}>
+      <h3>{t('الدفع التلقائي للتجديدات', 'Automatic payment of renewals')}</h3>
+      {err && <div className="form-error" role="alert">{err}</div>}{ok && <div className="form-ok" role="status">{ok}</div>}
+      {c ? (
+        <>
+          <p>{t('الكارت المحفوظ:', 'Saved card:')} <b className="latin">{c.brand.toUpperCase()} •••• {c.last4}</b> <span className="muted latin">({c.exp})</span></p>
+          <label className="check"><input type="checkbox" checked={c.autopay} disabled={busy} onChange={(e) => void run(async () => { await post('cards/autopay', { on: e.target.checked }); })} /> {t('ادفع فواتير التجديد من الكارت ده أوتوماتيك قبل ما تنتهي الخدمة', 'Pay renewal invoices with this card automatically before the service expires')}</label>
+          <div className="row-actions"><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await post<{ url: string }>('cards/setup', {}); window.location.href = r.url; })}>{t('تغيير الكارت', 'Change card')}</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(t('تمسح الكارت المحفوظ؟', 'Remove the saved card?'))) void run(async () => { await post('cards/remove', {}); }); }}>{t('حذف الكارت', 'Remove card')}</button></div>
+        </>
+      ) : (
+        <>
+          <p className="muted">{t('احفظ كارتك مرة واحدة، وهنسحب تلقائيًا قيمة تجديد الدومينات والاستضافة قبل انتهائها. بيانات الكارت بتتحفظ عند Stripe مش عندنا، وتقدر تمسحه في أي وقت.', 'Save your card once and we charge domain and hosting renewals automatically before they expire. The card is kept by Stripe, not by us, and you can remove it any time.')}</p>
+          <button className="btn btn-accent btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await post<{ url: string }>('cards/setup', {}); window.location.href = r.url; })}>{t('حفظ كارت', 'Save a card')}</button>
+        </>
+      )}
+    </div>
   );
 }

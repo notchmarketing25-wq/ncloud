@@ -598,6 +598,7 @@ function order_set_status(&$db, $id, $st, $actor, $syncInvoice = true) {
                 $db['items'][$res][$k]['expires'] = add_period(isset($db['items'][$res][$k]['expires']) ? $db['items'][$res][$k]['expires'] : '', $l['qty'], $unit);
                 if (($db['items'][$res][$k]['status'] === 'expiring' || $db['items'][$res][$k]['status'] === 'stopped') && $res === 'domains') { $db['items'][$res][$k]['status'] = 'active'; }
                 unset($db['items'][$res][$k]['remind']);
+                if ($res === 'domains' && !empty($db['items'][$res][$k]['provider'])) { $db['items'][$res][$k]['renewPending'] = max(1, (int) $l['qty']); }
                 $made[] = 'renewed ' . $l['nameEn'];
             } elseif ($l['kind'] === 'domain') {
                 $d = clean_fields($SCHEMA['domains'], array('name' => $l['ref'], 'status' => 'pending', 'autoRenew' => true, 'price' => $l['unitPrice'], 'notes' => 'Order ' . $o['number']), $e);
@@ -794,6 +795,11 @@ if ($r === 'admin/update' || $r === 'admin/update/restore') {
     require_once __DIR__ . '/update.php';
     $me = need_admin();
     upd_route($r, $me);
+    fail('not found', 404);
+}
+if ($r === 'svc/domain-registrar' || $r === 'svc/domain-ns' || $r === 'svc/domain-lock') {
+    require_once __DIR__ . '/providers.php';
+    reg_client_route($r, need_user());
     fail('not found', 404);
 }
 if (strpos($r, 'admin/ops') === 0) {
@@ -1176,13 +1182,33 @@ switch ($r) {
         }
         out(array('received' => true));
 
+    case 'cards/setup':
+    case 'cards/confirm':
+    case 'cards/remove':
+    case 'cards/autopay':
+        $u = need_user(); require_post();
+        require_once __DIR__ . '/providers.php';
+        $b = body(); $db = db_read();
+        try {
+            if ($r === 'cards/setup') {
+                if (site_url($db) === '') { fail('set the site address in Settings first', 409); }
+                $url = card_setup_url($db, $u, site_link($db, '/portal/billing') . (meta_get($db, 'cleanUrls', false) ? '?card={CHECKOUT_SESSION_ID}' : '?card={CHECKOUT_SESSION_ID}'), site_link($db, '/portal/billing'));
+                out(array('url' => $url));
+            }
+            if ($r === 'cards/confirm') { $c = card_confirm($db, $u, isset($b['session']) ? (string) $b['session'] : ''); out(array('card' => array('brand' => $c['brand'], 'last4' => $c['last4'], 'exp' => $c['exp'], 'autopay' => true))); }
+            if ($r === 'cards/remove') { card_remove($db, $u); out(array('ok' => true)); }
+            $on = !empty($b['on']);
+            db_update(function (&$d) use ($u, $on) { $k = find_user($d, 'id', $u['id']); if ($k >= 0 && !empty($d['users'][$k]['card']['pm'])) { $d['users'][$k]['autopay'] = $on; log_act($d, $u, 'autopay-' . ($on ? 'on' : 'off'), $u['email']); } });
+            out(array('ok' => true));
+        } catch (Exception $e) { fail($e->getMessage(), 502); }
+
     case 'cron/run':
         // For a hosting cron job: curl "https://your-site/api/index.php?r=cron/run&key=…" once a day.
         $db = db_read();
         $k = (string) meta_get($db, 'cronKey', '');
         if ($k === '' || !isset($_GET['key']) || !hash_equals($k, (string) $_GET['key'])) { fail('forbidden', 403); }
         $r2 = nc_daily(true);
-        require_once __DIR__ . '/providers.php'; ops_backup_daily();
+        require_once __DIR__ . '/providers.php'; ops_backup_daily(); reg_auto_renew(); autopay_run();
         out(array('ok' => true, 'created' => isset($r2['created']) ? $r2['created'] : 0));
 
     case 'orders/pay':
@@ -1249,6 +1275,8 @@ switch ($r) {
         $o['webmail'] = meta_get($db, 'webmailUrl', 'https://mail.hostinger.com');
         $o['business'] = meta_get($db, 'business', new stdClass());
         $ic = imap_cfg($db); $sc = meta_get($db, 'smtpOut', array());
+        $o['card'] = !empty($u['card']['pm']) ? array('brand' => $u['card']['brand'], 'last4' => $u['card']['last4'], 'exp' => $u['card']['exp'], 'autopay' => !empty($u['autopay'])) : null;
+        $gwS = gw_cfg_early($db, 'stripe'); $o['cardsAvailable'] = (bool) ($gwS && !empty($gwS['secret']));
         $o['mailServer'] = array('imap' => array('host' => $ic['host'], 'port' => $ic['port']), 'smtp' => array('host' => !empty($sc['host']) ? $sc['host'] : 'smtp.hostinger.com', 'port' => !empty($sc['port']) ? (int) $sc['port'] : 465));
         $o['taxRate'] = (float) meta_get($db, 'taxRate', 0);
         $o['taxes'] = inv_taxes($db); $o['taxInclusive'] = (bool) meta_get($db, 'taxInclusive', true);
@@ -1726,7 +1754,7 @@ switch ($r) {
                 'payments' => meta_get($db, 'payments', array()), 'webmailUrl' => meta_get($db, 'webmailUrl', 'https://mail.hostinger.com'),
                 'imap' => imap_cfg($db), 'smtpOut' => (function ($c) { return array('host' => isset($c['host']) ? $c['host'] : '', 'port' => isset($c['port']) ? (int) $c['port'] : 465, 'secure' => isset($c['secure']) ? $c['secure'] : 'ssl'); })(meta_get($db, 'smtpOut', array())), 'terms' => terms_cfg($db), 'suspendAfterDays' => (int) meta_get($db, 'suspendAfterDays', 0), 'taxes' => inv_taxes($db), 'taxInclusive' => (bool) meta_get($db, 'taxInclusive', true), 'invoicePrefix' => meta_get($db, 'invoicePrefix', 'INV-'), 'defaultLang' => meta_get($db, 'defaultLang', 'ar'), 'siteUrl' => meta_get($db, 'siteUrl', ''), 'cleanUrls' => (bool) meta_get($db, 'cleanUrls', false), 'taxRate' => (float) meta_get($db, 'taxRate', 0), 'autoActivate' => (bool) meta_get($db, 'autoActivate', false), 'autoRenewInvoices' => (bool) meta_get($db, 'autoRenewInvoices', true),
                 'smtp' => smtp_public(meta_get($db, 'smtp', array())), 'gateways' => gw_public(meta_get($db, 'gateways', array())), 'coupons' => meta_get($db, 'coupons', array()),
-                'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false)));
+                'cronKey' => cron_key($db), 'lastDaily' => meta_get($db, 'lastDaily', ''), 'providerRegister' => (bool) meta_get($db, 'providerRegister', false), 'providerRenew' => (bool) meta_get($db, 'providerRenew', false)));
         }
         require_post();
         $b = body();
@@ -1771,7 +1799,7 @@ switch ($r) {
             if ($su !== '' && !preg_match('#^https?://[A-Za-z0-9.\-]+(:\d+)?(/[A-Za-z0-9._~\-/]*)?$#', $su)) { fail('invalid site address (like https://example.com)', 422); }
             $extra['siteUrl'] = $su;
         }
-        foreach (array('cleanUrls', 'autoActivate', 'autoRenewInvoices', 'providerRegister') as $fk) { if (isset($b[$fk])) { $extra[$fk] = !empty($b[$fk]); } }
+        foreach (array('cleanUrls', 'autoActivate', 'autoRenewInvoices', 'providerRegister', 'providerRenew') as $fk) { if (isset($b[$fk])) { $extra[$fk] = !empty($b[$fk]); } }
         if (isset($b['taxRate'])) { $tr = (float) $b['taxRate']; if ($tr < 0 || $tr > 100) { fail('invalid tax rate', 422); } $extra['taxRate'] = $tr; }
         if (isset($b['smtp']) && is_array($b['smtp'])) {
             $old = meta_get($db, 'smtp', array());

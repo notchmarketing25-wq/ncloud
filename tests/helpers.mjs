@@ -50,7 +50,7 @@ export function readMail(m) {
   return { to: m.to, subject, body };
 }
 
-export async function startServer() {
+export async function startServer(opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'nc-test-'));
   const api = join(dir, 'api'); mkdirSync(join(api, 'data'), { recursive: true });
   for (const f of readdirSync(join(ROOT, 'server/api'))) if (f.endsWith('.php')) cpSync(join(ROOT, 'server/api', f), join(api, f));
@@ -58,7 +58,7 @@ export async function startServer() {
   const sink = await mailSink(smtpPort);
   const hash = execFileSync('php', ['-r', 'echo password_hash($argv[1], PASSWORD_DEFAULT);', ADMIN.password]).toString();
   const db = { users: [{ id: 'adminid0000000001', name: 'Admin', email: ADMIN.email, role: 'admin', hash, created: '2026-01-01T00:00:00+00:00', no: 1 }], attempts: {}, items: {}, tickets: [], leads: [], log: [],
-    meta: { site: 'Test Co', currency: 'EGP', contactEmail: 'support@test.local', siteUrl: `http://127.0.0.1:${port}`, smtp: { host: '127.0.0.1', port: smtpPort, secure: 'none', user: '', pass: '', from: 'noreply@test.local', fromName: 'Test Co' }, taxes: [{ name: 'VAT', rate: 14 }], taxInclusive: false } };
+    meta: { site: 'Test Co', currency: 'EGP', contactEmail: 'support@test.local', siteUrl: `http://127.0.0.1:${port}`, smtp: { host: '127.0.0.1', port: smtpPort, secure: 'none', user: '', pass: '', from: 'noreply@test.local', fromName: 'Test Co' }, taxes: [{ name: 'VAT', rate: 14 }], taxInclusive: false, ...(opts.meta ?? {}) } };
   writeFileSync(join(api, 'data/db.php'), "<?php http_response_code(404); exit; ?>\n" + JSON.stringify(db));
   writeFileSync(join(api, 'data/installed.lock'), 'ok');
   const proc = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', dir], { env: { ...process.env, PHP_CLI_SERVER_WORKERS: '4' }, stdio: 'ignore' });

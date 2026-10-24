@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { RegistrarCard } from '../admin/Registrar';
+import { CardSection } from './Security';
 import { Link, Navigate, NavLink, Outlet, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DnsEditor } from '../dns';
 import { useAuth } from '../auth';
@@ -289,6 +291,7 @@ export function PortalDomainDetail() {
         <div><dt>{t('معرّف الاشتراك', 'Subscription ID')}</dt><dd><Ltr>{d.sub || '-'}</Ltr></dd></div>
         <div><dt>{t('بدأ في', 'Started')}</dt><dd><Ltr>{d.started || '-'}</Ltr></dd></div>
       </dl></div>
+      <RegistrarCard id={d.id} admin={false} />
       <h2 className="sub">{t('سجلات DNS', 'DNS records')}</h2>
       <DnsEditor records={d.dns} err={err} readOnly={!!d.dnsOff}
         onAdd={async (r) => { setErr(''); try { await addDns(d.id, r); } catch (x) { setErr(x instanceof Error ? x.message : 'error'); } }}
@@ -513,6 +516,7 @@ export function PortalBilling() {
         <div><span>{t('فواتير متأخرة', 'Overdue')}</span><b className="latin">{overdue}</b></div>
         <div><span>{t('رصيدك', 'Credit balance')}</span><b className="latin">{m(data.credit ?? 0)} {cur}</b></div>
       </div>}
+      {!demo && <CardSection />}
       {due.length > 0 && !demo && <div className="card" style={{ marginBottom: 16 }}><p>{t('عندك فواتير مستحقة. افتح الفاتورة وشوف طرق الدفع، أو الطلب المرتبط بيها وادفع منه.', 'You have invoices due. Open the invoice to see how to pay, or the order behind it.')} <Link to="/portal/orders" className="link">{t('الطلبات', 'Orders')}</Link></p></div>}
       {visible.length === 0 ? <Empty>{t('مفيش فواتير لسه.', 'No invoices yet.')}</Empty> : (
         <Table head={[t('الرقم', 'No.'), t('التاريخ', 'Date'), t('الاستحقاق', 'Due'), t('البند', 'Item'), t('المبلغ', 'Amount'), t('المتبقي', 'Balance'), t('الحالة', 'Status'), '']}>
