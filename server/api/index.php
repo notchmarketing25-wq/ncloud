@@ -548,6 +548,14 @@ function nc_new_order(&$db, $u, $lines, $total, $o) {
     $db['tickets'][] = array('kind' => 'order', 'id' => new_id(), 'uid' => $u['id'], 'subject' => ($order['auto'] ? 'Renewal ' : 'Order ') . $order['number'], 'status' => $order['auto'] ? 'answered' : 'open', 'updated' => $now, 'created' => $now, 'messages' => array(array('from' => 'client', 'name' => $u['name'], 'text' => $text, 'at' => $now)));
     return array('order' => $order, 'invoice' => $inv, 'text' => $text);
 }
+/** DNS records for the "where should the new domain point" choice made at checkout. */
+function route_dns($route, $domain) {
+    if (!is_array($route) || empty($route['mode']) || $route['mode'] === 'none') { return array(); }
+    $rec = function ($type, $host, $value) { return array('id' => new_id(), 'type' => $type, 'host' => $host, 'value' => $value, 'ttl' => 3600); };
+    if ($route['mode'] === 'ip') { $t = strpos($route['value'], ':') !== false ? 'AAAA' : 'A'; return array($rec($t, '@', $route['value']), $rec($t, 'www', $route['value'])); }
+    if ($route['mode'] === 'cname') { return array($rec('CNAME', 'www', $route['value'])); }
+    return array();
+}
 /** Turns a quote into an order (+ its invoice), once. The quote's own items, discount and taxes are kept on the invoice. */
 function quote_make_order(&$db, $k, $actor) {
     $q = $db['items']['quotes'][$k];
@@ -600,9 +608,9 @@ function order_set_status(&$db, $id, $st, $actor, $syncInvoice = true) {
                 unset($db['items'][$res][$k]['remind']);
                 if ($res === 'domains' && !empty($db['items'][$res][$k]['provider'])) { $db['items'][$res][$k]['renewPending'] = max(1, (int) $l['qty']); }
                 $made[] = 'renewed ' . $l['nameEn'];
-            } elseif ($l['kind'] === 'domain') {
-                $d = clean_fields($SCHEMA['domains'], array('name' => $l['ref'], 'status' => 'pending', 'autoRenew' => true, 'price' => $l['unitPrice'], 'notes' => 'Order ' . $o['number']), $e);
-                $db['items']['domains'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => $now, 'dns' => array(), 'orderId' => $o['id'], 'regYears' => $l['qty']), $d); $made[] = 'domain ' . $l['ref'];
+            } elseif ($l['kind'] === 'domain' || $l['kind'] === 'transfer') {
+                $d = clean_fields($SCHEMA['domains'], array('name' => $l['ref'], 'status' => 'pending', 'autoRenew' => true, 'price' => $l['unitPrice'], 'notes' => ($l['kind'] === 'transfer' ? 'Transfer in: the EPP code is on order ' : 'Order ') . $o['number']), $e);
+                $db['items']['domains'][] = array_merge(array('id' => new_id(), 'uid' => $uid, 'created' => $now, 'dns' => route_dns(isset($o['domainRoute']) ? $o['domainRoute'] : array(), $l['ref']), 'orderId' => $o['id'], 'regYears' => $l['qty'], 'transferIn' => $l['kind'] === 'transfer'), $d); $made[] = ($l['kind'] === 'transfer' ? 'transfer ' : 'domain ') . $l['ref'];
             } elseif ($l['category'] === 'email') {
                 foreach ($db['items']['mailboxes'] as $mk => $mb) { if (isset($mb['orderId']) && $mb['orderId'] === $o['id'] && $mb['status'] === 'pending') { $db['items']['mailboxes'][$mk]['status'] = 'active'; $db['items']['mailboxes'][$mk]['expires'] = add_period('', $l['qty'], $l['unit'] === 'year' ? 'years' : 'months'); $made[] = 'mailbox ' . $mb['address']; } }
             } elseif ($l['category'] === 'hosting') {
@@ -1020,18 +1028,19 @@ switch ($r) {
         foreach ($in as $it) {
             if (!is_array($it)) { continue; }
             $kind = isset($it['kind']) ? $it['kind'] : 'plan';
-            if ($kind === 'domain') {
+            if ($kind === 'domain' || $kind === 'transfer') {
                 $name = strtolower(trim(isset($it['name']) ? (string) $it['name'] : ''));
                 if (!preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $name)) { fail('invalid domain name', 422); }
-                $years = max(1, min(10, (int) (isset($it['qty']) ? $it['qty'] : 1)));
+                $years = $kind === 'transfer' ? 1 : max(1, min(10, (int) (isset($it['qty']) ? $it['qty'] : 1)));
                 require_once __DIR__ . '/providers.php';
                 if ($tldRows === null) { $tldRows = prov_tld_table($db0, prov_cache_read()); }
                 $best = null;
                 foreach ($tldRows as $row) { if ($row['selected'] && substr($name, -strlen('.' . $row['tld'])) === '.' . $row['tld'] && ($best === null || strlen($row['tld']) > strlen($best['tld']))) { $best = $row; } }
                 if ($best === null) { fail('this extension is not for sale', 422); }
-                $chk = prov_search($db0, $name, array($best['tld']), false);
-                foreach ((isset($chk['results']) ? $chk['results'] : array()) as $rr) { if ($rr['domain'] === $name && empty($rr['available'])) { fail('domain is no longer available: ' . $name, 409); } }
-                $price = round($best['sell'] + ($years - 1) * $best['renewSell'], 2);
+                if ($kind === 'domain') { $chk = prov_search($db0, $name, array($best['tld']), false);
+                foreach ((isset($chk['results']) ? $chk['results'] : array()) as $rr) { if ($rr['domain'] === $name && empty($rr['available'])) { fail('domain is no longer available: ' . $name, 409); } } }
+                $price = $kind === 'transfer' ? round($best['renewSell'], 2) : round($best['sell'] + ($years - 1) * $best['renewSell'], 2);
+                if ($kind === 'transfer') { $lines[] = array('kind' => 'transfer', 'ref' => $name, 'category' => 'domain', 'nameAr' => 'نقل دومين ' . $name, 'nameEn' => 'Domain transfer ' . $name, 'qty' => 1, 'unit' => 'year', 'unitPrice' => $price, 'price' => $price); $total += $price; continue; }
                 $lines[] = array('kind' => 'domain', 'ref' => $name, 'nameAr' => 'تسجيل دومين ' . $name, 'nameEn' => 'Domain registration ' . $name, 'qty' => $years, 'unit' => 'year', 'unitPrice' => $best['renewSell'], 'price' => $price);
                 $total += $price;
             } elseif ($kind === 'renew') {
@@ -1059,6 +1068,27 @@ switch ($r) {
             }
         }
         if (!$lines) { fail('cart is empty', 422); }
+        // The domain every service hangs on: one the client already has with us, a new one, one transferred in, or one kept elsewhere.
+        $choice = isset($b['domainChoice']) && is_array($b['domainChoice']) ? $b['domainChoice'] : array();
+        $mode = isset($choice['mode']) ? (string) $choice['mode'] : ($domain !== '' ? 'external' : '');
+        $cname = strtolower(trim(isset($choice['name']) ? (string) $choice['name'] : $domain));
+        $needsDomain = false; foreach ($lines as $ln) { if (isset($ln['category']) && in_array($ln['category'], array('hosting', 'site', 'bundle', 'email'), true)) { $needsDomain = true; } }
+        $domRe = '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/';
+        $route = array('mode' => 'none', 'value' => ''); $epps = array();
+        if ($cname !== '') {
+            if (!preg_match($domRe, $cname)) { fail('invalid domain name', 422); }
+            if ($mode === 'existing') { $ok = false; foreach (mine($db0, 'domains', $u['id']) as $dx) { if (strtolower($dx['name']) === $cname) { $ok = true; } } if (!$ok) { fail('this domain is not in your account', 422); } }
+            elseif ($mode === 'new') { $ok = false; foreach ($lines as $ln) { if ($ln['kind'] === 'domain' && $ln['ref'] === $cname) { $ok = true; } } if (!$ok) { fail('add the new domain to the cart first', 422); } }
+            elseif ($mode === 'transfer') { $ok = false; foreach ($lines as $ln) { if ($ln['kind'] === 'transfer' && $ln['ref'] === $cname) { $ok = true; } } if (!$ok) { fail('add the transfer to the cart first', 422); } }
+            elseif ($mode !== 'external') { fail('choose how you get the domain', 422); }
+            $domain = $cname;
+        } elseif ($needsDomain) { fail('a domain is required for this service', 422); }
+        foreach ($lines as $ln) { if ($ln['kind'] === 'transfer') { $code = isset($choice['epp']) && $mode === 'transfer' && $ln['ref'] === $cname ? trim((string) $choice['epp']) : ''; if ($code === '' || strlen($code) > 100) { fail('enter the transfer (EPP) code for ' . $ln['ref'], 422); } $epps[$ln['ref']] = $code; } }
+        if (($mode === 'new' || $mode === 'transfer') && isset($choice['route']) && is_array($choice['route'])) {
+            $rm = isset($choice['route']['mode']) ? (string) $choice['route']['mode'] : 'none'; $rv = trim(isset($choice['route']['value']) ? (string) $choice['route']['value'] : '');
+            if ($rm === 'ip') { if (!filter_var($rv, FILTER_VALIDATE_IP)) { fail('enter a valid IP address to point the domain to', 422); } $route = array('mode' => 'ip', 'value' => $rv); }
+            elseif ($rm === 'cname') { $rv = strtolower(rtrim($rv, '.')); if (!preg_match($domRe, $rv)) { fail('enter a valid host name to point the domain to', 422); } $route = array('mode' => 'cname', 'value' => $rv); }
+        }
         $subtotal = round($total, 2);
         $coupon = ''; $discount = 0;
         if (!empty($b['coupon'])) {
@@ -1068,7 +1098,7 @@ switch ($r) {
         }
         $total = round($subtotal - $discount, 2);
         $mname = $mi >= 0 ? ($methods[$mi]['nameEn'] !== '' ? $methods[$mi]['nameEn'] : $methods[$mi]['nameAr']) : '';
-        $made = db_update(function (&$db) use ($lines, $total, $subtotal, $discount, $coupon, $u, $note, $domain, $method, $mname, $cur, $mbWanted) {
+        $made = db_update(function (&$db) use ($lines, $total, $subtotal, $discount, $coupon, $u, $note, $domain, $method, $mname, $cur, $mbWanted, $mode, $route, $epps) {
             global $SCHEMA;
             if ($coupon !== '') {
                 list($cp, $cerr) = coupon_find($db, $coupon, $subtotal);
@@ -1076,6 +1106,8 @@ switch ($r) {
                 foreach ($db['meta']['coupons'] as $ci => $cc) { if (strtoupper($cc['code']) === strtoupper($coupon)) { $db['meta']['coupons'][$ci]['used'] = (int) $cc['used'] + 1; } }
             }
             $r = nc_new_order($db, $u, $lines, $total, array('domain' => $domain, 'note' => $note, 'method' => $method, 'mname' => $mname, 'coupon' => $coupon, 'discount' => $discount, 'subtotal' => $subtotal, 'cur' => $cur));
+            $oiN = find_by(items_of($db, 'orders'), 'id', $r['order']['id']);
+            if ($oiN >= 0) { $db['items']['orders'][$oiN]['domainMode'] = $mode; $db['items']['orders'][$oiN]['domainRoute'] = $route; if ($epps) { $db['items']['orders'][$oiN]['secret'] = array('epp' => $epps); } }
             // Email plans: the mailboxes the client picked are reserved right away (pending) and switch on when the order is paid.
             $seats = 0; $emailLine = null; foreach ($lines as $ln) { if ($ln['category'] === 'email') { $pi2 = find_by(items_of($db, 'plans'), 'id', $ln['ref']); $seats += $pi2 >= 0 && isset($db['items']['plans'][$pi2]['seats']) ? (int) $db['items']['plans'][$pi2]['seats'] : 0; $emailLine = $ln; } }
             if ($emailLine !== null && $mbWanted && preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $domain)) {
@@ -1258,7 +1290,7 @@ switch ($r) {
         foreach (array_keys($SCHEMA) as $res) {
             if (res_unowned($res) || $res === 'billable') { continue; }
             // Our cost and supplier are never shown to clients.
-            $o[$res] = array_values(array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote']); return $it; }, array_filter(deco_list($res, mine($db, $res, $u['id'])), function ($it) { return !isset($it['status']) || $it['status'] !== 'archived'; })));
+            $o[$res] = array_values(array_map(function ($it) { unset($it['cost'], $it['provider'], $it['ref'], $it['adminNote'], $it['secret']); return $it; }, array_filter(deco_list($res, mine($db, $res, $u['id'])), function ($it) { return !isset($it['status']) || $it['status'] !== 'archived'; })));
         }
         // The automatic ticket that accompanies every order is for the company; the client sees it only once we have answered in it.
         $o['tickets'] = array_values(array_filter($db['tickets'], function ($t) use ($u) { if ($t['uid'] !== $u['id']) { return false; } if (ticket_is_order($t)) { foreach ($t['messages'] as $m) { if ($m['from'] === 'admin') { return true; } } return false; } return true; }));

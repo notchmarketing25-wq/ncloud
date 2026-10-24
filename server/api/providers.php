@@ -935,8 +935,14 @@ function prov_route($r, $me) {
             }
             $cache = isset($_GET['refresh']) || $isPost && !empty($b['refresh']) ? prov_cache_refresh($db) : prov_cache_read();
             if (!$cache['providers'] && !$cache['errors']) { $cache = prov_cache_refresh($db); }
-            $p = prov_pricing($db);
-            out(array('pricing' => array('marginPct' => $p['marginPct'], 'rounding' => $p['rounding'], 'rates' => $p['rates'], 'tldMargins' => (object) $p['tldMargins'], 'tldProfits' => (object) $p['tldProfits'], 'selected' => $p['selected']), 'currency' => meta_get($db, 'currency', '') ?: 'EGP', 'fetchedAt' => $cache['at'], 'errors' => $cache['errors'], 'tlds' => prov_tld_table($db, $cache)));
+            $p = prov_pricing($db); $auto = false;
+            // Nothing chosen yet: switch on the popular extensions the providers offer, so the site search and the cart work from the first day.
+            if (!$p['selected'] && $cache['providers']) {
+                $have = array(); foreach (prov_tld_table($db, $cache) as $row) { $have[$row['tld']] = true; }
+                $pick = array(); foreach ($p['popular'] as $t) { if (isset($have[$t])) { $pick[] = $t; } }
+                if ($pick) { $p['selected'] = $pick; $auto = true; db_update(function (&$db) use ($pick, $me) { $pr = prov_pricing($db); $pr['selected'] = $pick; $db['meta']['pricing'] = $pr; log_act($db, $me, 'pricing', 'popular extensions enabled'); }); $db = db_read(); }
+            }
+            out(array('autoSelected' => $auto, 'pricing' => array('marginPct' => $p['marginPct'], 'rounding' => $p['rounding'], 'rates' => $p['rates'], 'tldMargins' => (object) $p['tldMargins'], 'tldProfits' => (object) $p['tldProfits'], 'selected' => $p['selected']), 'currency' => meta_get($db, 'currency', '') ?: 'EGP', 'fetchedAt' => $cache['at'], 'errors' => $cache['errors'], 'tlds' => prov_tld_table($db, $cache)));
 
         case 'admin/pricing/search':
             need_admin();

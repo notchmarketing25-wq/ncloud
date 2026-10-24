@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Single-page checkout for guests: domain required for every service (new, transfer, existing or external) with DNS routing, email add-on with mailbox names, inline account creation. Admin TLD default message fixed."
+ ],
+ "ar": [
+  "صفحة دفع واحدة للزائر: الدومين إلزامي لكل خدمة (جديد/نقل/موجود/خارجي) مع خيارات التوجيه، وإضافة الإيميلات بأسماء الصناديق، وإنشاء الحساب داخل الصفحة. إصلاح رسالة الامتدادات في الأدمن."
+ ]
+}

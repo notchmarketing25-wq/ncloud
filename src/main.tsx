@@ -19,7 +19,8 @@ import { AdminSettings } from './admin/Settings';
 import { SiteProvider } from './site/settings';
 import { CatalogProvider } from './site/catalog';
 import { CartProvider } from './site/cart';
-import { CartPage, Checkout, OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
+import { OrderRedirect, PortalOrderDetail, PortalOrders } from './site/CartPages';
+import { CheckoutPage } from './site/Checkout';
 import { AdminOrders } from './admin/Orders';
 import { PortalProfile, TermsPage } from './portal/Identity';
 import { MailApp } from './portal/Mail';
@@ -54,7 +55,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="pricing" element={<Pricing />} />
             <Route path="status" element={<Status />} />
             <Route path="contact" element={<Contact />} />
-            <Route path="cart" element={<CartPage />} />
+            <Route path="cart" element={<CheckoutPage />} />
             <Route path="terms" element={<TermsPage />} />
             <Route path="*" element={<NotFound />} />
           </Route>
@@ -104,7 +105,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="websites/:id" element={<PortalWebsiteDetail />} />
             <Route path="hosting/:id" element={<PortalHostingDetail />} />
             <Route path="order/:id" element={<OrderRedirect />} />
-            <Route path="checkout" element={<Checkout />} />
+            <Route path="checkout" element={<Navigate to="/cart" replace />} />
             <Route path="orders" element={<PortalOrders />} />
             <Route path="invoices/:id" element={<PortalInvoice />} />
             <Route path="quotes" element={<PortalQuotes />} />

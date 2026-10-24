@@ -24,10 +24,11 @@ export function usePriced(): Priced[] {
     if (it.kind === 'plan') {
       const p: CPlan | undefined = plans.find((x) => x.id === it.id);
       if (!p) return null;
-      return { item: it, name: p.name, unit: p.per, price: p.price * it.qty, options: PERIODS[p.per] ?? [1], needsDomain: p.category === 'hosting' || p.category === 'site' || p.category === 'bundle' };
+      return { item: it, name: p.name, unit: p.per, price: p.price * it.qty, options: PERIODS[p.per] ?? [1], needsDomain: p.category === 'hosting' || p.category === 'site' || p.category === 'bundle' || p.category === 'email' };
     }
     const tl = tlds.filter((x) => it.name.endsWith(x.ext)).sort((a, b) => b.ext.length - a.ext.length)[0];
     if (!tl) return null;
+    if (it.kind === 'transfer') return { item: it, name: { ar: `نقل دومين ${it.name}`, en: `Domain transfer ${it.name}` }, unit: 'year', price: tl.renew, options: [1], needsDomain: false };
     return { item: it, name: { ar: `تسجيل دومين ${it.name}`, en: `Domain registration ${it.name}` }, unit: 'year', price: tl.register + (it.qty - 1) * tl.renew, options: [1, 2, 3, 5, 10], needsDomain: false };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [items, plans, tlds, t]);

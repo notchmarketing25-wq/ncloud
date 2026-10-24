@@ -236,3 +236,22 @@ test('ledger: partial payment, edit and delete an entry (credit stays in step), 
   assert.equal((await admin.call('admin/invoice-fee', { id: inv.id, desc: 'x', amount: 5 })).status, 422);
   assert.equal((await client.call('admin/invoice-entry', { id: inv.id, entry: 'x', action: 'delete' })).status, 403);
 });
+
+/* ───────── a domain for every service ───────── */
+test('checkout: hosting / email need a domain; existing must be the client\'s own; external is validated; "new" must be in the cart', async () => {
+  const host = (await admin.call('admin/item-save', { item: { category: 'hosting', nameAr: 'استضافة', nameEn: 'Hosting', price: 100, per: 'month', active: true } }, { res: 'plans' })).json.item;
+  const vps = (await admin.call('admin/item-save', { item: { category: 'vps', nameAr: 'VPS', nameEn: 'VPS', price: 500, per: 'month', active: true } }, { res: 'plans' })).json.item;
+  const items = [{ kind: 'plan', id: host.id, qty: 1 }];
+  assert.equal((await client.call('orders/create', { items })).status, 422, 'a domain is required');
+  assert.equal((await client.call('orders/create', { items: [{ kind: 'plan', id: vps.id, qty: 1 }] })).status, 201, 'a VPS does not need one');
+  assert.equal((await client.call('orders/create', { items, domainChoice: { mode: 'external', name: 'not a domain' } })).status, 422);
+  const ext = await client.call('orders/create', { items, domainChoice: { mode: 'external', name: 'My-Site.com' } });
+  assert.equal(ext.status, 201, JSON.stringify(ext.json)); assert.equal(ext.json.order.domain, 'my-site.com');
+  assert.equal((await client.call('orders/create', { items, domainChoice: { mode: 'existing', name: 'someone-else.com' } })).status, 422);
+  const own = (await admin.call('admin/item-save', { item: { uid: clientId, name: 'mine.com', status: 'active' } }, { res: 'domains' })).json.item;
+  const ok = await client.call('orders/create', { items, domainChoice: { mode: 'existing', name: 'mine.com' } });
+  assert.equal(ok.status, 201); assert.equal(ok.json.order.domain, 'mine.com');
+  assert.equal((await client.call('orders/create', { items, domainChoice: { mode: 'new', name: 'brand-new.com' } })).status, 422, 'not in the cart');
+  assert.equal((await client.call('orders/create', { items, domainChoice: { mode: 'external', name: 'a.com', epp: 'x' } })).status, 201);
+  assert.ok(own.id);
+});

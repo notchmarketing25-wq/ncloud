@@ -280,7 +280,7 @@ function HostingerEmail({ onClose }: { onClose: () => void }) {
 /* ───────── TLD prices, margin and search ───────── */
 type Offer = { provider: string; currency: string; register: number; renew: number; costStore: number; renewStore: number };
 type Tld = { tld: string; offers: Offer[]; best: string; cost: number; renewCost: number; marginPct: number; custom: boolean; fixedProfit: number | null; selected: boolean; sell: number; renewSell: number; profit: number; currency: string };
-type PricingResp = { pricing: { marginPct: number; rounding: number; rates: Record<string, number>; tldMargins: Record<string, number>; tldProfits: Record<string, number>; selected: string[] }; currency: string; fetchedAt: string; errors: Record<string, string>; tlds: Tld[] };
+type PricingResp = { autoSelected?: boolean; pricing: { marginPct: number; rounding: number; rates: Record<string, number>; tldMargins: Record<string, number>; tldProfits: Record<string, number>; selected: string[] }; currency: string; fetchedAt: string; errors: Record<string, string>; tlds: Tld[] };
 type Hit = { domain: string; tld: string; available: boolean; sell: number; renewSell: number; currency: string; provider: string; cost: number; profit: number; marginPct: number };
 
 /** Extensions are only offered to clients when you choose them here; the provider catalogs are just a list to pick from. */
@@ -378,6 +378,7 @@ export function AdminPricing() {
         <>
           <div className="card" style={{ marginTop: 16 }}>
             <h3>{t('اختار الامتدادات اللي هتبيعها', 'Choose the extensions you sell')} <span className="tag">{t(`${sel.size} مختار`, `${sel.size} selected`)}</span></h3>
+            {d.autoSelected && sel.size > 0 && <div className="form-ok" style={{ marginBottom: 8 }}>{t('فعّلنا الامتدادات الشائعة المتاحة عند مزوّديك (com, net, org…) تلقائيًا عشان البحث والسلة يشتغلوا من أول يوم. عدّل الاختيار والأسعار زي ما تحب واضغط حفظ.', 'We switched on the popular extensions your providers offer (com, net, org…) so search and the cart work from day one. Adjust the choice and the prices as you like, then save.')}</div>}
             {sel.size === 0 && <div className="form-error" style={{ marginBottom: 8 }}>{t('لسه ما اخترتش امتدادات: البحث في الموقع شغّال حاليًا على الامتدادات الشائعة (com, net, org...) لحد ما تختار وتحفظ.', 'No extensions chosen yet: the website search uses the popular ones (com, net, org…) until you choose and save.')}</div>}
             <p className="muted">{t('الامتدادات اللي مش متعلّم عليها مش بتظهر للعملاء ومش بتتبحث. لكل امتداد تقدر تحط نسبة مكسب % أو مكسب ثابت بالجنيه (الثابت بيغلب النسبة).', 'Extensions you do not tick are never shown to clients or searched. For each one you can set a margin % or a fixed profit amount (the fixed amount wins).')}</p>
             <div className="row-actions" style={{ alignItems: 'center' }}>
