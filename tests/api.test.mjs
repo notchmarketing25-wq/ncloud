@@ -201,3 +201,38 @@ test('dns_resolve: ALIAS/CNAME vs A on one name (also web vs web.example.com) �
   assert.deepEqual(out[0], ['ALIAS web', 'TXT web', 'A @']);
   assert.deepEqual(out[1], ['A web']);
 });
+
+/* ───────── ledger corrections ───────── */
+test('ledger: partial payment, edit and delete an entry (credit stays in step), refund guard, late fee', async () => {
+  const inv = (await admin.call('admin/invoice-save', { uid: clientId, items: [{ desc: 'Service', amount: 1000 }], status: 'due' })).json.invoice;
+  const total = inv.amount; // + 14% VAT is only on taxed items; this item is untaxed
+  await admin.call('admin/invoice-payment', { id: inv.id, amount: 300, method: 'Cash', fee: 5 });
+  let cur = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id);
+  assert.equal(cur.status, 'due'); assert.equal(cur.balance, total - 300, 'a partial payment leaves the invoice open');
+  const e1 = cur.payments[0];
+  // edit: raise it to the full amount → the invoice becomes paid
+  assert.equal((await admin.call('admin/invoice-entry', { id: inv.id, entry: e1.id, action: 'edit', amount: total, method: 'Bank', ref: 'TX1', fee: 0 })).status, 200);
+  cur = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id);
+  assert.equal(cur.status, 'paid'); assert.equal(cur.payments[0].method, 'Bank'); assert.equal(cur.payments[0].ref, 'TX1');
+  // lower it again → back to due
+  await admin.call('admin/invoice-entry', { id: inv.id, entry: e1.id, action: 'edit', amount: 100 });
+  cur = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id);
+  assert.equal(cur.status, 'due'); assert.equal(cur.balance, total - 100);
+  // a refund larger than what was paid is refused, and a payment cannot be edited below an existing refund
+  assert.equal((await admin.call('admin/invoice-refund', { id: inv.id, amount: 500 })).status, 422);
+  await admin.call('admin/invoice-refund', { id: inv.id, amount: 60, toCredit: true });
+  const credit0 = (await client.call('me/data')).json.credit;
+  const refund = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id).payments.find((e) => e.type === 'refund');
+  assert.equal((await admin.call('admin/invoice-entry', { id: inv.id, entry: e1.id, action: 'edit', amount: 50 })).status, 422, 'paid 50 but 60 refunded');
+  // deleting a refund-to-credit takes the credit back
+  assert.equal((await admin.call('admin/invoice-entry', { id: inv.id, entry: refund.id, action: 'delete' })).status, 200);
+  assert.equal((await client.call('me/data')).json.credit, credit0 - 60);
+  // late fee: raises the balance, only on an unpaid invoice
+  const before = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id);
+  assert.equal((await admin.call('admin/invoice-fee', { id: inv.id, desc: 'Late fee', amount: 75 })).status, 200);
+  const after = (await admin.call('admin/items', undefined, { res: 'invoices' })).json.items.find((x) => x.id === inv.id);
+  assert.equal(after.amount, before.amount + 75); assert.equal(after.items.length, 2);
+  await admin.call('admin/invoice-status', { id: inv.id, status: 'paid' });
+  assert.equal((await admin.call('admin/invoice-fee', { id: inv.id, desc: 'x', amount: 5 })).status, 422);
+  assert.equal((await client.call('admin/invoice-entry', { id: inv.id, entry: 'x', action: 'delete' })).status, 403);
+});

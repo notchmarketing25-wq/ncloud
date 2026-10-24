@@ -1,0 +1,9 @@
+{
+ "date": "2026-10-24",
+ "en": [
+  "Invoices: edit or delete a recorded payment / credit / refund (credit balance kept in step, refunds can never exceed payments), late fee / penalty item on an unpaid invoice; partial payments were already supported"
+ ],
+ "ar": [
+  "الفواتير: تعديل أو حذف دفعة أو رصيد أو استرداد مسجّل (رصيد العميل بيتظبط معاه، والاسترداد ما يعدّيش المدفوع)، وبند غرامة تأخير على فاتورة غير مدفوعة؛ والدفع الجزئي كان موجود"
+ ]
+}

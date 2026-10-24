@@ -2027,6 +2027,70 @@ switch ($r) {
         if (isset($res['err'])) { fail($res['err'], 422); }
         out($res);
 
+    case 'admin/invoice-entry':
+        // Correct the ledger: change or remove a recorded payment / credit / refund. Credit entries keep the client's credit balance in step.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : ''; $eid = isset($b['entry']) ? (string) $b['entry'] : ''; $act = isset($b['action']) ? (string) $b['action'] : '';
+        if (!in_array($act, array('edit', 'delete'), true)) { fail('invalid action', 422); }
+        $res = db_update(function (&$db) use ($id, $eid, $act, $b, $me) {
+            $i = find_by(items_of($db, 'invoices'), 'id', $id);
+            if ($i < 0) { return array('err' => 'invoice not found'); }
+            $inv = $db['items']['invoices'][$i];
+            if (in_array($inv['status'], array('draft', 'void'), true)) { return array('err' => 'this invoice is ' . $inv['status']); }
+            $pays = isset($inv['payments']) && is_array($inv['payments']) ? $inv['payments'] : array();
+            $k = -1; foreach ($pays as $n => $e) { if ($e['id'] === $eid) { $k = $n; } }
+            if ($k < 0) { return array('err' => 'entry not found'); }
+            $old = $pays[$k]; $ui = find_user($db, 'id', $inv['uid']);
+            // money that moved through the client's credit balance: undo the old effect
+            $creditEffect = function ($e) { return $e['type'] === 'credit' ? -(float) $e['amount'] : ($e['type'] === 'refund' && $e['method'] === 'Credit' ? (float) $e['amount'] : 0); };
+            if ($act === 'delete') {
+                if ($ui >= 0 && $creditEffect($old) != 0) { credit_add($db, $ui, -$creditEffect($old), 'Entry removed from ' . $inv['number'], $me); }
+                array_splice($pays, $k, 1);
+            } else {
+                $amount = isset($b['amount']) && is_numeric($b['amount']) ? round((float) $b['amount'], 2) : 0;
+                if ($amount <= 0) { return array('err' => 'enter an amount'); }
+                $new = $old; $new['amount'] = $amount;
+                if ($old['type'] === 'payment') { $new['method'] = clean_text(isset($b['method']) ? $b['method'] : $old['method'], 60); $new['ref'] = clean_text(isset($b['ref']) ? $b['ref'] : (isset($old['ref']) ? $old['ref'] : ''), 160); $new['fee'] = round(max(0, (float) (isset($b['fee']) ? $b['fee'] : (isset($old['fee']) ? $old['fee'] : 0))), 2); }
+                $new['note'] = clean_text(isset($b['note']) ? $b['note'] : (isset($old['note']) ? $old['note'] : ''), 200);
+                if (!empty($b['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $b['date'])) { $new['at'] = $b['date'] . 'T' . substr((string) $old['at'], 11, 8) . (strlen((string) $old['at']) > 19 ? substr((string) $old['at'], 19) : '+00:00'); }
+                if ($ui >= 0) { $delta = $creditEffect($new) - $creditEffect($old); if ($delta != 0) { if ($delta < 0 && (float) (isset($db['users'][$ui]['credit']) ? $db['users'][$ui]['credit'] : 0) + $delta < -0.004) { return array('err' => 'the client does not have enough credit for this change'); } credit_add($db, $ui, $delta, 'Entry edited on ' . $inv['number'], $me); } }
+                $pays[$k] = $new;
+            }
+            $db['items']['invoices'][$i]['payments'] = array_values($pays);
+            // refunds can never exceed what was paid
+            if (inv_paid($db['items']['invoices'][$i]) < -0.004) { return array('err' => 'that would leave a negative balance of payments: remove or lower the refund first'); }
+            inv_refresh($db, $i, $me, false);
+            log_act($db, $me, 'invoice-entry-' . $act, $inv['number'] . ' ' . $old['type'] . ' ' . $old['amount']);
+            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]));
+        });
+        if (isset($res['err'])) { fail($res['err'], 422); }
+        out($res);
+
+    case 'admin/invoice-fee':
+        // A late fee / penalty (or any extra charge) added to an open invoice as one more item.
+        $me = need_admin();
+        require_post();
+        $b = body();
+        $id = isset($b['id']) ? (string) $b['id'] : ''; $desc = clean_text(isset($b['desc']) ? $b['desc'] : '', 200); $am = isset($b['amount']) && is_numeric($b['amount']) ? round((float) $b['amount'], 2) : 0;
+        if ($desc === '' || $am <= 0) { fail('describe the fee and enter an amount', 422); }
+        $res = db_update(function (&$db) use ($id, $desc, $am, $b, $me) {
+            $i = find_by(items_of($db, 'invoices'), 'id', $id);
+            if ($i < 0) { return array('err' => 'invoice not found'); }
+            $inv = $db['items']['invoices'][$i];
+            if (!in_array($inv['status'], array('due', 'collections'), true)) { return array('err' => 'fees can only be added to an unpaid invoice'); }
+            $items = inv_items($inv); $items[] = array('desc' => $desc, 'amount' => $am, 'taxed' => !empty($b['taxed']), 'fee' => true);
+            $ui = find_user($db, 'id', $inv['uid']);
+            $calc = inv_calc($db, $items, isset($inv['discount']) ? (float) $inv['discount'] : 0, $ui >= 0 && !empty($db['users'][$ui]['taxExempt']));
+            $db['items']['invoices'][$i] = array_merge($inv, array('items' => $items, 'discount' => $calc['discount'], 'taxLines' => $calc['taxes'], 'inclusive' => $calc['inclusive'], 'amount' => $calc['total']));
+            inv_refresh($db, $i, $me, false);
+            log_act($db, $me, 'invoice-fee', $inv['number'] . ' +' . $am . ' ' . $desc);
+            return array('invoice' => inv_public($db, $db['items']['invoices'][$i]));
+        });
+        if (isset($res['err'])) { fail($res['err'], 422); }
+        out($res);
+
     case 'admin/invoice-email':
         $me = need_admin();
         require_post();

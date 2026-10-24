@@ -176,7 +176,7 @@ export function AdminInvoice() {
   const { id } = useParams();
   const { all, error, load } = useAll();
   const cfg = useCfg();
-  const [tab, setTab] = useState<'summary' | 'payment' | 'credit' | 'refund' | 'notes'>('summary');
+  const [tab, setTab] = useState<'summary' | 'payment' | 'credit' | 'refund' | 'fee' | 'notes'>('summary');
   const [client, setClient] = useState(false);
   const [edit, setEdit] = useState(false);
   const [err, setErr] = useState('');
@@ -185,6 +185,8 @@ export function AdminInvoice() {
   const [pay, setPay] = useState({ amount: '', method: 'Manual', ref: '', fee: '', date: today(), note: '' });
   const [cr, setCr] = useState('');
   const [rf, setRf] = useState({ amount: '', toCredit: true, method: 'Manual', ref: '', note: '' });
+  const [fee, setFee] = useState({ desc: '', amount: '', taxed: false });
+  const [entry, setEntry] = useState<{ id: string; type: string; amount: string; method: string; ref: string; fee: string; note: string; date: string } | null>(null);
   const [notes, setNotes] = useState<string | null>(null);
   const inv = ((all?.items.invoices ?? []) as unknown as AInv[]).find((x) => x.id === id);
   if (!all) return <Page title={t('فاتورة', 'Invoice')}><Notice err={error} ok="" /></Page>;
@@ -206,7 +208,7 @@ export function AdminInvoice() {
   return (
     <Page title={`${t('فاتورة', 'Invoice')} #${inv.number}`} action={<div className="row-actions"><button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>{t('إدارة الفاتورة', 'Manage invoice')}</button><button className="btn btn-ghost btn-sm" onClick={() => setClient(true)}>{t('عرض كعميل', 'View as client')}</button><button className="btn btn-ghost btn-sm" onClick={() => { setClient(true); setTimeout(() => window.print(), 300); }}>{t('طباعة / PDF', 'Print / PDF')}</button><Link to="/admin/invoices" className="btn btn-ghost btn-sm">{t('← الفواتير', '← Invoices')}</Link></div>}>
       <Notice err={err || error} ok={ok} />
-      <Tabs value={tab} onChange={setTab} tabs={[['summary', t('ملخص', 'Summary')], ['payment', t('إضافة دفعة', 'Add payment')], ['credit', t('رصيد', 'Credit')], ['refund', t('استرداد', 'Refund')], ['notes', t('ملاحظات', 'Notes')]]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['summary', t('ملخص', 'Summary')], ['payment', t('إضافة دفعة', 'Add payment')], ['credit', t('رصيد', 'Credit')], ['refund', t('استرداد', 'Refund')], ['fee', t('غرامة / رسوم', 'Fee / penalty')], ['notes', t('ملاحظات', 'Notes')]]} />
       {tab === 'summary' && (
         <div className="inv-admin-top">
           <div className="card"><dl className="kv">
@@ -270,6 +272,17 @@ export function AdminInvoice() {
           <button className="btn btn-accent" type="submit" disabled={num(inv.paid) <= 0}>{t('استرداد', 'Refund')}</button>
         </form>
       )}
+      {tab === 'fee' && (
+        <form className="card form" onSubmit={(e: FormEvent) => { e.preventDefault(); void run(async () => { await post('admin/invoice-fee', { id: inv.id, desc: fee.desc, amount: Number(fee.amount), taxed: fee.taxed }); setFee({ desc: '', amount: '', taxed: false }); setTab('summary'); }, t('اتضافت الغرامة على الفاتورة.', 'The fee was added to the invoice.')); }}>
+          <p className="muted">{t('بتتضاف كبند جديد على الفاتورة وبيزيد المتبقي (مثلًا غرامة تأخير). تتاح لفاتورة غير مدفوعة بس.', 'Added as one more invoice item and raises the balance (for example a late fee). Only for an unpaid invoice.')}</p>
+          <div className="admin-form">
+            <Field id="f-d" label={t('الوصف', 'Description')}><input id="f-d" className="input" required maxLength={200} placeholder={t('غرامة تأخير', 'Late payment fee')} value={fee.desc} onChange={(e) => setFee({ ...fee, desc: e.target.value })} /></Field>
+            <Field id="f-a" label={t('المبلغ', 'Amount')}><input id="f-a" className="input latin" type="number" step="0.01" min="0" required value={fee.amount} onChange={(e) => setFee({ ...fee, amount: e.target.value })} /></Field>
+          </div>
+          <label className="check"><input type="checkbox" checked={fee.taxed} onChange={(e) => setFee({ ...fee, taxed: e.target.checked })} /> {t('خاضعة للضريبة', 'Taxed')}</label>
+          <button className="btn btn-accent" type="submit" disabled={inv.status !== 'due' && inv.status !== 'collections'}>{t('إضافة الغرامة', 'Add fee')}</button>
+        </form>
+      )}
       {tab === 'notes' && (
         <div className="card form">
           <Field id="in-n" label={t('ملاحظات الفاتورة (بتظهر على الفاتورة للعميل)', 'Invoice notes (shown on the invoice)')}><textarea id="in-n" className="textarea" rows={6} maxLength={1000} value={notes ?? inv.notes ?? ''} onChange={(e) => setNotes(e.target.value)} /></Field>
@@ -289,7 +302,25 @@ export function AdminInvoice() {
         </table>
       </div>
       <h3 className="sub">{t('دفتر الحساب', 'Ledger')}</h3>
-      <LedgerTable rows={inv.payments ?? []} empty={t('مفيش حركات لسه.', 'No entries yet.')} />
+      <LedgerTable rows={inv.payments ?? []} empty={t('مفيش حركات لسه.', 'No entries yet.')}
+        onEdit={(e) => setEntry({ id: e.id, type: e.type, amount: String(e.amount), method: e.method ?? '', ref: e.ref ?? '', fee: String(e.fee ?? 0), note: e.note ?? '', date: (e.at ?? '').slice(0, 10) })}
+        onDelete={(e) => { if (window.confirm(t('تحذف الحركة دي من دفتر الحساب؟ المتبقي هيتحسب من جديد.', 'Remove this entry from the ledger? The balance is recalculated.'))) void run(() => post('admin/invoice-entry', { id: inv.id, entry: e.id, action: 'delete' }), t('اتحذفت الحركة.', 'Entry removed.')); }} />
+      {entry && (
+        <Modal title={t('تعديل حركة', 'Edit entry')} onClose={() => setEntry(null)}>
+          <form className="form" onSubmit={(ev: FormEvent) => { ev.preventDefault(); void run(async () => { await post('admin/invoice-entry', { id: inv.id, entry: entry.id, action: 'edit', amount: Number(entry.amount), method: entry.method, ref: entry.ref, fee: Number(entry.fee || 0), note: entry.note, date: entry.date }); setEntry(null); }, t('اتعدّلت الحركة.', 'Entry updated.')); }}>
+            <div className="admin-form">
+              <Field id="e-d" label={t('التاريخ', 'Date')}><input id="e-d" className="input latin" type="date" value={entry.date} onChange={(ev) => setEntry({ ...entry, date: ev.target.value })} /></Field>
+              <Field id="e-a" label={t('المبلغ', 'Amount')}><input id="e-a" className="input latin" type="number" step="0.01" min="0" required value={entry.amount} onChange={(ev) => setEntry({ ...entry, amount: ev.target.value })} /></Field>
+              {entry.type === 'payment' && <><Field id="e-m" label={t('وسيلة الدفع', 'Payment method')}><input id="e-m" className="input" maxLength={60} value={entry.method} onChange={(ev) => setEntry({ ...entry, method: ev.target.value })} /></Field>
+              <Field id="e-r" label={t('المرجع', 'Reference')}><input id="e-r" className="input latin" maxLength={160} value={entry.ref} onChange={(ev) => setEntry({ ...entry, ref: ev.target.value })} /></Field>
+              <Field id="e-f" label={t('رسوم', 'Fees')}><input id="e-f" className="input latin" type="number" step="0.01" min="0" value={entry.fee} onChange={(ev) => setEntry({ ...entry, fee: ev.target.value })} /></Field></>}
+              <Field id="e-n" label={t('ملاحظة', 'Note')}><input id="e-n" className="input" maxLength={200} value={entry.note} onChange={(ev) => setEntry({ ...entry, note: ev.target.value })} /></Field>
+            </div>
+            <p className="muted">{t('لو الفاتورة كانت اتدفعت وفعّلت خدمة، التعديل بيغيّر الحساب بس ومابيلغيش التفعيل.', 'If the invoice was paid and activated a service, editing only changes the books; it does not undo the activation.')}</p>
+            <button className="btn btn-accent" type="submit">{t('حفظ', 'Save')}</button>
+          </form>
+        </Modal>
+      )}
       {edit && <InvoiceEditor inv={inv} users={all.users} cfg={cfg} onClose={() => setEdit(false)} onSaved={() => { setEdit(false); setOk(t('اتحفظت الفاتورة.', 'Invoice saved.')); load(); }} />}
     </Page>
   );
@@ -308,17 +339,18 @@ function CreditAdjust({ uid, onDone, setErr, setOk }: { uid: string; onDone: () 
   );
 }
 
-export function LedgerTable({ rows, empty, withInvoice = false, users }: { rows: LedgerEntry[]; empty: string; withInvoice?: boolean; users?: AllData['users'] }) {
+export function LedgerTable({ rows, empty, withInvoice = false, users, onEdit, onDelete }: { rows: LedgerEntry[]; empty: string; withInvoice?: boolean; users?: AllData['users']; onEdit?: (e: LedgerEntry) => void; onDelete?: (e: LedgerEntry) => void }) {
   const { t } = useI18n();
   const cur = useCurrency();
   const label = (e: LedgerEntry) => (e.type === 'payment' ? t('دفعة', 'Payment') : e.type === 'credit' ? t('رصيد مطبّق', 'Applied credit') : t('استرداد', 'Refund'));
   return (
-    <Table head={[t('التاريخ', 'Date'), t('النوع', 'Type'), ...(withInvoice ? [t('الفاتورة', 'Invoice'), t('العميل', 'Client')] : []), t('وسيلة الدفع', 'Payment method'), t('المرجع', 'Reference'), t('المبلغ', 'Amount'), t('الرسوم', 'Fees')]} empty={rows.length === 0 ? empty : undefined}>
+    <Table head={[t('التاريخ', 'Date'), t('النوع', 'Type'), ...(withInvoice ? [t('الفاتورة', 'Invoice'), t('العميل', 'Client')] : []), t('وسيلة الدفع', 'Payment method'), t('المرجع', 'Reference'), t('المبلغ', 'Amount'), t('الرسوم', 'Fees'), ...(onEdit || onDelete ? [''] : [])]} empty={rows.length === 0 ? empty : undefined}>
       {rows.map((e) => (
         <tr key={e.id}>
           <td><Ltr>{(e.at || '').slice(0, 16).replace('T', ' ')}</Ltr></td><td>{label(e)}{e.note && <small className="muted"> · {e.note}</small>}</td>
           {withInvoice && <><td><Link className="link latin" to={`/admin/invoices/${e.invoiceId}`}>{e.number}</Link></td><td>{users?.find((u) => u.id === e.uid)?.name ?? '-'}</td></>}
           <td>{e.method || '-'}</td><td><Ltr>{e.ref || '-'}</Ltr></td><td className="latin" style={{ color: e.type === 'refund' ? '#c0321b' : undefined }}>{e.type === 'refund' ? '−' : ''}{money(e.amount)} {cur}</td><td className="latin">{money(e.fee)}</td>
+          {(onEdit || onDelete) && <td><div className="row-actions">{onEdit && <button className="btn btn-ghost btn-sm" onClick={() => onEdit(e)}>{t('تعديل', 'Edit')}</button>}{onDelete && <button className="btn btn-ghost btn-sm" onClick={() => onDelete(e)}>{t('حذف', 'Delete')}</button>}</div></td>}
         </tr>
       ))}
     </Table>
